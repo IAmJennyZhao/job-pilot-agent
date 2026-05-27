@@ -1,1 +1,17 @@
 .env
+scope.md
+*.db
+*.sqlite
+*.sqlite3
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+node_modules/
+.next/
+dist/
+build/
+coverage/
+*.egg-info/
+*.tsbuildinfo

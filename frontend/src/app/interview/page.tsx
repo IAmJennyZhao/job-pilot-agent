@@ -12,7 +12,7 @@ import { formatDate } from "@/lib/utils";
 
 export default function InterviewPage() {
   const queryClient = useQueryClient();
-  const { data: jobs = [] } = useQuery({ queryKey: ["jobs"], queryFn: api.jobs });
+  const { data: jobs = [] } = useQuery({ queryKey: ["jobs"], queryFn: () => api.jobs() });
   const { data: sessions = [] } = useQuery({ queryKey: ["interview-sessions"], queryFn: api.interviewSessions });
   const [jobId, setJobId] = React.useState("");
   const [questionType, setQuestionType] = React.useState("mixed");
@@ -198,4 +198,3 @@ function List({ title, items }: { title: string; items: string[] }) {
     </div>
   );
 }
-

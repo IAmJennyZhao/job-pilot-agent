@@ -15,7 +15,12 @@ router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 def get_dashboard_summary(db: Session = Depends(get_db)):
     jobs = list(db.scalars(select(models.Job)).all())
     active_jobs = [job for job in jobs if job.status != models.JobStatus.archived]
-    by_status = Counter(job.status.value for job in jobs)
+    archived_jobs = len(jobs) - len(active_jobs)
+    status_counts = Counter(job.status.value for job in jobs)
+    by_status = {
+        status.value: status_counts.get(status.value, 0)
+        for status in models.JobStatus
+    }
     recent_interviews = list(
         db.scalars(
             select(models.InterviewSession)
@@ -51,11 +56,11 @@ def get_dashboard_summary(db: Session = Depends(get_db)):
 
     return schemas.DashboardSummary(
         total_jobs=len(active_jobs),
-        by_status=dict(by_status),
+        archived_jobs=archived_jobs,
+        by_status=by_status,
         needs_resume_tailoring=needs_resume_tailoring,
         interviewing=interviewing,
         top_skill_gaps=top_skill_gaps,
         recent_interviews=recent_interviews,
         next_recommended_action=next_action,
     )
-

@@ -13,9 +13,9 @@ def create_job(payload: schemas.JobCreate, db: Session = Depends(get_db)):
     return job_service.save_job(db, payload)
 
 
-@router.get("", response_model=list[schemas.JobRead])
+@router.get("", response_model=list[schemas.JobListItem])
 def get_jobs(include_archived: bool = False, db: Session = Depends(get_db)):
-    return job_service.list_jobs(db, include_archived=include_archived)
+    return job_service.list_job_items(db, include_archived=include_archived)
 
 
 @router.get("/{job_id}", response_model=schemas.JobDetail)
@@ -42,4 +42,3 @@ def archive_job(job_id: str, db: Session = Depends(get_db)):
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
     return job_service.archive_job(db, job)
-

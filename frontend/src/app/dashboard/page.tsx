@@ -1,11 +1,12 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, BriefcaseBusiness, ClipboardList, GraduationCap, RefreshCw } from "lucide-react";
+import { Archive, ArrowRight, BriefcaseBusiness, ClipboardList, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge, PageHeader, Panel } from "@/components/ui/panel";
 import { api } from "@/lib/api";
+import { jobStatuses } from "@/lib/types";
 import { formatDate } from "@/lib/utils";
 
 export default function DashboardPage() {
@@ -33,10 +34,10 @@ export default function DashboardPage() {
       {data ? (
         <>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <Metric title="Total Jobs" value={data.total_jobs} icon={<BriefcaseBusiness className="h-4 w-4" />} />
+            <Metric title="Active Jobs" value={data.total_jobs} icon={<BriefcaseBusiness className="h-4 w-4" />} />
+            <Metric title="Archived" value={data.archived_jobs} icon={<Archive className="h-4 w-4" />} />
             <Metric title="Need Tailoring" value={data.needs_resume_tailoring} icon={<ArrowRight className="h-4 w-4" />} />
             <Metric title="Interviewing" value={data.interviewing} icon={<ClipboardList className="h-4 w-4" />} />
-            <Metric title="Top Gaps" value={data.top_skill_gaps.length} icon={<GraduationCap className="h-4 w-4" />} />
           </div>
 
           <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
@@ -48,10 +49,10 @@ export default function DashboardPage() {
                 </Link>
               </div>
               <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {Object.entries(data.by_status).map(([status, count]) => (
+                {jobStatuses.map((status) => (
                   <div key={status} className="rounded-md border border-border bg-muted/40 p-3">
                     <div className="text-sm font-medium">{status}</div>
-                    <div className="mt-2 text-2xl font-semibold">{count}</div>
+                    <div className="mt-2 text-2xl font-semibold">{data.by_status[status] ?? 0}</div>
                   </div>
                 ))}
               </div>
@@ -103,7 +104,7 @@ export default function DashboardPage() {
                     <div key={session.id} className="border-b border-border pb-3 last:border-0 last:pb-0">
                       <div className="font-medium">{session.title ?? "Interview session"}</div>
                       <div className="text-xs text-muted-foreground">
-                        {session.mode.replace("_", " ")} · {formatDate(session.updated_at)}
+                        {session.mode.replace("_", " ")} - {formatDate(session.updated_at)}
                       </div>
                     </div>
                   ))
@@ -130,4 +131,3 @@ function Metric({ title, value, icon }: { title: string; value: number; icon: Re
     </Panel>
   );
 }
-

@@ -5,6 +5,7 @@ import type {
   InterviewSession,
   Job,
   JobDetail,
+  JobListItem,
   JobStatus,
   ResumeProfile,
   ResumeSuggestion,
@@ -51,7 +52,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   dashboard: () => request<DashboardSummary>("/api/dashboard/summary"),
-  jobs: () => request<Job[]>("/api/jobs"),
+  jobs: (includeArchived = false) =>
+    request<JobListItem[]>(`/api/jobs${includeArchived ? "?include_archived=true" : ""}`),
   job: (id: string) => request<JobDetail>(`/api/jobs/${id}`),
   createJob: (payload: {
     company: string;
@@ -120,4 +122,3 @@ export const api = {
       body: JSON.stringify(payload)
     })
 };
-

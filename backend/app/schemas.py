@@ -52,6 +52,11 @@ class JobRead(CareerPilotModel):
     updated_at: datetime
 
 
+class JobListItem(JobRead):
+    top_gaps: list[str] = Field(default_factory=list)
+    top_gaps_source: Literal["resume_match", "analysis"] | None = None
+
+
 class JobAnalysisRead(CareerPilotModel):
     id: str
     job_id: str
@@ -267,6 +272,7 @@ class ResumeSuggestionOutput(AIModel):
 
 class DashboardSummary(BaseModel):
     total_jobs: int
+    archived_jobs: int
     by_status: dict[str, int]
     needs_resume_tailoring: int
     interviewing: int

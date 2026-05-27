@@ -3,6 +3,20 @@ from sqlalchemy.orm import Session
 
 from app import models, schemas
 
+MAX_TOP_GAPS = 3
+
+
+def _unique_nonempty(values: list[str]) -> list[str]:
+    output: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        item = value.strip()
+        key = item.casefold()
+        if item and key not in seen:
+            output.append(item)
+            seen.add(key)
+    return output
+
 
 def save_job(db: Session, payload: schemas.JobCreate) -> models.Job:
     job = models.Job(
@@ -23,6 +37,37 @@ def list_jobs(db: Session, include_archived: bool = False) -> list[models.Job]:
     if not include_archived:
         statement = statement.where(models.Job.status != models.JobStatus.archived)
     return list(db.scalars(statement).all())
+
+
+def top_gaps_for_job(db: Session, job: models.Job) -> tuple[list[str], str | None]:
+    suggestion = latest_resume_suggestion(db, job.id)
+    if suggestion:
+        gaps = _unique_nonempty([*suggestion.missing_skills, *suggestion.weak_skills])
+        return gaps[:MAX_TOP_GAPS], "resume_match"
+
+    if job.analysis:
+        gaps = _unique_nonempty([*job.analysis.required_skills, *job.analysis.technologies])
+        if gaps:
+            return gaps[:MAX_TOP_GAPS], "analysis"
+
+    return [], None
+
+
+def to_job_list_item(db: Session, job: models.Job) -> schemas.JobListItem:
+    top_gaps, top_gaps_source = top_gaps_for_job(db, job)
+    return schemas.JobListItem.model_validate(job).model_copy(
+        update={
+            "top_gaps": top_gaps,
+            "top_gaps_source": top_gaps_source,
+        }
+    )
+
+
+def list_job_items(db: Session, include_archived: bool = False) -> list[schemas.JobListItem]:
+    return [
+        to_job_list_item(db, job)
+        for job in list_jobs(db, include_archived=include_archived)
+    ]
 
 
 def get_job(db: Session, job_id: str) -> models.Job | None:
@@ -70,4 +115,3 @@ def latest_resume_suggestion(
         .order_by(models.ResumeSuggestion.created_at.desc())
         .limit(1)
     ).first()
-

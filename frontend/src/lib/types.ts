@@ -25,6 +25,11 @@ export type Job = {
   updated_at: string;
 };
 
+export type JobListItem = Job & {
+  top_gaps: string[];
+  top_gaps_source: "resume_match" | "analysis" | null;
+};
+
 export type JobAnalysis = {
   id: string;
   job_id: string;
@@ -110,6 +115,7 @@ export type InterviewSession = {
 
 export type DashboardSummary = {
   total_jobs: number;
+  archived_jobs: number;
   by_status: Record<string, number>;
   needs_resume_tailoring: number;
   interviewing: number;
@@ -145,4 +151,3 @@ export type StudyPlan = {
   study_plan: Array<{ day: string; focus: string; tasks: string[] }>;
   project_ideas: string[];
 };
-

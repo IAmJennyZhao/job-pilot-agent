@@ -1,10 +1,12 @@
 import type {
+  AIReadiness,
   DashboardSummary,
   InterviewFeedback,
   InterviewQuestionResponse,
   InterviewSession,
   Job,
   JobDetail,
+  JobIntelligenceResponse,
   JobListItem,
   JobStatus,
   ResumeProfile,
@@ -94,6 +96,9 @@ export const api = {
     request<JobDetail["analysis"]>(`/api/ai/analyze-job/${jobId}`, { method: "POST" }),
   suggestResume: (jobId: string) =>
     request<ResumeSuggestion>(`/api/ai/suggest-resume/${jobId}`, { method: "POST" }),
+  aiReadiness: (jobId: string) => request<AIReadiness>(`/api/ai/readiness/${jobId}`),
+  runJobIntelligence: (jobId: string) =>
+    request<JobIntelligenceResponse>(`/api/ai/run-job-intelligence/${jobId}`, { method: "POST" }),
   generateInterviewQuestions: (
     jobId: string,
     payload: { question_type: string; count: number; resume_profile_id?: string | null }

@@ -2,14 +2,15 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Save, UserRound } from "lucide-react";
+import { AlertCircle, CheckCircle2, Save, UserRound } from "lucide-react";
 import * as React from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Textarea } from "@/components/ui/field";
-import { PageHeader, Panel } from "@/components/ui/panel";
+import { Badge, PageHeader, Panel } from "@/components/ui/panel";
 import { api } from "@/lib/api";
+import type { ResumeProfile } from "@/lib/types";
 import { csvToList, listToCsv } from "@/lib/utils";
 
 const profileSchema = z.object({
@@ -81,6 +82,8 @@ export default function ProfilePage() {
       {error ? <Panel className="border-rose-200 bg-rose-50 text-sm text-rose-700">{(error as Error).message}</Panel> : null}
       {isLoading ? <Panel>Loading profile...</Panel> : null}
 
+      <ProfileReadinessPanel profile={profile ?? null} />
+
       <Panel>
         <div className="mb-5 flex items-center gap-2">
           <UserRound className="h-4 w-4 text-primary" />
@@ -120,3 +123,31 @@ export default function ProfilePage() {
   );
 }
 
+function ProfileReadinessPanel({ profile }: { profile: ResumeProfile | null }) {
+  const checks = [
+    { label: "Active profile", ready: Boolean(profile) },
+    { label: "Resume text", ready: Boolean(profile?.resume_text.trim()) },
+    { label: "Skills", ready: Boolean(profile?.skills.length) }
+  ];
+  const ready = checks.every((item) => item.ready);
+
+  return (
+    <Panel>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-base font-semibold">Matching Readiness</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Job Intelligence uses this profile for fit scores and resume suggestions.</p>
+        </div>
+        <Badge tone={ready ? "good" : "warn"}>{ready ? "Ready" : "Needs profile"}</Badge>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
+        {checks.map((item) => (
+          <div key={item.label} className="flex items-center gap-2 text-sm">
+            {item.ready ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <AlertCircle className="h-4 w-4 text-amber-600" />}
+            {item.label}
+          </div>
+        ))}
+      </div>
+    </Panel>
+  );
+}

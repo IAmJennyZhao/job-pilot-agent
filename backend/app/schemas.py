@@ -270,6 +270,26 @@ class ResumeSuggestionOutput(AIModel):
     fit_score: int = Field(ge=0, le=100)
 
 
+class AIReadiness(BaseModel):
+    ready: bool
+    has_openai_api_key: bool
+    has_openai_model: bool
+    model: str | None
+    job_id: str
+    profile_id: str | None
+    has_profile: bool
+    has_resume_text: bool
+    has_skills: bool
+    missing_requirements: list[str] = Field(default_factory=list)
+
+
+class JobIntelligenceResponse(BaseModel):
+    status: Literal["complete", "partial"]
+    analysis: JobAnalysisRead | None = None
+    resume_suggestion: ResumeSuggestionRead | None = None
+    errors: list[str] = Field(default_factory=list)
+
+
 class DashboardSummary(BaseModel):
     total_jobs: int
     archived_jobs: int

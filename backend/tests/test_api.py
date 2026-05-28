@@ -1,4 +1,10 @@
+from types import SimpleNamespace
+
+import pytest
+from fastapi import HTTPException
+
 from app import schemas
+from app.services import ai_service
 
 
 def create_job(client):
@@ -33,6 +39,35 @@ def create_profile(client):
     )
     assert response.status_code == 201
     return response.json()
+
+
+def fake_analysis_output():
+    return schemas.JobAnalysisOutput(
+        summary="AI platform role.",
+        responsibilities=["Build APIs"],
+        required_skills=["Python", "FastAPI"],
+        preferred_skills=["LangChain"],
+        technologies=["FastAPI", "Vector search"],
+        resume_keywords=["AI", "FastAPI"],
+        interview_topics=["API design"],
+    )
+
+
+def fake_resume_suggestion_output():
+    return schemas.ResumeSuggestionOutput(
+        matched_skills=["Python"],
+        missing_skills=["LangChain", "AWS Bedrock"],
+        weak_skills=["System design"],
+        keyword_suggestions=["agentic workflows"],
+        bullet_suggestions=[
+            schemas.BulletSuggestion(
+                original="Built APIs.",
+                suggested="Built FastAPI services for AI workflows.",
+                reason="Highlights role-relevant backend AI work.",
+            )
+        ],
+        fit_score=72,
+    )
 
 
 def test_job_crud_and_archive(client):
@@ -108,15 +143,7 @@ def test_job_list_top_gaps_sources(client, monkeypatch):
 
     def fake_analysis(output_model, _system_prompt, _user_prompt):
         if output_model is schemas.JobAnalysisOutput:
-            return schemas.JobAnalysisOutput(
-                summary="AI platform role.",
-                responsibilities=["Build APIs"],
-                required_skills=["Python", "FastAPI"],
-                preferred_skills=["LangChain"],
-                technologies=["FastAPI", "Vector search"],
-                resume_keywords=["AI", "FastAPI"],
-                interview_topics=["API design"],
-            )
+            return fake_analysis_output()
         raise AssertionError("Unexpected model")
 
     monkeypatch.setattr("app.services.ai_service.get_structured_output", fake_analysis)
@@ -132,20 +159,7 @@ def test_job_list_top_gaps_sources(client, monkeypatch):
 
     def fake_suggestion(output_model, _system_prompt, _user_prompt):
         if output_model is schemas.ResumeSuggestionOutput:
-            return schemas.ResumeSuggestionOutput(
-                matched_skills=["Python"],
-                missing_skills=["LangChain", "AWS Bedrock"],
-                weak_skills=["System design"],
-                keyword_suggestions=["agentic workflows"],
-                bullet_suggestions=[
-                    schemas.BulletSuggestion(
-                        original="Built APIs.",
-                        suggested="Built FastAPI services for AI workflows.",
-                        reason="Highlights role-relevant backend AI work.",
-                    )
-                ],
-                fit_score=72,
-            )
+            return fake_resume_suggestion_output()
         raise AssertionError("Unexpected model")
 
     monkeypatch.setattr("app.services.ai_service.get_structured_output", fake_suggestion)
@@ -158,6 +172,119 @@ def test_job_list_top_gaps_sources(client, monkeypatch):
     listed_job = response.json()[0]
     assert listed_job["top_gaps"] == ["LangChain", "AWS Bedrock", "System design"]
     assert listed_job["top_gaps_source"] == "resume_match"
+
+
+def test_ai_config_requires_key_and_model(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.ai_service.get_settings",
+        lambda: SimpleNamespace(openai_api_key=None, openai_model="gpt-5-mini"),
+    )
+    with pytest.raises(HTTPException) as missing_key:
+        ai_service.get_structured_output(schemas.JobAnalysisOutput, "system", "user")
+    assert missing_key.value.status_code == 503
+    assert "OPENAI_API_KEY" in missing_key.value.detail
+
+    monkeypatch.setattr(
+        "app.services.ai_service.get_settings",
+        lambda: SimpleNamespace(openai_api_key="sk-test", openai_model=None),
+    )
+    with pytest.raises(HTTPException) as missing_model:
+        ai_service.get_structured_output(schemas.JobAnalysisOutput, "system", "user")
+    assert missing_model.value.status_code == 503
+    assert "OPENAI_MODEL" in missing_model.value.detail
+
+
+def test_ai_readiness_reports_missing_requirements(client, monkeypatch):
+    job = create_job(client)
+    response = client.post(
+        "/api/profile",
+        json={
+            "name": "Incomplete User",
+            "target_roles": [],
+            "resume_text": "",
+            "summary": None,
+            "skills": [],
+            "projects": [],
+            "experience": [],
+            "education": [],
+            "certifications": [],
+        },
+    )
+    assert response.status_code == 201
+    monkeypatch.setattr(
+        "app.services.ai_service.get_settings",
+        lambda: SimpleNamespace(openai_api_key=None, openai_model=None),
+    )
+
+    response = client.get(f"/api/ai/readiness/{job['id']}")
+    assert response.status_code == 200
+    readiness = response.json()
+    assert readiness["ready"] is False
+    assert readiness["model"] is None
+    assert "openai_api_key" not in readiness
+    assert set(readiness["missing_requirements"]) == {
+        "OPENAI_API_KEY",
+        "OPENAI_MODEL",
+        "Resume text",
+        "Skills",
+    }
+
+
+def test_run_job_intelligence_completes_and_persists(client, monkeypatch):
+    job = create_job(client)
+    create_profile(client)
+
+    def fake_structured_output(output_model, _system_prompt, _user_prompt):
+        if output_model is schemas.JobAnalysisOutput:
+            return fake_analysis_output()
+        if output_model is schemas.ResumeSuggestionOutput:
+            return fake_resume_suggestion_output()
+        raise AssertionError("Unexpected model")
+
+    monkeypatch.setattr("app.services.ai_service.get_structured_output", fake_structured_output)
+
+    response = client.post(f"/api/ai/run-job-intelligence/{job['id']}")
+    assert response.status_code == 200
+    result = response.json()
+    assert result["status"] == "complete"
+    assert result["analysis"]["summary"] == "AI platform role."
+    assert result["resume_suggestion"]["fit_score"] == 72
+    assert result["errors"] == []
+
+    response = client.get(f"/api/jobs/{job['id']}")
+    assert response.status_code == 200
+    detail = response.json()
+    assert detail["analysis"]["required_skills"] == ["Python", "FastAPI"]
+    assert detail["latest_resume_suggestion"]["missing_skills"] == ["LangChain", "AWS Bedrock"]
+    assert detail["fit_score"] == 72
+
+
+def test_run_job_intelligence_partial_failure_keeps_analysis(client, monkeypatch):
+    job = create_job(client)
+    create_profile(client)
+
+    def fake_structured_output(output_model, _system_prompt, _user_prompt):
+        if output_model is schemas.JobAnalysisOutput:
+            return fake_analysis_output()
+        if output_model is schemas.ResumeSuggestionOutput:
+            raise HTTPException(status_code=502, detail="Resume match failed")
+        raise AssertionError("Unexpected model")
+
+    monkeypatch.setattr("app.services.ai_service.get_structured_output", fake_structured_output)
+
+    response = client.post(f"/api/ai/run-job-intelligence/{job['id']}")
+    assert response.status_code == 200
+    result = response.json()
+    assert result["status"] == "partial"
+    assert result["analysis"]["summary"] == "AI platform role."
+    assert result["resume_suggestion"] is None
+    assert result["errors"] == ["Resume match failed"]
+
+    response = client.get(f"/api/jobs/{job['id']}")
+    assert response.status_code == 200
+    detail = response.json()
+    assert detail["analysis"]["technologies"] == ["FastAPI", "Vector search"]
+    assert detail["latest_resume_suggestion"] is None
 
 
 def test_interview_session_and_message(client):

@@ -45,9 +45,9 @@ npm run build
 
 ## Environment
 
-Copy `.env.example` to `.env` and fill in `OPENAI_API_KEY` for AI actions. The app defaults to SQLite for local development and can switch to Postgres by changing `DATABASE_URL`.
+Copy `.env.example` to `.env` and fill in `OPENAI_API_KEY` and `OPENAI_MODEL` for AI actions. The app defaults to SQLite for local development and can switch to Postgres by changing `DATABASE_URL`.
 
-AI actions are synchronous button-triggered calls. If `OPENAI_API_KEY` is missing, the backend returns a clear `503` and the frontend displays the error.
+AI actions are synchronous button-triggered calls. If `OPENAI_API_KEY` or `OPENAI_MODEL` is missing, the backend returns a clear `503` and the frontend displays the error.
 
 ## Week 1 Demo Script
 

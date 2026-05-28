@@ -151,3 +151,23 @@ export type StudyPlan = {
   study_plan: Array<{ day: string; focus: string; tasks: string[] }>;
   project_ideas: string[];
 };
+
+export type AIReadiness = {
+  ready: boolean;
+  has_openai_api_key: boolean;
+  has_openai_model: boolean;
+  model: string | null;
+  job_id: string;
+  profile_id: string | null;
+  has_profile: boolean;
+  has_resume_text: boolean;
+  has_skills: boolean;
+  missing_requirements: string[];
+};
+
+export type JobIntelligenceResponse = {
+  status: "complete" | "partial";
+  analysis: JobAnalysis | null;
+  resume_suggestion: ResumeSuggestion | null;
+  errors: string[];
+};

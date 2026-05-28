@@ -2,7 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Brain, FileText, Pencil, RefreshCw, Save, X } from "lucide-react";
+import { AlertCircle, CheckCircle2, FileText, Pencil, RefreshCw, Save, Sparkles, X } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { Badge, PageHeader, Panel } from "@/components/ui/panel";
 import { api } from "@/lib/api";
-import { jobStatuses, type JobStatus } from "@/lib/types";
+import { jobStatuses, type AIReadiness, type JobStatus, type ResumeSuggestion } from "@/lib/types";
 import { formatDate } from "@/lib/utils";
 
 const jobEditSchema = z.object({
@@ -34,6 +34,11 @@ export default function JobDetailPage() {
   const { data: job, isLoading, error } = useQuery({
     queryKey: ["job", jobId],
     queryFn: () => api.job(jobId),
+    enabled: Boolean(jobId)
+  });
+  const { data: readiness, isLoading: readinessLoading, error: readinessError } = useQuery({
+    queryKey: ["ai-readiness", jobId],
+    queryFn: () => api.aiReadiness(jobId),
     enabled: Boolean(jobId)
   });
 
@@ -63,6 +68,14 @@ export default function JobDetailPage() {
     });
   }, [form, job]);
 
+  const invalidateJobIntelligence = () => {
+    queryClient.invalidateQueries({ queryKey: ["job", jobId] });
+    queryClient.invalidateQueries({ queryKey: ["jobs"] });
+    queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    queryClient.invalidateQueries({ queryKey: ["skill-gaps"] });
+    queryClient.invalidateQueries({ queryKey: ["ai-readiness", jobId] });
+  };
+
   const updateMutation = useMutation({
     mutationFn: (values: JobEditForm) =>
       api.updateJob(jobId, {
@@ -79,23 +92,14 @@ export default function JobDetailPage() {
     }
   });
 
-  const analyzeMutation = useMutation({
-    mutationFn: () => api.analyzeJob(jobId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["job", jobId] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-      queryClient.invalidateQueries({ queryKey: ["skill-gaps"] });
-    }
+  const intelligenceMutation = useMutation({
+    mutationFn: () => api.runJobIntelligence(jobId),
+    onSuccess: invalidateJobIntelligence
   });
 
   const suggestMutation = useMutation({
     mutationFn: () => api.suggestResume(jobId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["job", jobId] });
-      queryClient.invalidateQueries({ queryKey: ["jobs"] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-      queryClient.invalidateQueries({ queryKey: ["skill-gaps"] });
-    }
+    onSuccess: invalidateJobIntelligence
   });
 
   const cancelEdit = () => {
@@ -111,6 +115,9 @@ export default function JobDetailPage() {
     }
     setIsEditing(false);
   };
+
+  const latestSuggestion = job?.latest_resume_suggestion ?? null;
+  const showRetryResume = Boolean(job?.analysis && !latestSuggestion && readiness?.ready);
 
   return (
     <div className="grid gap-6">
@@ -178,35 +185,42 @@ export default function JobDetailPage() {
                 </div>
               </form>
             ) : (
-              <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+              <div className="grid gap-5 xl:grid-cols-[1fr_360px]">
                 <div>
                   <div className="flex flex-wrap gap-2">
                     <Badge>{job.status}</Badge>
                     {job.fit_score !== null ? <Badge tone={job.fit_score >= 75 ? "good" : job.fit_score >= 50 ? "warn" : "bad"}>Fit {job.fit_score}</Badge> : null}
+                    {readiness?.model ? <Badge>{readiness.model}</Badge> : null}
                   </div>
                   <p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{job.notes || "No notes yet."}</p>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button onClick={() => analyzeMutation.mutate()} disabled={analyzeMutation.isPending}>
-                    <Brain className="h-4 w-4" />
-                    {analyzeMutation.isPending ? "Analyzing..." : "Analyze JD"}
-                  </Button>
-                  <Button variant="secondary" onClick={() => suggestMutation.mutate()} disabled={suggestMutation.isPending}>
-                    <FileText className="h-4 w-4" />
-                    {suggestMutation.isPending ? "Matching..." : "Suggest resume"}
-                  </Button>
-                </div>
+                <JobIntelligenceControl
+                  readiness={readiness}
+                  readinessLoading={readinessLoading}
+                  readinessError={readinessError as Error | null}
+                  isRunning={intelligenceMutation.isPending}
+                  onRun={() => intelligenceMutation.mutate()}
+                />
               </div>
             )}
-            {analyzeMutation.error ? <p className="mt-3 text-sm text-destructive">{(analyzeMutation.error as Error).message}</p> : null}
+            {intelligenceMutation.data?.status === "partial" ? (
+              <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                {intelligenceMutation.data.errors.join(" ")}
+              </div>
+            ) : null}
+            {intelligenceMutation.error ? <p className="mt-3 text-sm text-destructive">{(intelligenceMutation.error as Error).message}</p> : null}
             {suggestMutation.error ? <p className="mt-3 text-sm text-destructive">{(suggestMutation.error as Error).message}</p> : null}
           </Panel>
 
           {!isEditing ? (
-            <Panel>
-              <h2 className="text-base font-semibold">Job Description</h2>
-              <p className="mt-4 max-h-[360px] overflow-auto whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{job.job_description}</p>
-            </Panel>
+            <>
+              <FitOverview suggestion={latestSuggestion} />
+
+              <Panel>
+                <h2 className="text-base font-semibold">Job Description</h2>
+                <p className="mt-4 max-h-[360px] overflow-auto whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{job.job_description}</p>
+              </Panel>
+            </>
           ) : null}
 
           <div className="grid gap-4 xl:grid-cols-2">
@@ -225,25 +239,25 @@ export default function JobDetailPage() {
                   <List title="Interview Topics" items={job.analysis.interview_topics} />
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground">Run analysis to extract structured responsibilities, skills, keywords, and interview topics.</p>
+                <p className="text-sm text-muted-foreground">Run intelligence to extract structured responsibilities, skills, keywords, and interview topics.</p>
               )}
             </Panel>
 
             <Panel>
-              <div className="mb-4 flex items-center justify-between">
+              <div className="mb-4 flex items-center justify-between gap-3">
                 <h2 className="text-base font-semibold">Resume Match</h2>
-                {job.latest_resume_suggestion ? <Badge tone="good">Fit {job.latest_resume_suggestion.fit_score}</Badge> : <Badge>Not run</Badge>}
+                {latestSuggestion ? <Badge tone="good">Fit {latestSuggestion.fit_score}</Badge> : <Badge>Not run</Badge>}
               </div>
-              {job.latest_resume_suggestion ? (
+              {latestSuggestion ? (
                 <div className="grid gap-4 text-sm">
-                  <List title="Matched Skills" items={job.latest_resume_suggestion.matched_skills} />
-                  <List title="Missing Skills" items={job.latest_resume_suggestion.missing_skills} />
-                  <List title="Weak Skills" items={job.latest_resume_suggestion.weak_skills} />
-                  <List title="Keywords" items={job.latest_resume_suggestion.keyword_suggestions} />
+                  <List title="Matched Skills" items={latestSuggestion.matched_skills} />
+                  <List title="Missing Skills" items={latestSuggestion.missing_skills} />
+                  <List title="Weak Skills" items={latestSuggestion.weak_skills} />
+                  <List title="Keywords" items={latestSuggestion.keyword_suggestions} />
                   <div>
                     <h3 className="mb-2 font-medium">Bullet Suggestions</h3>
                     <div className="grid gap-3">
-                      {job.latest_resume_suggestion.bullet_suggestions.map((item, index) => (
+                      {latestSuggestion.bullet_suggestions.map((item, index) => (
                         <div key={`${item.suggested}-${index}`} className="rounded-md border border-border bg-muted/40 p-3">
                           <div className="text-xs text-muted-foreground">{item.original}</div>
                           <div className="mt-2 font-medium">{item.suggested}</div>
@@ -254,7 +268,15 @@ export default function JobDetailPage() {
                   </div>
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground">Create an active profile, then run resume suggestions for this job.</p>
+                <div className="grid gap-3 text-sm text-muted-foreground">
+                  <p>Create an active profile, then run intelligence for this job.</p>
+                  {showRetryResume ? (
+                    <Button variant="secondary" size="sm" onClick={() => suggestMutation.mutate()} disabled={suggestMutation.isPending}>
+                      <FileText className="h-4 w-4" />
+                      {suggestMutation.isPending ? "Matching..." : "Retry resume match"}
+                    </Button>
+                  ) : null}
+                </div>
               )}
             </Panel>
           </div>
@@ -265,6 +287,110 @@ export default function JobDetailPage() {
           </Button>
         </>
       ) : null}
+    </div>
+  );
+}
+
+function JobIntelligenceControl({
+  readiness,
+  readinessLoading,
+  readinessError,
+  isRunning,
+  onRun
+}: {
+  readiness: AIReadiness | undefined;
+  readinessLoading: boolean;
+  readinessError: Error | null;
+  isRunning: boolean;
+  onRun: () => void;
+}) {
+  const ready = Boolean(readiness?.ready);
+  return (
+    <div className="rounded-md border border-border bg-muted/40 p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="font-medium">Job Intelligence</div>
+        {ready ? <Badge tone="good">Ready</Badge> : <Badge tone="warn">Needs setup</Badge>}
+      </div>
+      {readinessError ? <p className="text-sm text-destructive">{readinessError.message}</p> : null}
+      {readinessLoading ? <p className="text-sm text-muted-foreground">Checking readiness...</p> : null}
+      {readiness && !readiness.ready ? (
+        <div className="mb-3 grid gap-2 text-sm text-muted-foreground">
+          {readiness.missing_requirements.map((item) => (
+            <div key={item} className="flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 text-amber-600" />
+              {item}
+            </div>
+          ))}
+          {!readiness.has_profile || !readiness.has_resume_text || !readiness.has_skills ? (
+            <Link href="/profile" className="font-medium text-primary">
+              Open profile
+            </Link>
+          ) : null}
+        </div>
+      ) : null}
+      {readiness?.ready ? (
+        <div className="mb-3 flex items-center gap-2 text-sm text-muted-foreground">
+          <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+          Model: {readiness.model}
+        </div>
+      ) : null}
+      <Button onClick={onRun} disabled={!ready || isRunning}>
+        <Sparkles className="h-4 w-4" />
+        {isRunning ? "Running..." : "Run intelligence"}
+      </Button>
+    </div>
+  );
+}
+
+function FitOverview({ suggestion }: { suggestion: ResumeSuggestion | null }) {
+  if (!suggestion) {
+    return (
+      <Panel>
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-base font-semibold">Fit Overview</h2>
+          <Badge>Not run</Badge>
+        </div>
+        <p className="mt-3 text-sm text-muted-foreground">Run intelligence to see fit score, matched skills, gaps, and resume actions.</p>
+      </Panel>
+    );
+  }
+
+  const firstAction = suggestion.bullet_suggestions[0]?.suggested ?? suggestion.keyword_suggestions[0] ?? suggestion.missing_skills[0] ?? "Review the resume match details below.";
+  return (
+    <Panel>
+      <div className="grid gap-5 lg:grid-cols-[160px_1fr]">
+        <div>
+          <div className="text-sm font-medium text-muted-foreground">Fit Score</div>
+          <div className="mt-2 text-5xl font-semibold">{suggestion.fit_score}</div>
+        </div>
+        <div className="grid gap-4">
+          <div>
+            <h2 className="text-base font-semibold">Next Resume Action</h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">{firstAction}</p>
+          </div>
+          <div className="grid gap-3 md:grid-cols-3">
+            <MiniList title="Matched" items={suggestion.matched_skills} tone="good" />
+            <MiniList title="Missing" items={suggestion.missing_skills} tone="warn" />
+            <MiniList title="Weak" items={suggestion.weak_skills} tone="bad" />
+          </div>
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
+function MiniList({ title, items, tone }: { title: string; items: string[]; tone: "good" | "warn" | "bad" }) {
+  return (
+    <div>
+      <div className="mb-2 text-sm font-medium">{title}</div>
+      <div className="flex flex-wrap gap-2">
+        {items.slice(0, 4).map((item) => (
+          <Badge key={item} tone={tone}>
+            {item}
+          </Badge>
+        ))}
+        {!items.length ? <span className="text-sm text-muted-foreground">None</span> : null}
+      </div>
     </div>
   );
 }

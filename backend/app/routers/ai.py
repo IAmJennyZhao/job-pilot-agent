@@ -20,6 +20,16 @@ def analyze_job(job_id: str, db: Session = Depends(get_db)):
     return ai_service.analyze_job_description(db, _get_job_or_404(db, job_id))
 
 
+@router.get("/readiness/{job_id}", response_model=schemas.AIReadiness)
+def ai_readiness(job_id: str, db: Session = Depends(get_db)):
+    return ai_service.ai_readiness(db, _get_job_or_404(db, job_id))
+
+
+@router.post("/run-job-intelligence/{job_id}", response_model=schemas.JobIntelligenceResponse)
+def run_job_intelligence(job_id: str, db: Session = Depends(get_db)):
+    return ai_service.run_job_intelligence(db, _get_job_or_404(db, job_id))
+
+
 @router.post("/suggest-resume/{job_id}", response_model=schemas.ResumeSuggestionRead)
 def suggest_resume(job_id: str, db: Session = Depends(get_db)):
     profile = profile_service.get_active_profile(db)
@@ -61,4 +71,3 @@ def evaluate_interview_answer(
 @router.post("/generate-study-plan", response_model=schemas.StudyPlanResponse)
 def generate_study_plan(payload: schemas.StudyPlanRequest, db: Session = Depends(get_db)):
     return ai_service.generate_study_plan(db, payload)
-

@@ -19,16 +19,23 @@ def get_structured_output(
     user_prompt: str,
 ) -> T:
     settings = get_settings()
-    if not settings.openai_api_key:
+    api_key = settings.openai_api_key.strip() if settings.openai_api_key else ""
+    model = settings.openai_model.strip() if settings.openai_model else ""
+    if not api_key:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="OPENAI_API_KEY is not configured. Add it to .env to use AI actions.",
         )
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="OPENAI_MODEL is not configured. Add it to .env to use AI actions.",
+        )
 
-    client = OpenAI(api_key=settings.openai_api_key)
+    client = OpenAI(api_key=api_key)
     try:
         response = client.responses.parse(
-            model=settings.openai_model,
+            model=model,
             instructions=system_prompt,
             input=user_prompt,
             text_format=output_model,
@@ -44,6 +51,42 @@ def get_structured_output(
             detail="OpenAI returned no structured output.",
         )
     return response.output_parsed
+
+
+def ai_readiness(db: Session, job: models.Job) -> schemas.AIReadiness:
+    settings = get_settings()
+    model = settings.openai_model.strip() if settings.openai_model else None
+    profile = profile_service.get_active_profile(db)
+    has_api_key = bool(settings.openai_api_key and settings.openai_api_key.strip())
+    has_model = bool(model)
+    has_profile = profile is not None
+    has_resume_text = bool(profile and profile.resume_text.strip())
+    has_skills = bool(profile and profile.skills)
+
+    missing_requirements: list[str] = []
+    if not has_api_key:
+        missing_requirements.append("OPENAI_API_KEY")
+    if not has_model:
+        missing_requirements.append("OPENAI_MODEL")
+    if not has_profile:
+        missing_requirements.append("Active resume profile")
+    if has_profile and not has_resume_text:
+        missing_requirements.append("Resume text")
+    if has_profile and not has_skills:
+        missing_requirements.append("Skills")
+
+    return schemas.AIReadiness(
+        ready=not missing_requirements,
+        has_openai_api_key=has_api_key,
+        has_openai_model=has_model,
+        model=model,
+        job_id=job.id,
+        profile_id=profile.id if profile else None,
+        has_profile=has_profile,
+        has_resume_text=has_resume_text,
+        has_skills=has_skills,
+        missing_requirements=missing_requirements,
+    )
 
 
 def analyze_job_description(db: Session, job: models.Job) -> models.JobAnalysis:
@@ -111,6 +154,39 @@ def suggest_resume_changes(
         "Build proof or study plan for",
     )
     return suggestion
+
+
+def _error_message(exc: HTTPException) -> str:
+    return exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+
+
+def run_job_intelligence(db: Session, job: models.Job) -> schemas.JobIntelligenceResponse:
+    analysis = analyze_job_description(db, job)
+    profile = profile_service.get_active_profile(db)
+    if not profile:
+        return schemas.JobIntelligenceResponse(
+            status="partial",
+            analysis=schemas.JobAnalysisRead.model_validate(analysis),
+            resume_suggestion=None,
+            errors=["Resume profile not found. Create an active profile before running resume match."],
+        )
+
+    try:
+        suggestion = suggest_resume_changes(db, job, profile)
+    except HTTPException as exc:
+        return schemas.JobIntelligenceResponse(
+            status="partial",
+            analysis=schemas.JobAnalysisRead.model_validate(analysis),
+            resume_suggestion=None,
+            errors=[_error_message(exc)],
+        )
+
+    return schemas.JobIntelligenceResponse(
+        status="complete",
+        analysis=schemas.JobAnalysisRead.model_validate(analysis),
+        resume_suggestion=schemas.ResumeSuggestionRead.model_validate(suggestion),
+        errors=[],
+    )
 
 
 def generate_interview_questions(

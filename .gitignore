@@ -15,3 +15,5 @@ build/
 coverage/
 *.egg-info/
 *.tsbuildinfo
+.claude.design/*
+PUSH_ELSEWHERE_CHAT_PROMPT.md

@@ -22,7 +22,7 @@ export const jobCategories = [
 ] as const;
 
 export const remoteTypes = ["Remote", "Hybrid", "On-site", "Unknown"] as const;
-export const jobLinkKinds = ["source", "company_portal", "application_portal", "recruiter", "custom"] as const;
+export const jobLinkKinds = ["source", "company_portal", "application_portal", "recruiter", "company_info", "custom"] as const;
 
 export type JobStatus = (typeof jobStatuses)[number];
 export type JobCategory = (typeof jobCategories)[number];
@@ -63,6 +63,12 @@ export type Job = {
   summary: string | null;
   responsibilities: string[];
   required_skills: string[];
+  pay_min: number | null;
+  pay_max: number | null;
+  pay_currency: string | null;
+  pay_period: string | null;
+  pay_raw: string | null;
+  benefits: string[];
   status: JobStatus;
   notes: string | null;
   fit_score: number | null;
@@ -83,6 +89,12 @@ export type JobCreatePayload = {
   summary?: string | null;
   responsibilities: string[];
   required_skills: string[];
+  pay_min?: number | null;
+  pay_max?: number | null;
+  pay_currency?: string | null;
+  pay_period?: string | null;
+  pay_raw?: string | null;
+  benefits?: string[];
   source_content: string;
   links: JobLinkInput[];
   status?: JobStatus;
@@ -111,6 +123,59 @@ export type JobAnalysis = {
   updated_at: string;
 };
 
+export type CompanyResearch = {
+  id: string;
+  company_name: string;
+  normalized_company_name: string;
+  sentiment: string;
+  summary: string;
+  themes: string[];
+  source_links: Array<{ title: string; url: string }>;
+  confidence: number | null;
+  coverage_note: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AdvancedJobAnalysis = {
+  id: string;
+  job_id: string;
+  company_research_id: string | null;
+  status: "complete" | "partial";
+  job_insights: {
+    summary?: string;
+    role_focus?: string[];
+    responsibilities?: string[];
+    must_have_skills?: string[];
+    nice_to_have_skills?: string[];
+    seniority_signal?: string | null;
+    concerns?: string[];
+  } | null;
+  company_sentiment: {
+    sentiment?: string;
+    summary?: string;
+    themes?: string[];
+    source_links?: Array<{ title: string; url: string }>;
+    confidence?: number | null;
+    coverage_note?: string | null;
+  } | null;
+  top_company_fit: string[];
+  resume_keywords: string[];
+  risks_gaps: string[];
+  expected_questions: Array<{ question: string; type: string; why_it_matters: string }>;
+  source_links: Array<{ title: string; url: string }>;
+  errors: string[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type AdvancedAnalysisResponse = {
+  status: "complete" | "partial";
+  analysis: AdvancedJobAnalysis | null;
+  company_research: CompanyResearch | null;
+  errors: string[];
+};
+
 export type ResumeSuggestion = {
   id: string;
   job_id: string;
@@ -128,6 +193,7 @@ export type JobDetail = Job & {
   source_content: string;
   status_events: JobStatusEvent[];
   analysis: JobAnalysis | null;
+  latest_advanced_analysis: AdvancedJobAnalysis | null;
   latest_resume_suggestion: ResumeSuggestion | null;
 };
 
@@ -148,6 +214,12 @@ export type JobExtractPreview = {
   summary: string;
   responsibilities: string[];
   required_skills: string[];
+  pay_min: number | null;
+  pay_max: number | null;
+  pay_currency: string | null;
+  pay_period: string;
+  pay_raw: string | null;
+  benefits: string[];
   links: JobLinkInput[];
   confidence: number;
   warnings: string[];
@@ -250,7 +322,9 @@ export type AIReadiness = {
   ready: boolean;
   has_openai_api_key: boolean;
   has_openai_model: boolean;
+  has_openai_research_model: boolean;
   model: string | null;
+  research_model: string | null;
   job_id: string;
   profile_id: string | null;
   has_profile: boolean;

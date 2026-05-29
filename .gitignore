@@ -5,6 +5,7 @@ scope.md
 *.sqlite3
 __pycache__/
 .pytest_cache/
+pytest-cache-files-*/
 .mypy_cache/
 .ruff_cache/
 .venv/

@@ -79,6 +79,12 @@ class JobExtractionOutput(AIModel):
     summary: str
     responsibilities: list[str] = Field(default_factory=list)
     required_skills: list[str] = Field(default_factory=list)
+    pay_min: int | None = Field(default=None, ge=0)
+    pay_max: int | None = Field(default=None, ge=0)
+    pay_currency: str | None = Field(default=None, max_length=16)
+    pay_period: Literal["hour", "day", "week", "month", "year", "contract", "unknown"] = "unknown"
+    pay_raw: str | None = None
+    benefits: list[str] = Field(default_factory=list)
     links: list[JobLinkBase] = Field(default_factory=list)
     confidence: int = Field(ge=0, le=100)
     warnings: list[str] = Field(default_factory=list)
@@ -99,6 +105,12 @@ class JobCreate(BaseModel):
     summary: str | None = None
     responsibilities: list[str] = Field(default_factory=list)
     required_skills: list[str] = Field(default_factory=list)
+    pay_min: int | None = Field(default=None, ge=0)
+    pay_max: int | None = Field(default=None, ge=0)
+    pay_currency: str | None = Field(default=None, max_length=16)
+    pay_period: Literal["hour", "day", "week", "month", "year", "contract", "unknown"] | None = "unknown"
+    pay_raw: str | None = None
+    benefits: list[str] = Field(default_factory=list)
     source_content: str = ""
     links: list[JobLinkCreate] = Field(default_factory=list)
     status: JobStatus = JobStatus.saved
@@ -117,6 +129,12 @@ class JobUpdate(BaseModel):
     summary: str | None = None
     responsibilities: list[str] | None = None
     required_skills: list[str] | None = None
+    pay_min: int | None = Field(default=None, ge=0)
+    pay_max: int | None = Field(default=None, ge=0)
+    pay_currency: str | None = Field(default=None, max_length=16)
+    pay_period: Literal["hour", "day", "week", "month", "year", "contract", "unknown"] | None = None
+    pay_raw: str | None = None
+    benefits: list[str] | None = None
     source_content: str | None = None
     links: list[JobLinkCreate] | None = None
     status: JobStatus | None = None
@@ -137,6 +155,12 @@ class JobRead(CareerPilotModel):
     summary: str | None
     responsibilities: list[str]
     required_skills: list[str]
+    pay_min: int | None
+    pay_max: int | None
+    pay_currency: str | None
+    pay_period: str | None
+    pay_raw: str | None
+    benefits: list[str]
     status: JobStatus
     notes: str | None
     fit_score: int | None
@@ -167,6 +191,84 @@ class JobAnalysisRead(CareerPilotModel):
     updated_at: datetime
 
 
+class SourceLink(AIModel):
+    title: str
+    url: str
+
+
+class JobInsightsOutput(AIModel):
+    summary: str
+    role_focus: list[str]
+    responsibilities: list[str]
+    must_have_skills: list[str]
+    nice_to_have_skills: list[str]
+    seniority_signal: str | None = None
+    concerns: list[str] = Field(default_factory=list)
+
+
+class CompanyResearchOutput(AIModel):
+    sentiment: Literal["positive", "mixed", "negative", "neutral", "unknown"] = "unknown"
+    summary: str
+    themes: list[str] = Field(default_factory=list)
+    source_links: list[SourceLink] = Field(default_factory=list)
+    confidence: int = Field(ge=0, le=100)
+    coverage_note: str
+
+
+class ResumeFitOutput(AIModel):
+    top_company_fit: list[str]
+    resume_keywords: list[str]
+    risks_gaps: list[str]
+
+
+class AdvancedInterviewQuestion(AIModel):
+    question: str
+    type: Literal["technical", "behavioral", "company", "resume", "role_specific", "system_design", "mixed"]
+    why_it_matters: str
+
+
+class AdvancedInterviewPrepOutput(AIModel):
+    expected_questions: list[AdvancedInterviewQuestion]
+
+
+class CompanyResearchRead(CareerPilotModel):
+    id: str
+    company_name: str
+    normalized_company_name: str
+    sentiment: str
+    summary: str
+    themes: list[str]
+    source_links: list[dict[str, Any]]
+    confidence: int | None
+    coverage_note: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class AdvancedJobAnalysisRead(CareerPilotModel):
+    id: str
+    job_id: str
+    company_research_id: str | None
+    status: Literal["complete", "partial"]
+    job_insights: dict[str, Any] | None
+    company_sentiment: dict[str, Any] | None
+    top_company_fit: list[str]
+    resume_keywords: list[str]
+    risks_gaps: list[str]
+    expected_questions: list[dict[str, Any]]
+    source_links: list[dict[str, Any]]
+    errors: list[str]
+    created_at: datetime
+    updated_at: datetime
+
+
+class AdvancedAnalysisResponse(BaseModel):
+    status: Literal["complete", "partial"]
+    analysis: AdvancedJobAnalysisRead | None = None
+    company_research: CompanyResearchRead | None = None
+    errors: list[str] = Field(default_factory=list)
+
+
 class BulletSuggestion(AIModel):
     original: str
     suggested: str
@@ -190,6 +292,7 @@ class JobDetail(JobRead):
     source_content: str
     status_events: list[JobStatusEventRead] = Field(default_factory=list)
     analysis: JobAnalysisRead | None = None
+    latest_advanced_analysis: AdvancedJobAnalysisRead | None = None
     latest_resume_suggestion: ResumeSuggestionRead | None = None
 
 
@@ -372,7 +475,9 @@ class AIReadiness(BaseModel):
     ready: bool
     has_openai_api_key: bool
     has_openai_model: bool
+    has_openai_research_model: bool
     model: str | None
+    research_model: str | None
     job_id: str
     profile_id: str | None
     has_profile: bool

@@ -1,5 +1,6 @@
 import type {
   AIReadiness,
+  AdvancedAnalysisResponse,
   DashboardSummary,
   InterviewFeedback,
   InterviewQuestionResponse,
@@ -113,6 +114,13 @@ export const api = {
   aiReadiness: (jobId: string) => request<AIReadiness>(`/api/ai/readiness/${jobId}`),
   runJobIntelligence: (jobId: string) =>
     request<JobIntelligenceResponse>(`/api/ai/run-job-intelligence/${jobId}`, { method: "POST" }),
+  advancedAnalysis: (jobId: string) =>
+    request<AdvancedAnalysisResponse>(`/api/ai/advanced-analysis/${jobId}`),
+  runAdvancedAnalysis: (jobId: string, refreshCompany = false) =>
+    request<AdvancedAnalysisResponse>(
+      `/api/ai/run-advanced-analysis/${jobId}${refreshCompany ? "?refresh_company=true" : ""}`,
+      { method: "POST" }
+    ),
   generateInterviewQuestions: (
     jobId: string,
     payload: { question_type: string; count: number; resume_profile_id?: string | null }

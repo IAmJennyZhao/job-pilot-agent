@@ -136,7 +136,7 @@ function ProfileReadinessPanel({ profile }: { profile: ResumeProfile | null }) {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-base font-semibold">Matching Readiness</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Job Intelligence uses this profile for fit scores and resume suggestions.</p>
+          <p className="mt-1 text-sm text-muted-foreground">Advanced Detailed Analysis uses this profile for fit signals and resume keywords.</p>
         </div>
         <Badge tone={ready ? "good" : "warn"}>{ready ? "Ready" : "Needs profile"}</Badge>
       </div>

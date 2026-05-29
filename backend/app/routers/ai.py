@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.database import get_db
-from app.services import ai_service, profile_service
+from app.services import advanced_analysis_service, ai_service, profile_service
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
@@ -28,6 +28,38 @@ def ai_readiness(job_id: str, db: Session = Depends(get_db)):
 @router.post("/run-job-intelligence/{job_id}", response_model=schemas.JobIntelligenceResponse)
 def run_job_intelligence(job_id: str, db: Session = Depends(get_db)):
     return ai_service.run_job_intelligence(db, _get_job_or_404(db, job_id))
+
+
+@router.get("/advanced-analysis/{job_id}", response_model=schemas.AdvancedAnalysisResponse)
+def get_advanced_analysis(job_id: str, db: Session = Depends(get_db)):
+    _get_job_or_404(db, job_id)
+    analysis = advanced_analysis_service.get_latest_analysis(db, job_id)
+    if not analysis:
+        return schemas.AdvancedAnalysisResponse(status="partial", analysis=None, errors=[])
+    company_research = analysis.company_research
+    return schemas.AdvancedAnalysisResponse(
+        status=analysis.status,
+        analysis=schemas.AdvancedJobAnalysisRead.model_validate(analysis),
+        company_research=(
+            schemas.CompanyResearchRead.model_validate(company_research)
+            if company_research
+            else None
+        ),
+        errors=analysis.errors,
+    )
+
+
+@router.post("/run-advanced-analysis/{job_id}", response_model=schemas.AdvancedAnalysisResponse)
+def run_advanced_analysis(
+    job_id: str,
+    refresh_company: bool = False,
+    db: Session = Depends(get_db),
+):
+    return advanced_analysis_service.run_advanced_analysis(
+        db,
+        _get_job_or_404(db, job_id),
+        refresh_company=refresh_company,
+    )
 
 
 @router.post("/suggest-resume/{job_id}", response_model=schemas.ResumeSuggestionRead)

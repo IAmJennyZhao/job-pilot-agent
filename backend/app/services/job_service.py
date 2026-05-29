@@ -65,6 +65,12 @@ def save_job(db: Session, payload: schemas.JobCreate) -> models.Job:
         summary=payload.summary,
         responsibilities=payload.responsibilities,
         required_skills=payload.required_skills,
+        pay_min=payload.pay_min,
+        pay_max=payload.pay_max,
+        pay_currency=payload.pay_currency,
+        pay_period=payload.pay_period,
+        pay_raw=payload.pay_raw,
+        benefits=payload.benefits,
         source_content=payload.source_content,
         status=payload.status,
         notes=payload.notes,
@@ -216,6 +222,18 @@ def latest_resume_suggestion(
         select(models.ResumeSuggestion)
         .where(models.ResumeSuggestion.job_id == job_id)
         .order_by(models.ResumeSuggestion.created_at.desc())
+        .limit(1)
+    ).first()
+
+
+def latest_advanced_analysis(
+    db: Session,
+    job_id: str,
+) -> models.AdvancedJobAnalysis | None:
+    return db.scalars(
+        select(models.AdvancedJobAnalysis)
+        .where(models.AdvancedJobAnalysis.job_id == job_id)
+        .order_by(models.AdvancedJobAnalysis.created_at.desc())
         .limit(1)
     ).first()
 

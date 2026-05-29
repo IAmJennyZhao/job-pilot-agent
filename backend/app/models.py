@@ -54,6 +54,7 @@ class JobLinkKind(str, enum.Enum):
     company_portal = "company_portal"
     application_portal = "application_portal"
     recruiter = "recruiter"
+    company_info = "company_info"
     custom = "custom"
 
 
@@ -122,6 +123,12 @@ class Job(TimestampMixin, Base):
     summary: Mapped[str | None] = mapped_column(Text)
     responsibilities: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
     required_skills: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    pay_min: Mapped[int | None] = mapped_column(Integer)
+    pay_max: Mapped[int | None] = mapped_column(Integer)
+    pay_currency: Mapped[str | None] = mapped_column(String(16))
+    pay_period: Mapped[str | None] = mapped_column(String(64))
+    pay_raw: Mapped[str | None] = mapped_column(Text)
+    benefits: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
     source_content: Mapped[str] = mapped_column(Text, default="", nullable=False)
     status: Mapped[JobStatus] = mapped_column(
         Enum(
@@ -161,6 +168,11 @@ class Job(TimestampMixin, Base):
         back_populates="job",
         cascade="all, delete-orphan",
         order_by="JobStatusEvent.changed_at",
+    )
+    advanced_analyses: Mapped[list["AdvancedJobAnalysis"]] = relationship(
+        back_populates="job",
+        cascade="all, delete-orphan",
+        order_by="AdvancedJobAnalysis.created_at",
     )
 
     @property
@@ -260,6 +272,50 @@ class JobAnalysis(TimestampMixin, Base):
     interview_topics: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
 
     job: Mapped[Job] = relationship(back_populates="analysis")
+
+
+class CompanyResearchSnapshot(TimestampMixin, Base):
+    __tablename__ = "company_research_snapshots"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    company_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    normalized_company_name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    sentiment: Mapped[str] = mapped_column(String(64), default="unknown", nullable=False)
+    summary: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    themes: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    source_links: Mapped[list[dict]] = mapped_column(JSON, default=list, nullable=False)
+    confidence: Mapped[int | None] = mapped_column(Integer)
+    coverage_note: Mapped[str | None] = mapped_column(Text)
+
+    advanced_analyses: Mapped[list["AdvancedJobAnalysis"]] = relationship(back_populates="company_research")
+
+
+class AdvancedJobAnalysis(TimestampMixin, Base):
+    __tablename__ = "advanced_job_analyses"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    job_id: Mapped[str] = mapped_column(
+        ForeignKey("jobs.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    company_research_id: Mapped[str | None] = mapped_column(
+        ForeignKey("company_research_snapshots.id", ondelete="SET NULL"),
+        index=True,
+    )
+    status: Mapped[str] = mapped_column(String(32), default="complete", nullable=False)
+    job_insights: Mapped[dict | None] = mapped_column(JSON)
+    company_sentiment: Mapped[dict | None] = mapped_column(JSON)
+    top_company_fit: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    resume_keywords: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    risks_gaps: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    expected_questions: Mapped[list[dict]] = mapped_column(JSON, default=list, nullable=False)
+    source_links: Mapped[list[dict]] = mapped_column(JSON, default=list, nullable=False)
+    errors: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+
+    job: Mapped[Job] = relationship(back_populates="advanced_analyses")
+    company_research: Mapped[CompanyResearchSnapshot | None] = relationship(back_populates="advanced_analyses")
 
 
 class ResumeProfile(TimestampMixin, Base):

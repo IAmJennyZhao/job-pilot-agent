@@ -1,10 +1,10 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, CheckCircle2, ExternalLink, FileText, Pencil, RefreshCw, Save, Sparkles, X } from "lucide-react";
+import { AlertCircle, CheckCircle2, ExternalLink, Pencil, RefreshCw, Save, Sparkles, X } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { Badge, PageHeader, Panel } from "@/components/ui/panel";
@@ -14,25 +14,43 @@ import {
   jobStatuses,
   remoteTypes,
   type AIReadiness,
+  type AdvancedJobAnalysis,
+  type CompanyResearch,
   type JobCategory,
   type JobCreatePayload,
   type JobDetail,
   type JobLinkInput,
   type JobStatus,
-  type RemoteType,
-  type ResumeSuggestion
+  type RemoteType
 } from "@/lib/types";
 import { csvToList, formatDate, listToCsv } from "@/lib/utils";
 
 type JobEditForm = Omit<JobCreatePayload, "source_content" | "extraction_confidence" | "extraction_warnings" | "status_note">;
 
 const linkKindLabels: Record<JobLinkInput["kind"], string> = {
-  source: "Source",
-  company_portal: "Company portal",
-  application_portal: "Application portal",
-  recruiter: "Recruiter",
+  source: "Job Posting",
+  company_portal: "Company Careers",
+  application_portal: "Application Portal",
+  recruiter: "Recruiter/Contact",
+  company_info: "Company Info",
   custom: "Custom"
 };
+
+const additionalLinkKinds: JobLinkInput["kind"][] = [
+  "application_portal",
+  "company_portal",
+  "recruiter",
+  "company_info",
+  "custom"
+];
+
+const advancedSteps = [
+  "Reading the posting",
+  "Researching the company",
+  "Summarizing employee sentiment",
+  "Comparing resume fit",
+  "Preparing interview signals"
+];
 
 export default function JobDetailPage() {
   const params = useParams<{ jobId: string }>();
@@ -51,6 +69,11 @@ export default function JobDetailPage() {
     queryFn: () => api.aiReadiness(jobId),
     enabled: Boolean(jobId)
   });
+  const { data: advancedResponse } = useQuery({
+    queryKey: ["advanced-analysis", jobId],
+    queryFn: () => api.advancedAnalysis(jobId),
+    enabled: Boolean(jobId)
+  });
 
   useEffect(() => {
     if (job) setForm(formFromJob(job));
@@ -62,6 +85,7 @@ export default function JobDetailPage() {
     queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     queryClient.invalidateQueries({ queryKey: ["skill-gaps"] });
     queryClient.invalidateQueries({ queryKey: ["ai-readiness", jobId] });
+    queryClient.invalidateQueries({ queryKey: ["advanced-analysis", jobId] });
   };
 
   const updateMutation = useMutation({
@@ -72,13 +96,8 @@ export default function JobDetailPage() {
     }
   });
 
-  const intelligenceMutation = useMutation({
-    mutationFn: () => api.runJobIntelligence(jobId),
-    onSuccess: invalidateJob
-  });
-
-  const suggestMutation = useMutation({
-    mutationFn: () => api.suggestResume(jobId),
+  const advancedMutation = useMutation({
+    mutationFn: (refreshCompany: boolean) => api.runAdvancedAnalysis(jobId, refreshCompany),
     onSuccess: invalidateJob
   });
 
@@ -87,8 +106,12 @@ export default function JobDetailPage() {
     setIsEditing(false);
   };
 
-  const latestSuggestion = job?.latest_resume_suggestion ?? null;
-  const showRetryResume = Boolean(job?.analysis && !latestSuggestion && readiness?.ready);
+  const advancedAnalysis = useMemo(
+    () => advancedMutation.data?.analysis ?? advancedResponse?.analysis ?? job?.latest_advanced_analysis ?? null,
+    [advancedMutation.data, advancedResponse, job]
+  );
+  const companyResearch = advancedMutation.data?.company_research ?? advancedResponse?.company_research ?? null;
+  const advancedErrors = advancedMutation.data?.errors ?? advancedResponse?.errors ?? advancedAnalysis?.errors ?? [];
 
   return (
     <div className="grid gap-6">
@@ -125,46 +148,41 @@ export default function JobDetailPage() {
                 error={updateMutation.error as Error | null}
               />
             ) : (
-              <div className="grid gap-5 xl:grid-cols-[1fr_360px]">
-                <div>
-                  <div className="flex flex-wrap gap-2">
-                    <Badge>{job.status}</Badge>
-                    <Badge>{job.category}</Badge>
-                    {job.location ? <Badge>{job.location}</Badge> : null}
-                    {job.remote_type ? <Badge>{job.remote_type}</Badge> : null}
-                    {job.fit_score !== null ? <Badge tone={job.fit_score >= 75 ? "good" : job.fit_score >= 50 ? "warn" : "bad"}>Fit {job.fit_score}</Badge> : null}
-                    {readiness?.model ? <Badge>{readiness.model}</Badge> : null}
-                  </div>
-                  {job.summary ? <p className="mt-4 text-sm leading-6 text-muted-foreground">{job.summary}</p> : null}
-                  {job.notes ? <p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{job.notes}</p> : null}
-                </div>
-                <JobIntelligenceControl
+              <div className="grid gap-5 xl:grid-cols-[1fr_380px]">
+                <JobOverview job={job} />
+                <AdvancedAnalysisControl
                   readiness={readiness}
                   readinessLoading={readinessLoading}
                   readinessError={readinessError as Error | null}
-                  isRunning={intelligenceMutation.isPending}
-                  onRun={() => intelligenceMutation.mutate()}
+                  isRunning={advancedMutation.isPending}
+                  savedAt={advancedAnalysis?.updated_at ?? null}
+                  onRun={() => advancedMutation.mutate(false)}
+                  onRefresh={() => advancedMutation.mutate(true)}
                 />
               </div>
             )}
-            {intelligenceMutation.data?.status === "partial" ? (
+            <ProcessSteps active={advancedMutation.isPending} steps={advancedSteps} />
+            {advancedMutation.data?.status === "partial" ? (
               <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-                {intelligenceMutation.data.errors.join(" ")}
+                {advancedMutation.data.errors.length
+                  ? advancedMutation.data.errors.join(" ")
+                  : "Advanced analysis completed with partial coverage."}
               </div>
             ) : null}
-            {intelligenceMutation.error ? <p className="mt-3 text-sm text-destructive">{(intelligenceMutation.error as Error).message}</p> : null}
-            {suggestMutation.error ? <p className="mt-3 text-sm text-destructive">{(suggestMutation.error as Error).message}</p> : null}
+            {advancedMutation.error ? <p className="mt-3 text-sm text-destructive">{(advancedMutation.error as Error).message}</p> : null}
           </Panel>
 
           {!isEditing ? (
             <>
               <div className="grid gap-4 xl:grid-cols-[1fr_0.8fr]">
                 <Panel>
-                  <h2 className="text-base font-semibold">Tracker Extraction</h2>
+                  <h2 className="text-base font-semibold">Tracker Summary</h2>
                   <div className="mt-4 grid gap-4 text-sm">
+                    {job.summary ? <p className="leading-6 text-muted-foreground">{job.summary}</p> : null}
                     <List title="Responsibilities" items={job.responsibilities} />
-                    <List title="Required Skills" items={job.required_skills} />
-                    {job.extraction_warnings.length ? <List title="Warnings" items={job.extraction_warnings} tone="warn" /> : null}
+                    <List title="Concise Skills" items={job.required_skills} />
+                    <List title="Benefits" items={job.benefits} />
+                    {job.extraction_warnings.length ? <List title="Extraction Warnings" items={job.extraction_warnings} tone="warn" /> : null}
                   </div>
                 </Panel>
                 <Panel>
@@ -184,65 +202,11 @@ export default function JobDetailPage() {
                 </Panel>
               </div>
 
-              <FitOverview suggestion={latestSuggestion} />
-
-              <div className="grid gap-4 xl:grid-cols-2">
-                <Panel>
-                  <div className="mb-4 flex items-center justify-between">
-                    <h2 className="text-base font-semibold">Deep Analysis</h2>
-                    {job.analysis ? <Badge tone="good">Saved</Badge> : <Badge>Not run</Badge>}
-                  </div>
-                  {job.analysis ? (
-                    <div className="grid gap-4 text-sm">
-                      <p className="leading-6 text-muted-foreground">{job.analysis.summary}</p>
-                      <List title="Responsibilities" items={job.analysis.responsibilities} />
-                      <List title="Required Skills" items={job.analysis.required_skills} />
-                      <List title="Preferred Skills" items={job.analysis.preferred_skills} />
-                      <List title="Technologies" items={job.analysis.technologies} />
-                      <List title="Interview Topics" items={job.analysis.interview_topics} />
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">Run intelligence when this application is worth deeper preparation.</p>
-                  )}
-                </Panel>
-
-                <Panel>
-                  <div className="mb-4 flex items-center justify-between gap-3">
-                    <h2 className="text-base font-semibold">Resume Match</h2>
-                    {latestSuggestion ? <Badge tone="good">Fit {latestSuggestion.fit_score}</Badge> : <Badge>Not run</Badge>}
-                  </div>
-                  {latestSuggestion ? (
-                    <div className="grid gap-4 text-sm">
-                      <List title="Matched Skills" items={latestSuggestion.matched_skills} />
-                      <List title="Missing Skills" items={latestSuggestion.missing_skills} />
-                      <List title="Weak Skills" items={latestSuggestion.weak_skills} />
-                      <List title="Keywords" items={latestSuggestion.keyword_suggestions} />
-                      <div>
-                        <h3 className="mb-2 font-medium">Bullet Suggestions</h3>
-                        <div className="grid gap-3">
-                          {latestSuggestion.bullet_suggestions.map((item, index) => (
-                            <div key={`${item.suggested}-${index}`} className="rounded-md border border-border bg-muted/40 p-3">
-                              <div className="text-xs text-muted-foreground">{item.original}</div>
-                              <div className="mt-2 font-medium">{item.suggested}</div>
-                              <div className="mt-1 text-xs text-muted-foreground">{item.reason}</div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="grid gap-3 text-sm text-muted-foreground">
-                      <p>Create an active profile, then run intelligence for this job.</p>
-                      {showRetryResume ? (
-                        <Button variant="secondary" size="sm" onClick={() => suggestMutation.mutate()} disabled={suggestMutation.isPending}>
-                          <FileText className="h-4 w-4" />
-                          {suggestMutation.isPending ? "Matching..." : "Retry resume match"}
-                        </Button>
-                      ) : null}
-                    </div>
-                  )}
-                </Panel>
-              </div>
+              <AdvancedAnalysisView
+                analysis={advancedAnalysis}
+                companyResearch={companyResearch}
+                errors={advancedErrors}
+              />
 
               <div className="grid gap-4 xl:grid-cols-[0.8fr_1.2fr]">
                 <Panel>
@@ -290,6 +254,12 @@ function formFromJob(job: JobDetail): JobEditForm {
     summary: job.summary,
     responsibilities: job.responsibilities,
     required_skills: job.required_skills,
+    pay_min: job.pay_min,
+    pay_max: job.pay_max,
+    pay_currency: job.pay_currency,
+    pay_period: job.pay_period,
+    pay_raw: job.pay_raw,
+    benefits: job.benefits,
     links: job.links.map((link) => ({ kind: link.kind, label: link.label, url: link.url })),
     status: job.status,
     notes: job.notes
@@ -305,9 +275,40 @@ function cleanForm(form: JobEditForm) {
     summary: form.summary?.trim() || null,
     responsibilities: form.responsibilities.map((item) => item.trim()).filter(Boolean),
     required_skills: form.required_skills.map((item) => item.trim()).filter(Boolean),
-    links: form.links.map((link) => ({ ...link, label: link.label.trim(), url: link.url.trim() })).filter((link) => link.url),
-    notes: form.notes?.trim() || null
+    benefits: (form.benefits ?? []).map((item) => item.trim()).filter(Boolean),
+    links: form.links
+      .map((link) => ({ ...link, label: link.label.trim() || linkKindLabels[link.kind], url: link.url.trim() }))
+      .filter((link) => link.url),
+    notes: form.notes?.trim() || null,
+    pay_currency: form.pay_currency?.trim() || null,
+    pay_raw: form.pay_raw?.trim() || null
   };
+}
+
+function JobOverview({ job }: { job: JobDetail }) {
+  const source = job.links.find((link) => link.kind === "source") ?? job.links[0];
+  return (
+    <div>
+      <div className="flex flex-wrap gap-2">
+        <Badge>{job.status}</Badge>
+        <Badge>{job.category}</Badge>
+        {job.extraction_confidence !== null ? <Badge tone={job.extraction_confidence >= 80 ? "good" : "warn"}>Confidence {job.extraction_confidence}</Badge> : null}
+      </div>
+      <div className="mt-5 grid gap-3 text-sm md:grid-cols-2">
+        <InfoRow label="Company" value={job.company} />
+        <InfoRow label="Role" value={job.role_title} />
+        <InfoRow label="Location" value={job.location || "Unknown"} />
+        <InfoRow label="Remote" value={job.remote_type || "Unknown"} />
+        <InfoRow label="Pay" value={formatPay(job)} />
+        <InfoRow
+          label="Job Posting"
+          value={source ? source.label || linkKindLabels[source.kind] : "Not saved"}
+          href={source?.url}
+        />
+      </div>
+      {job.notes ? <p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{job.notes}</p> : null}
+    </div>
+  );
 }
 
 function JobEditFormView({
@@ -327,10 +328,12 @@ function JobEditFormView({
 }) {
   const set = <K extends keyof JobEditForm>(key: K, value: JobEditForm[K]) => onChange({ ...form, [key]: value });
   const setLink = (index: number, patch: Partial<JobLinkInput>) => {
-    const links = form.links.map((link, currentIndex) => (currentIndex === index ? { ...link, ...patch } : link));
+    const nextPatch = patch.kind ? { ...patch, label: patch.label ?? linkKindLabels[patch.kind] } : patch;
+    const links = form.links.map((link, currentIndex) => (currentIndex === index ? { ...link, ...nextPatch } : link));
     onChange({ ...form, links });
   };
   const addLink = () => onChange({ ...form, links: [...form.links, { kind: "custom", label: "Custom", url: "" }] });
+  const removeLink = (index: number) => onChange({ ...form, links: form.links.filter((_link, currentIndex) => currentIndex !== index) });
 
   return (
     <form className="grid gap-4" onSubmit={(event) => { event.preventDefault(); onSubmit(); }}>
@@ -375,6 +378,32 @@ function JobEditFormView({
       <Field label="Summary">
         <Textarea value={form.summary ?? ""} onChange={(event) => set("summary", event.target.value)} />
       </Field>
+      <div className="grid gap-3 md:grid-cols-2">
+        <Field label="Pay minimum">
+          <Input type="number" value={form.pay_min ?? ""} onChange={(event) => set("pay_min", event.target.value ? Number(event.target.value) : null)} />
+        </Field>
+        <Field label="Pay maximum">
+          <Input type="number" value={form.pay_max ?? ""} onChange={(event) => set("pay_max", event.target.value ? Number(event.target.value) : null)} />
+        </Field>
+        <Field label="Pay currency">
+          <Input value={form.pay_currency ?? ""} onChange={(event) => set("pay_currency", event.target.value)} placeholder="USD" />
+        </Field>
+        <Field label="Pay period">
+          <Select value={form.pay_period ?? "unknown"} onChange={(event) => set("pay_period", event.target.value)}>
+            {["unknown", "hour", "day", "week", "month", "year", "contract"].map((period) => (
+              <option key={period} value={period}>
+                {period}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      </div>
+      <Field label="Raw pay text">
+        <Input value={form.pay_raw ?? ""} onChange={(event) => set("pay_raw", event.target.value)} />
+      </Field>
+      <Field label="Benefits">
+        <Textarea value={listToCsv(form.benefits ?? [])} onChange={(event) => set("benefits", csvToList(event.target.value))} />
+      </Field>
       <Field label="Responsibilities">
         <Textarea value={listToCsv(form.responsibilities)} onChange={(event) => set("responsibilities", csvToList(event.target.value))} />
       </Field>
@@ -392,16 +421,27 @@ function JobEditFormView({
           </Button>
         </div>
         {form.links.map((link, index) => (
-          <div key={`${link.kind}-${index}`} className="grid gap-2 md:grid-cols-[170px_1fr_1fr]">
-            <Select value={link.kind} onChange={(event) => setLink(index, { kind: event.target.value as JobLinkInput["kind"] })}>
-              {Object.entries(linkKindLabels).map(([kind, label]) => (
-                <option key={kind} value={kind}>
-                  {label}
-                </option>
-              ))}
-            </Select>
+          <div key={`${link.kind}-${index}`} className="grid gap-2 md:grid-cols-[170px_1fr_1fr_40px]">
+            {link.kind === "source" ? (
+              <Input value="Job Posting" disabled />
+            ) : (
+              <Select value={link.kind} onChange={(event) => setLink(index, { kind: event.target.value as JobLinkInput["kind"] })}>
+                {additionalLinkKinds.map((kind) => (
+                  <option key={kind} value={kind}>
+                    {linkKindLabels[kind]}
+                  </option>
+                ))}
+              </Select>
+            )}
             <Input value={link.label} onChange={(event) => setLink(index, { label: event.target.value })} />
             <Input value={link.url} onChange={(event) => setLink(index, { url: event.target.value })} placeholder="https://..." />
+            {link.kind !== "source" ? (
+              <Button variant="ghost" size="icon" onClick={() => removeLink(index)} title="Remove link">
+                <X className="h-4 w-4" />
+              </Button>
+            ) : (
+              <span />
+            )}
           </div>
         ))}
       </div>
@@ -420,106 +460,258 @@ function JobEditFormView({
   );
 }
 
-function JobIntelligenceControl({
+function AdvancedAnalysisControl({
   readiness,
   readinessLoading,
   readinessError,
   isRunning,
-  onRun
+  savedAt,
+  onRun,
+  onRefresh
 }: {
   readiness: AIReadiness | undefined;
   readinessLoading: boolean;
   readinessError: Error | null;
   isRunning: boolean;
+  savedAt: string | null;
   onRun: () => void;
+  onRefresh: () => void;
 }) {
-  const ready = Boolean(readiness?.ready);
+  const canRun = Boolean(readiness?.has_openai_api_key && readiness.has_openai_model);
+  const setupNotes = readiness
+    ? readiness.missing_requirements.filter((item) => item === "OPENAI_API_KEY" || item === "OPENAI_MODEL")
+    : [];
+  const skippedNotes = readiness
+    ? [
+        ...readiness.missing_requirements.filter((item) => item !== "OPENAI_API_KEY" && item !== "OPENAI_MODEL"),
+        ...(readiness.has_openai_research_model ? [] : ["OPENAI_RESEARCH_MODEL for company research"])
+      ]
+    : [];
+
   return (
     <div className="rounded-md border border-border bg-muted/40 p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="font-medium">Job Intelligence</div>
-        {ready ? <Badge tone="good">Ready</Badge> : <Badge tone="warn">Needs setup</Badge>}
+        <div className="font-medium">Advanced Detailed Analysis</div>
+        {canRun ? <Badge tone="good">Ready</Badge> : <Badge tone="warn">Needs setup</Badge>}
       </div>
       {readinessError ? <p className="text-sm text-destructive">{readinessError.message}</p> : null}
       {readinessLoading ? <p className="text-sm text-muted-foreground">Checking readiness...</p> : null}
-      {readiness && !readiness.ready ? (
+      {setupNotes.length ? (
         <div className="mb-3 grid gap-2 text-sm text-muted-foreground">
-          {readiness.missing_requirements.map((item) => (
+          {setupNotes.map((item) => (
             <div key={item} className="flex items-center gap-2">
               <AlertCircle className="h-4 w-4 text-amber-600" />
               {item}
             </div>
           ))}
-          {!readiness.has_profile || !readiness.has_resume_text || !readiness.has_skills ? (
+        </div>
+      ) : null}
+      {skippedNotes.length && canRun ? (
+        <div className="mb-3 grid gap-2 text-sm text-muted-foreground">
+          {skippedNotes.map((item) => (
+            <div key={item} className="flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 text-amber-600" />
+              {item} may be unavailable.
+            </div>
+          ))}
+          {!readiness?.has_profile || !readiness.has_resume_text || !readiness.has_skills ? (
             <Link href="/profile" className="font-medium text-primary">
               Open profile
             </Link>
           ) : null}
         </div>
       ) : null}
-      {readiness?.ready ? (
+      {readiness?.model ? (
         <div className="mb-3 flex items-center gap-2 text-sm text-muted-foreground">
           <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-          Model: {readiness.model}
+          Extraction model: {readiness.model}
         </div>
       ) : null}
-      <Button onClick={onRun} disabled={!ready || isRunning}>
-        <Sparkles className="h-4 w-4" />
-        {isRunning ? "Running..." : "Run intelligence"}
-      </Button>
+      {readiness?.research_model ? (
+        <div className="mb-3 text-sm text-muted-foreground">Research model: {readiness.research_model}</div>
+      ) : null}
+      {savedAt ? <div className="mb-3 text-xs text-muted-foreground">Last run {formatDate(savedAt)}</div> : null}
+      <div className="flex flex-wrap gap-2">
+        <Button onClick={onRun} disabled={!canRun || isRunning}>
+          <Sparkles className="h-4 w-4" />
+          {isRunning ? "Running..." : savedAt ? "Run again" : "Run analysis"}
+        </Button>
+        {savedAt ? (
+          <Button variant="secondary" onClick={onRefresh} disabled={!canRun || isRunning}>
+            <RefreshCw className="h-4 w-4" />
+            Refresh company research
+          </Button>
+        ) : null}
+      </div>
     </div>
   );
 }
 
-function FitOverview({ suggestion }: { suggestion: ResumeSuggestion | null }) {
-  if (!suggestion) {
+function AdvancedAnalysisView({
+  analysis,
+  companyResearch,
+  errors
+}: {
+  analysis: AdvancedJobAnalysis | null;
+  companyResearch: CompanyResearch | null;
+  errors: string[];
+}) {
+  if (!analysis) {
     return (
       <Panel>
         <div className="flex items-center justify-between gap-3">
-          <h2 className="text-base font-semibold">Fit Overview</h2>
+          <h2 className="text-base font-semibold">Advanced Detailed Analysis</h2>
           <Badge>Not run</Badge>
         </div>
-        <p className="mt-3 text-sm text-muted-foreground">Run intelligence to see fit score, matched skills, gaps, and resume actions.</p>
+        <p className="mt-3 text-sm text-muted-foreground">Run advanced analysis when this application needs deeper company, resume, and interview prep.</p>
       </Panel>
     );
   }
 
-  const firstAction = suggestion.bullet_suggestions[0]?.suggested ?? suggestion.keyword_suggestions[0] ?? suggestion.missing_skills[0] ?? "Review the resume match details below.";
+  const insights = analysis.job_insights;
+  const sentiment = analysis.company_sentiment ?? (companyResearch ? {
+    sentiment: companyResearch.sentiment,
+    summary: companyResearch.summary,
+    themes: companyResearch.themes,
+    source_links: companyResearch.source_links,
+    confidence: companyResearch.confidence,
+    coverage_note: companyResearch.coverage_note
+  } : null);
+  const sourceLinks = analysis.source_links.length ? analysis.source_links : sentiment?.source_links ?? [];
+
   return (
     <Panel>
-      <div className="grid gap-5 lg:grid-cols-[160px_1fr]">
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="text-sm font-medium text-muted-foreground">Fit Score</div>
-          <div className="mt-2 text-5xl font-semibold">{suggestion.fit_score}</div>
+          <h2 className="text-base font-semibold">Advanced Detailed Analysis</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Reusable company research plus job-specific prep signals.</p>
         </div>
-        <div className="grid gap-4">
-          <div>
-            <h2 className="text-base font-semibold">Next Resume Action</h2>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">{firstAction}</p>
-          </div>
-          <div className="grid gap-3 md:grid-cols-3">
-            <MiniList title="Matched" items={suggestion.matched_skills} tone="good" />
-            <MiniList title="Missing" items={suggestion.missing_skills} tone="warn" />
-            <MiniList title="Weak" items={suggestion.weak_skills} tone="bad" />
-          </div>
+        <Badge tone={analysis.status === "complete" ? "good" : "warn"}>{analysis.status}</Badge>
+      </div>
+
+      {errors.length ? (
+        <div className="mb-5 grid gap-1 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          {errors.map((error) => (
+            <div key={error}>{error}</div>
+          ))}
         </div>
+      ) : null}
+
+      <div className="grid gap-6 xl:grid-cols-2">
+        <Section title="Job And Role Insights" unavailable={!insights ? errorFor(errors, "Posting analysis failed") : null}>
+          {insights ? (
+            <div className="grid gap-4">
+              {insights.summary ? <p className="leading-6 text-muted-foreground">{insights.summary}</p> : null}
+              <List title="Role Focus" items={insights.role_focus ?? []} />
+              <List title="Responsibilities" items={insights.responsibilities ?? []} />
+              <List title="Must-Have Skills" items={insights.must_have_skills ?? []} />
+              <List title="Nice-To-Have Skills" items={insights.nice_to_have_skills ?? []} />
+              {insights.seniority_signal ? <InfoRow label="Seniority Signal" value={insights.seniority_signal} /> : null}
+              <List title="Concerns" items={insights.concerns ?? []} tone="warn" />
+            </div>
+          ) : null}
+        </Section>
+
+        <Section title="Company And Employee Sentiment" unavailable={!sentiment ? errorFor(errors, "Company research failed") : null}>
+          {sentiment ? (
+            <div className="grid gap-4">
+              <div className="flex flex-wrap gap-2">
+                {sentiment.sentiment ? <Badge>{sentiment.sentiment}</Badge> : null}
+                {typeof sentiment.confidence === "number" ? <Badge tone={sentiment.confidence >= 70 ? "good" : "warn"}>Confidence {sentiment.confidence}</Badge> : null}
+              </div>
+              {sentiment.summary ? <p className="leading-6 text-muted-foreground">{sentiment.summary}</p> : null}
+              <List title="Themes" items={sentiment.themes ?? []} />
+              {sentiment.coverage_note ? <p className="text-sm text-muted-foreground">{sentiment.coverage_note}</p> : null}
+              <SourceLinks links={sourceLinks} />
+            </div>
+          ) : null}
+        </Section>
+
+        <Section title="Resume Fit" unavailable={analysis.top_company_fit.length || analysis.resume_keywords.length || analysis.risks_gaps.length ? null : errorFor(errors, "Resume fit failed") ?? errorFor(errors, "Resume fit skipped")}>
+          <div className="grid gap-4">
+            <List title="Top Company Fit" items={analysis.top_company_fit} tone="good" />
+            <List title="Resume Keywords" items={analysis.resume_keywords} />
+            <List title="Risks And Gaps" items={analysis.risks_gaps} tone="warn" />
+          </div>
+        </Section>
+
+        <Section title="Expected Questions" unavailable={analysis.expected_questions.length ? null : errorFor(errors, "Interview prep failed")}>
+          <QuestionList questions={analysis.expected_questions} />
+        </Section>
       </div>
     </Panel>
   );
 }
 
-function MiniList({ title, items, tone }: { title: string; items: string[]; tone: "good" | "warn" | "bad" }) {
+function ProcessSteps({ active, steps }: { active: boolean; steps: string[] }) {
+  const [index, setIndex] = useState(0);
+
+  useEffect(() => {
+    if (!active) {
+      setIndex(0);
+      return;
+    }
+    const timer = window.setInterval(() => setIndex((current) => (current + 1) % steps.length), 1400);
+    return () => window.clearInterval(timer);
+  }, [active, steps.length]);
+
+  if (!active) return null;
+  return (
+    <div className="mt-4 rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
+      {steps[index]}
+    </div>
+  );
+}
+
+function Section({
+  title,
+  unavailable,
+  children
+}: {
+  title: string;
+  unavailable?: string | null;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-md border border-border bg-muted/30 p-4">
+      <h3 className="mb-3 text-sm font-semibold">{title}</h3>
+      {unavailable ? <p className="text-sm text-muted-foreground">Unavailable: {unavailable}</p> : children}
+    </div>
+  );
+}
+
+function SourceLinks({ links }: { links: Array<{ title?: string; url?: string }> }) {
+  if (!links.length) return null;
   return (
     <div>
-      <div className="mb-2 text-sm font-medium">{title}</div>
-      <div className="flex flex-wrap gap-2">
-        {items.slice(0, 4).map((item) => (
-          <Badge key={item} tone={tone}>
-            {item}
-          </Badge>
+      <h3 className="mb-2 font-medium">Sources</h3>
+      <div className="grid gap-2">
+        {links.map((link, index) => (
+          link.url ? (
+            <a key={`${link.url}-${index}`} href={link.url} target="_blank" rel="noreferrer" className="flex items-center justify-between gap-3 rounded-md border border-border bg-white px-3 py-2 text-sm">
+              <span>{link.title || link.url}</span>
+              <ExternalLink className="h-4 w-4 text-muted-foreground" />
+            </a>
+          ) : null
         ))}
-        {!items.length ? <span className="text-sm text-muted-foreground">None</span> : null}
       </div>
+    </div>
+  );
+}
+
+function QuestionList({ questions }: { questions: Array<{ question: string; type: string; why_it_matters: string }> }) {
+  if (!questions.length) return <p className="text-sm text-muted-foreground">No questions generated.</p>;
+  return (
+    <div className="grid gap-3">
+      {questions.map((question, index) => (
+        <div key={`${question.question}-${index}`} className="rounded-md border border-border bg-white p-3 text-sm">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge>{question.type}</Badge>
+            <span className="font-medium">{question.question}</span>
+          </div>
+          <p className="mt-2 text-muted-foreground">{question.why_it_matters}</p>
+        </div>
+      ))}
     </div>
   );
 }
@@ -539,4 +731,34 @@ function List({ title, items, tone = "neutral" }: { title: string; items: string
       )}
     </div>
   );
+}
+
+function InfoRow({ label, value, href }: { label: string; value: string; href?: string }) {
+  return (
+    <div className="rounded-md border border-border bg-white p-3">
+      <div className="text-xs font-medium uppercase text-muted-foreground">{label}</div>
+      {href ? (
+        <a href={href} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-2 font-medium text-primary">
+          {value}
+          <ExternalLink className="h-4 w-4" />
+        </a>
+      ) : (
+        <div className="mt-1 font-medium">{value}</div>
+      )}
+    </div>
+  );
+}
+
+function formatPay(job: { pay_min: number | null; pay_max: number | null; pay_currency: string | null; pay_period: string | null; pay_raw: string | null }) {
+  if (job.pay_raw) return job.pay_raw;
+  const currency = job.pay_currency ?? "USD";
+  const suffix = job.pay_period && job.pay_period !== "unknown" ? ` / ${job.pay_period}` : "";
+  if (job.pay_min !== null && job.pay_max !== null) return `${currency} ${job.pay_min.toLocaleString()}-${job.pay_max.toLocaleString()}${suffix}`;
+  if (job.pay_min !== null) return `${currency} ${job.pay_min.toLocaleString()}+${suffix}`;
+  if (job.pay_max !== null) return `Up to ${currency} ${job.pay_max.toLocaleString()}${suffix}`;
+  return "Not listed";
+}
+
+function errorFor(errors: string[], prefix: string) {
+  return errors.find((error) => error.startsWith(prefix)) ?? null;
 }

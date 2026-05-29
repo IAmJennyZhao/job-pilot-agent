@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, ExternalLink, FileText, Plus, Save, Search, Sparkles, X } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { Badge, PageHeader, Panel } from "@/components/ui/panel";
@@ -32,19 +32,32 @@ type ReviewState = JobCreatePayload & {
 };
 
 const linkKindLabels: Record<JobLinkInput["kind"], string> = {
-  source: "Source",
-  company_portal: "Company portal",
-  application_portal: "Application portal",
-  recruiter: "Recruiter",
+  source: "Job Posting",
+  company_portal: "Company Careers",
+  application_portal: "Application Portal",
+  recruiter: "Recruiter/Contact",
+  company_info: "Company Info",
   custom: "Custom"
 };
 
 const defaultLinks: JobLinkInput[] = [
-  { kind: "source", label: "Source", url: "" },
-  { kind: "company_portal", label: "Company portal", url: "" },
-  { kind: "application_portal", label: "Application portal", url: "" },
-  { kind: "recruiter", label: "Recruiter", url: "" },
-  { kind: "custom", label: "Custom", url: "" }
+  { kind: "source", label: "Job Posting", url: "" }
+];
+
+const additionalLinkKinds: JobLinkInput["kind"][] = [
+  "application_portal",
+  "company_portal",
+  "recruiter",
+  "company_info",
+  "custom"
+];
+
+const extractionSteps = [
+  "Reading the source material",
+  "Extracting company, role, location, and pay",
+  "Paraphrasing responsibilities and core skills",
+  "Checking for duplicate applications",
+  "Preparing editable review fields"
 ];
 
 export default function JobsPage() {
@@ -169,6 +182,7 @@ export default function JobsPage() {
                 Manual entry
               </Button>
             </div>
+            <ProcessSteps active={extractMutation.isPending} steps={extractionSteps} />
           </div>
 
           {review ? (
@@ -231,7 +245,7 @@ export default function JobsPage() {
           {error ? <p className="text-sm text-destructive">{(error as Error).message}</p> : null}
           {isLoading ? <p className="text-sm text-muted-foreground">Loading jobs...</p> : null}
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1180px] text-left text-sm">
+            <table className="w-full min-w-[1280px] text-left text-sm">
               <thead className="border-b border-border text-xs uppercase text-muted-foreground">
                 <tr>
                   <th className="py-2 pr-4">Company</th>
@@ -239,6 +253,7 @@ export default function JobsPage() {
                   <th className="py-2 pr-4">Category</th>
                   <th className="py-2 pr-4">Status</th>
                   <th className="py-2 pr-4">Location</th>
+                  <th className="py-2 pr-4">Pay</th>
                   <th className="py-2 pr-4">Source</th>
                   <th className="py-2 pr-4">Updated</th>
                   <th className="py-2 pr-4">Actions</th>
@@ -276,6 +291,12 @@ function reviewFromPreview(preview: JobExtractPreview): ReviewState {
     summary: preview.summary,
     responsibilities: preview.responsibilities,
     required_skills: preview.required_skills,
+    pay_min: preview.pay_min,
+    pay_max: preview.pay_max,
+    pay_currency: preview.pay_currency,
+    pay_period: preview.pay_period,
+    pay_raw: preview.pay_raw,
+    benefits: preview.benefits,
     source_content: preview.source_content,
     links: mergeLinks(preview.links, preview.source_url),
     status: "Saved",
@@ -297,6 +318,12 @@ function blankReview(intake: IntakeState): ReviewState {
     summary: "",
     responsibilities: [],
     required_skills: [],
+    pay_min: null,
+    pay_max: null,
+    pay_currency: null,
+    pay_period: "unknown",
+    pay_raw: null,
+    benefits: [],
     source_content: intake.source_content,
     links: mergeLinks([], intake.source_url || null),
     status: "Saved",
@@ -316,7 +343,7 @@ function mergeLinks(links: JobLinkInput[], sourceUrl: string | null): JobLinkInp
     else rows.push({ ...link });
   }
   if (sourceUrl && !rows.some((row) => row.url.trim().toLowerCase() === sourceUrl.trim().toLowerCase())) {
-    rows[0] = { kind: "source", label: "Source", url: sourceUrl };
+    rows[0] = { kind: "source", label: "Job Posting", url: sourceUrl };
   }
   return rows;
 }
@@ -326,7 +353,7 @@ function cleanReview(review: ReviewState, fallbackSourceUrl: string): JobCreateP
     .map((link) => ({ ...link, label: link.label.trim() || linkKindLabels[link.kind], url: link.url.trim() }))
     .filter((link) => link.url);
   if (fallbackSourceUrl && !links.some((link) => link.url.toLowerCase() === fallbackSourceUrl.trim().toLowerCase())) {
-    links.unshift({ kind: "source", label: "Source", url: fallbackSourceUrl.trim() });
+    links.unshift({ kind: "source", label: "Job Posting", url: fallbackSourceUrl.trim() });
   }
   return {
     company: review.company.trim(),
@@ -335,6 +362,12 @@ function cleanReview(review: ReviewState, fallbackSourceUrl: string): JobCreateP
     location: review.location?.trim() || null,
     remote_type: review.remote_type,
     summary: review.summary?.trim() || null,
+    pay_min: review.pay_min,
+    pay_max: review.pay_max,
+    pay_currency: review.pay_currency?.trim() || null,
+    pay_period: review.pay_period,
+    pay_raw: review.pay_raw?.trim() || null,
+    benefits: review.benefits ?? [],
     source_content: review.source_content,
     responsibilities: review.responsibilities.map((item) => item.trim()).filter(Boolean),
     required_skills: review.required_skills.map((item) => item.trim()).filter(Boolean),
@@ -358,8 +391,12 @@ function ReviewEditor({
 }) {
   const set = <K extends keyof ReviewState>(key: K, value: ReviewState[K]) => onChange({ ...review, [key]: value });
   const setLink = (index: number, patch: Partial<JobLinkInput>) => {
-    const links = review.links.map((link, currentIndex) => (currentIndex === index ? { ...link, ...patch } : link));
+    const nextPatch = patch.kind ? { ...patch, label: patch.label ?? linkKindLabels[patch.kind] } : patch;
+    const links = review.links.map((link, currentIndex) => (currentIndex === index ? { ...link, ...nextPatch } : link));
     onChange({ ...review, links });
+  };
+  const removeLink = (index: number) => {
+    onChange({ ...review, links: review.links.filter((_link, currentIndex) => currentIndex !== index) });
   };
 
   return (
@@ -421,6 +458,32 @@ function ReviewEditor({
       <Field label="Summary">
         <Textarea value={review.summary ?? ""} onChange={(event) => set("summary", event.target.value)} />
       </Field>
+      <div className="grid gap-3 md:grid-cols-2">
+        <Field label="Pay minimum">
+          <Input type="number" value={review.pay_min ?? ""} onChange={(event) => set("pay_min", event.target.value ? Number(event.target.value) : null)} />
+        </Field>
+        <Field label="Pay maximum">
+          <Input type="number" value={review.pay_max ?? ""} onChange={(event) => set("pay_max", event.target.value ? Number(event.target.value) : null)} />
+        </Field>
+        <Field label="Pay currency">
+          <Input value={review.pay_currency ?? ""} onChange={(event) => set("pay_currency", event.target.value)} placeholder="USD" />
+        </Field>
+        <Field label="Pay period">
+          <Select value={review.pay_period ?? "unknown"} onChange={(event) => set("pay_period", event.target.value)}>
+            {["unknown", "hour", "day", "week", "month", "year", "contract"].map((period) => (
+              <option key={period} value={period}>
+                {period}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      </div>
+      <Field label="Raw pay text">
+        <Input value={review.pay_raw ?? ""} onChange={(event) => set("pay_raw", event.target.value)} placeholder="$120k-$160k, equity, bonus..." />
+      </Field>
+      <Field label="Benefits">
+        <Textarea value={listToCsv(review.benefits ?? [])} onChange={(event) => set("benefits", csvToList(event.target.value))} />
+      </Field>
       <Field label="Main responsibilities">
         <Textarea value={listToCsv(review.responsibilities)} onChange={(event) => set("responsibilities", csvToList(event.target.value))} />
       </Field>
@@ -431,17 +494,38 @@ function ReviewEditor({
         <Textarea value={review.notes ?? ""} onChange={(event) => set("notes", event.target.value)} />
       </Field>
       <div className="grid gap-3">
-        <div className="text-sm font-medium">Links</div>
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-sm font-medium">Links</div>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => onChange({ ...review, links: [...review.links, { kind: "application_portal", label: "Application Portal", url: "" }] })}
+          >
+            Add link
+          </Button>
+        </div>
         {review.links.map((link, index) => (
-          <div key={`${link.kind}-${index}`} className="grid gap-2 sm:grid-cols-[150px_1fr]">
-            <Select value={link.kind} onChange={(event) => setLink(index, { kind: event.target.value as JobLinkInput["kind"] })}>
-              {Object.entries(linkKindLabels).map(([kind, label]) => (
-                <option key={kind} value={kind}>
-                  {label}
-                </option>
-              ))}
-            </Select>
+          <div key={`${link.kind}-${index}`} className="grid gap-2 sm:grid-cols-[170px_1fr_1fr_40px]">
+            {link.kind === "source" ? (
+              <Input value="Job Posting" disabled />
+            ) : (
+              <Select value={link.kind} onChange={(event) => setLink(index, { kind: event.target.value as JobLinkInput["kind"] })}>
+                {additionalLinkKinds.map((kind) => (
+                  <option key={kind} value={kind}>
+                    {linkKindLabels[kind]}
+                  </option>
+                ))}
+              </Select>
+            )}
+            <Input value={link.label} onChange={(event) => setLink(index, { label: event.target.value })} />
             <Input value={link.url} onChange={(event) => setLink(index, { url: event.target.value })} placeholder="https://..." />
+            {link.kind !== "source" ? (
+              <Button variant="ghost" size="icon" onClick={() => removeLink(index)} title="Remove link">
+                <X className="h-4 w-4" />
+              </Button>
+            ) : (
+              <span />
+            )}
           </div>
         ))}
       </div>
@@ -486,6 +570,7 @@ function JobRow({
         <div>{job.location || "Unknown"}</div>
         <div className="text-xs">{job.remote_type || "Unknown"}</div>
       </td>
+      <td className="py-3 pr-4 align-top text-muted-foreground">{formatPay(job)}</td>
       <td className="py-3 pr-4 align-top">
         {source ? (
           <a href={source.url} target="_blank" rel="noreferrer" title="Open source link">
@@ -536,6 +621,10 @@ function JobDrawer({ job, onClose }: { job: JobListItem; onClose: () => void }) 
           {job.extraction_confidence !== null ? <Badge tone="good">Confidence {job.extraction_confidence}</Badge> : null}
         </div>
         {job.summary ? <p className="mt-4 text-sm leading-6 text-muted-foreground">{job.summary}</p> : null}
+        <div className="mt-4 grid gap-3 rounded-md border border-border bg-muted/40 p-3 text-sm">
+          <InfoRow label="Location" value={[job.location, job.remote_type].filter(Boolean).join(" - ") || "Unknown"} />
+          <InfoRow label="Pay" value={formatPay(job)} />
+        </div>
         <DrawerList title="Responsibilities" items={job.responsibilities} />
         <DrawerList title="Required Skills" items={job.required_skills} />
         <div className="mt-5">
@@ -565,6 +654,45 @@ function JobDrawer({ job, onClose }: { job: JobListItem; onClose: () => void }) 
           </Button>
         </div>
       </aside>
+    </div>
+  );
+}
+
+function ProcessSteps({ active, steps }: { active: boolean; steps: string[] }) {
+  const [index, setIndex] = useState(0);
+
+  useEffect(() => {
+    if (!active) {
+      setIndex(0);
+      return;
+    }
+    const timer = window.setInterval(() => setIndex((current) => (current + 1) % steps.length), 1400);
+    return () => window.clearInterval(timer);
+  }, [active, steps.length]);
+
+  if (!active) return null;
+  return (
+    <div className="rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
+      {steps[index]}
+    </div>
+  );
+}
+
+function formatPay(job: { pay_min: number | null; pay_max: number | null; pay_currency: string | null; pay_period: string | null; pay_raw: string | null }) {
+  if (job.pay_raw) return job.pay_raw;
+  const currency = job.pay_currency ?? "USD";
+  const suffix = job.pay_period && job.pay_period !== "unknown" ? ` / ${job.pay_period}` : "";
+  if (job.pay_min !== null && job.pay_max !== null) return `${currency} ${job.pay_min.toLocaleString()}-${job.pay_max.toLocaleString()}${suffix}`;
+  if (job.pay_min !== null) return `${currency} ${job.pay_min.toLocaleString()}+${suffix}`;
+  if (job.pay_max !== null) return `Up to ${currency} ${job.pay_max.toLocaleString()}${suffix}`;
+  return "Not listed";
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-medium text-foreground">{value}</span>
     </div>
   );
 }

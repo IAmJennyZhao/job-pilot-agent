@@ -28,6 +28,12 @@ def upgrade() -> None:
         sa.Column("summary", sa.Text(), nullable=True),
         sa.Column("responsibilities", sa.JSON(), nullable=False),
         sa.Column("required_skills", sa.JSON(), nullable=False),
+        sa.Column("pay_min", sa.Integer(), nullable=True),
+        sa.Column("pay_max", sa.Integer(), nullable=True),
+        sa.Column("pay_currency", sa.String(length=16), nullable=True),
+        sa.Column("pay_period", sa.String(length=64), nullable=True),
+        sa.Column("pay_raw", sa.Text(), nullable=True),
+        sa.Column("benefits", sa.JSON(), nullable=False),
         sa.Column("source_content", sa.Text(), nullable=False),
         sa.Column("status", sa.String(length=32), nullable=False),
         sa.Column("notes", sa.Text(), nullable=True),
@@ -72,6 +78,48 @@ def upgrade() -> None:
     op.create_index("ix_job_status_events_job_id", "job_status_events", ["job_id"])
     op.create_index("ix_job_status_events_to_status", "job_status_events", ["to_status"])
     op.create_index("ix_job_status_events_changed_at", "job_status_events", ["changed_at"])
+
+    op.create_table(
+        "company_research_snapshots",
+        sa.Column("id", sa.String(length=36), nullable=False),
+        sa.Column("company_name", sa.String(length=255), nullable=False),
+        sa.Column("normalized_company_name", sa.String(length=255), nullable=False),
+        sa.Column("sentiment", sa.String(length=64), nullable=False),
+        sa.Column("summary", sa.Text(), nullable=False),
+        sa.Column("themes", sa.JSON(), nullable=False),
+        sa.Column("source_links", sa.JSON(), nullable=False),
+        sa.Column("confidence", sa.Integer(), nullable=True),
+        sa.Column("coverage_note", sa.Text(), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("normalized_company_name"),
+    )
+    op.create_index("ix_company_research_snapshots_normalized_company_name", "company_research_snapshots", ["normalized_company_name"])
+
+    op.create_table(
+        "advanced_job_analyses",
+        sa.Column("id", sa.String(length=36), nullable=False),
+        sa.Column("job_id", sa.String(length=36), nullable=False),
+        sa.Column("company_research_id", sa.String(length=36), nullable=True),
+        sa.Column("status", sa.String(length=32), nullable=False),
+        sa.Column("job_insights", sa.JSON(), nullable=True),
+        sa.Column("company_sentiment", sa.JSON(), nullable=True),
+        sa.Column("top_company_fit", sa.JSON(), nullable=False),
+        sa.Column("resume_keywords", sa.JSON(), nullable=False),
+        sa.Column("risks_gaps", sa.JSON(), nullable=False),
+        sa.Column("expected_questions", sa.JSON(), nullable=False),
+        sa.Column("source_links", sa.JSON(), nullable=False),
+        sa.Column("errors", sa.JSON(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.ForeignKeyConstraint(["job_id"], ["jobs.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["company_research_id"], ["company_research_snapshots.id"], ondelete="SET NULL"),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("job_id"),
+    )
+    op.create_index("ix_advanced_job_analyses_job_id", "advanced_job_analyses", ["job_id"])
+    op.create_index("ix_advanced_job_analyses_company_research_id", "advanced_job_analyses", ["company_research_id"])
 
     op.create_table(
         "resume_profiles",
@@ -187,6 +235,8 @@ def downgrade() -> None:
     op.drop_table("interview_sessions")
     op.drop_table("resume_suggestions")
     op.drop_table("job_analyses")
+    op.drop_table("advanced_job_analyses")
+    op.drop_table("company_research_snapshots")
     op.drop_table("job_status_events")
     op.drop_table("job_links")
     op.drop_table("resume_profiles")

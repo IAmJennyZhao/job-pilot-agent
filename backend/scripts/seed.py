@@ -74,6 +74,12 @@ def ensure_job(
     job.summary = payload.summary
     job.responsibilities = payload.responsibilities
     job.required_skills = payload.required_skills
+    job.pay_min = payload.pay_min
+    job.pay_max = payload.pay_max
+    job.pay_currency = payload.pay_currency
+    job.pay_period = payload.pay_period
+    job.pay_raw = payload.pay_raw
+    job.benefits = payload.benefits
     job.source_content = payload.source_content
     job.extraction_confidence = payload.extraction_confidence
     job.extraction_warnings = payload.extraction_warnings
@@ -197,10 +203,15 @@ def main() -> None:
                     "Ship customer-facing interfaces",
                 ],
                 required_skills=["Python", "FastAPI", "LLM APIs", "React"],
+                pay_min=130000,
+                pay_max=170000,
+                pay_currency="USD",
+                pay_period="year",
+                benefits=["Health insurance", "Remote work stipend", "Equity"],
                 links=[
                     {
                         "kind": models.JobLinkKind.source,
-                        "label": "Job post",
+                        "label": "Job Posting",
                         "url": "https://example.com/jobs/applied-ai-engineer",
                     }
                 ],
@@ -231,10 +242,12 @@ def main() -> None:
                     "Monitor production AI features",
                 ],
                 required_skills=["Python", "TypeScript", "Postgres", "Embeddings"],
+                pay_raw="$110k-$145k base plus annual bonus",
+                benefits=["Medical benefits", "401k match", "Hybrid work"],
                 links=[
                     {
                         "kind": models.JobLinkKind.source,
-                        "label": "Job post",
+                        "label": "Job Posting",
                         "url": "https://example.com/jobs/genai-engineer",
                     }
                 ],
@@ -263,10 +276,15 @@ def main() -> None:
                     "Prepare production observability",
                 ],
                 required_skills=["Python", "TypeScript", "FastAPI", "React", "System design"],
+                pay_min=150000,
+                pay_max=190000,
+                pay_currency="USD",
+                pay_period="year",
+                benefits=["Flexible PTO", "Health insurance", "Learning budget"],
                 links=[
                     {
                         "kind": models.JobLinkKind.source,
-                        "label": "Job post",
+                        "label": "Job Posting",
                         "url": "https://example.com/jobs/ai-software-engineer",
                     }
                 ],
@@ -297,10 +315,12 @@ def main() -> None:
                     "Support deployment pipelines",
                 ],
                 required_skills=["Backend services", "Internal APIs", "Deployment pipelines"],
+                pay_raw="Compensation not listed",
+                benefits=[],
                 links=[
                     {
                         "kind": models.JobLinkKind.source,
-                        "label": "Job post",
+                        "label": "Job Posting",
                         "url": "https://example.com/jobs/backend-platform-engineer",
                     }
                 ],

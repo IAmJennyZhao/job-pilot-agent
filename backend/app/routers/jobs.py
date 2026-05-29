@@ -41,7 +41,10 @@ def get_job(job_id: str, db: Session = Depends(get_db)):
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
     return schemas.JobDetail.model_validate(job).model_copy(
-        update={"latest_resume_suggestion": job_service.latest_resume_suggestion(db, job_id)}
+        update={
+            "latest_resume_suggestion": job_service.latest_resume_suggestion(db, job_id),
+            "latest_advanced_analysis": job_service.latest_advanced_analysis(db, job_id),
+        }
     )
 
 

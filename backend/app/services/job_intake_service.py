@@ -73,20 +73,15 @@ def _ensure_source_link(
     links: list[schemas.JobLinkBase],
     source_url: str | None,
 ) -> list[schemas.JobLinkBase]:
-    output = list(links)
     if not source_url:
-        return output
-    normalized = source_url.strip().casefold()
-    if not any(str(link.url).strip().casefold() == normalized for link in output):
-        output.insert(
-            0,
-            schemas.JobLinkBase(
-                kind=models.JobLinkKind.source,
-                label="Source",
-                url=source_url,
-            ),
+        return []
+    return [
+        schemas.JobLinkBase(
+            kind=models.JobLinkKind.source,
+            label="Job Posting",
+            url=source_url,
         )
-    return output
+    ]
 
 
 def extract_preview(

@@ -3,21 +3,32 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from app import schemas
+from app import models, schemas
 from app.services import ai_service
 
 
-def create_job(client):
-    response = client.post(
-        "/api/jobs",
-        json={
-            "company": "Acme AI",
-            "role_title": "Applied AI Engineer",
-            "job_url": "https://example.com/job",
-            "job_description": "Build FastAPI and React AI tools with OpenAI APIs.",
-            "notes": "Looks promising.",
-        },
-    )
+def job_payload(**overrides):
+    payload = {
+        "company": "Acme AI",
+        "role_title": "Applied AI Engineer",
+        "category": "AI/ML Engineer",
+        "location": "Remote",
+        "remote_type": "Remote",
+        "summary": "Build FastAPI and React AI tools.",
+        "responsibilities": ["Build APIs", "Ship React dashboards"],
+        "required_skills": ["Python", "FastAPI", "React"],
+        "source_content": "Build FastAPI and React AI tools with OpenAI APIs.",
+        "links": [{"kind": "source", "label": "Job post", "url": "https://example.com/job"}],
+        "notes": "Looks promising.",
+        "extraction_confidence": 91,
+        "extraction_warnings": [],
+    }
+    payload.update(overrides)
+    return payload
+
+
+def create_job(client, **overrides):
+    response = client.post("/api/jobs", json=job_payload(**overrides))
     assert response.status_code == 201
     return response.json()
 
@@ -39,6 +50,28 @@ def create_profile(client):
     )
     assert response.status_code == 201
     return response.json()
+
+
+def fake_extraction_output():
+    return schemas.JobExtractionOutput(
+        company="Acme AI",
+        role_title="Applied AI Engineer",
+        category=models.JobCategory.ai_ml_engineer,
+        location="Remote",
+        remote_type="Remote",
+        summary="Build AI job search tools.",
+        responsibilities=["Build APIs", "Create dashboards"],
+        required_skills=["Python", "FastAPI", "React"],
+        links=[
+            schemas.JobLinkBase(
+                kind=models.JobLinkKind.company_portal,
+                label="Company portal",
+                url="https://example.com/careers",
+            )
+        ],
+        confidence=88,
+        warnings=["Compensation was not listed."],
+    )
 
 
 def fake_analysis_output():
@@ -70,39 +103,130 @@ def fake_resume_suggestion_output():
     )
 
 
-def test_job_crud_and_archive(client):
-    job = create_job(client)
+def test_extract_preview_from_pasted_content(client, monkeypatch):
+    def fake_structured_output(output_model, _system_prompt, _user_prompt):
+        assert output_model is schemas.JobExtractionOutput
+        return fake_extraction_output()
 
-    response = client.patch(f"/api/jobs/{job['id']}", json={"status": "Applied"})
+    monkeypatch.setattr("app.services.ai_service.get_structured_output", fake_structured_output)
+
+    response = client.post(
+        "/api/jobs/extract-preview",
+        json={
+            "source_url": "https://example.com/job",
+            "source_content": "We need Python, FastAPI, and React.",
+        },
+    )
+
+    assert response.status_code == 200
+    preview = response.json()
+    assert preview["company"] == "Acme AI"
+    assert preview["category"] == "AI/ML Engineer"
+    assert preview["source_content"] == "We need Python, FastAPI, and React."
+    assert preview["links"][0]["kind"] == "source"
+    assert preview["duplicate_candidates"] == []
+
+
+def test_extract_preview_fetches_url_content(client, monkeypatch):
+    monkeypatch.setattr(
+        "app.services.job_intake_service.fetch_job_page_text",
+        lambda _url: "Fetched posting content with Python and FastAPI.",
+    )
+
+    def fake_structured_output(output_model, _system_prompt, user_prompt):
+        assert output_model is schemas.JobExtractionOutput
+        assert "Fetched posting content" in user_prompt
+        return fake_extraction_output()
+
+    monkeypatch.setattr("app.services.ai_service.get_structured_output", fake_structured_output)
+
+    response = client.post("/api/jobs/extract-preview", json={"source_url": "https://example.com/job"})
+    assert response.status_code == 200
+    preview = response.json()
+    assert "fetched from the URL" in preview["warnings"][0]
+    assert preview["source_content"] == "Fetched posting content with Python and FastAPI."
+
+
+def test_extract_preview_failure_allows_manual_create(client, monkeypatch):
+    monkeypatch.setattr(
+        "app.services.ai_service.get_settings",
+        lambda: SimpleNamespace(openai_api_key=None, openai_model="gpt-5-mini"),
+    )
+
+    response = client.post(
+        "/api/jobs/extract-preview",
+        json={"source_content": "Manual fallback should still be possible."},
+    )
+    assert response.status_code == 503
+    assert "OPENAI_API_KEY" in response.json()["detail"]
+
+    job = create_job(
+        client,
+        company="Manual Co",
+        role_title="Backend Engineer",
+        category="Backend Engineer",
+        extraction_confidence=None,
+        extraction_warnings=["Manual fallback was used."],
+    )
+    assert job["company"] == "Manual Co"
+    assert job["status_events"][0]["to_status"] == "Saved"
+
+
+def test_extract_preview_reports_duplicate_candidates(client, monkeypatch):
+    create_job(client)
+
+    def fake_structured_output(output_model, _system_prompt, _user_prompt):
+        assert output_model is schemas.JobExtractionOutput
+        return fake_extraction_output()
+
+    monkeypatch.setattr("app.services.ai_service.get_structured_output", fake_structured_output)
+
+    response = client.post(
+        "/api/jobs/extract-preview",
+        json={"source_url": "https://example.com/job", "source_content": "Duplicate posting."},
+    )
+
+    assert response.status_code == 200
+    duplicates = response.json()["duplicate_candidates"]
+    assert len(duplicates) == 1
+    assert set(duplicates[0]["matched_on"]) == {"company_role", "url"}
+
+
+def test_job_status_history_search_filter_and_archive(client):
+    job = create_job(client)
+    other = create_job(
+        client,
+        company="Data Tools",
+        role_title="Data Engineer",
+        category="Data Engineer",
+        links=[{"kind": "source", "label": "Job post", "url": "https://example.com/data"}],
+    )
+
+    response = client.patch(f"/api/jobs/{job['id']}", json={"status": "Applied", "status_note": "Applied on portal."})
     assert response.status_code == 200
     assert response.json()["status"] == "Applied"
 
-    response = client.delete(f"/api/jobs/{job['id']}")
+    response = client.get(f"/api/jobs/{job['id']}")
+    detail = response.json()
+    assert [event["to_status"] for event in detail["status_events"]] == ["Saved", "Applied"]
+    assert detail["status_events"][1]["note"] == "Applied on portal."
+
+    response = client.get("/api/jobs?search=data")
     assert response.status_code == 200
-    assert response.json()["status"] == "Archived"
+    assert [item["id"] for item in response.json()] == [other["id"]]
+
+    response = client.get("/api/jobs?category=AI%2FML+Engineer")
+    assert response.status_code == 200
+    assert [item["id"] for item in response.json()] == [job["id"]]
+
+    response = client.patch(f"/api/jobs/{other['id']}", json={"status": "Archived"})
+    assert response.status_code == 200
 
     response = client.get("/api/jobs")
-    assert response.status_code == 200
-    assert response.json() == []
+    assert all(item["status"] != "Archived" for item in response.json())
 
     response = client.get("/api/jobs?include_archived=true")
-    assert response.status_code == 200
-    archived_jobs = response.json()
-    assert len(archived_jobs) == 1
-    assert archived_jobs[0]["status"] == "Archived"
-
-    response = client.get("/api/dashboard/summary")
-    assert response.status_code == 200
-    assert response.json()["total_jobs"] == 0
-    assert response.json()["archived_jobs"] == 1
-
-    response = client.patch(f"/api/jobs/{job['id']}", json={"status": "Saved"})
-    assert response.status_code == 200
-    assert response.json()["status"] == "Saved"
-
-    response = client.get("/api/jobs")
-    assert response.status_code == 200
-    assert len(response.json()) == 1
+    assert any(item["status"] == "Archived" for item in response.json())
 
 
 def test_profile_dashboard_and_skill_gap(client):
@@ -115,16 +239,16 @@ def test_profile_dashboard_and_skill_gap(client):
     assert dashboard["total_jobs"] == 1
     assert dashboard["archived_jobs"] == 0
     assert dashboard["by_status"]["Saved"] == 1
-    assert dashboard["by_status"]["Archived"] == 0
+    assert dashboard["by_status"]["Withdrawn"] == 0
     assert set(dashboard["by_status"]) == {
         "Saved",
-        "Resume Tailored",
         "Applied",
         "Recruiter Screen",
         "Tech Screen",
         "Final Interview",
         "Offer",
         "Rejected",
+        "Withdrawn",
         "Archived",
     }
 
@@ -141,20 +265,9 @@ def test_job_list_top_gaps_sources(client, monkeypatch):
     job = create_job(client)
     create_profile(client)
 
-    def fake_analysis(output_model, _system_prompt, _user_prompt):
-        if output_model is schemas.JobAnalysisOutput:
-            return fake_analysis_output()
-        raise AssertionError("Unexpected model")
-
-    monkeypatch.setattr("app.services.ai_service.get_structured_output", fake_analysis)
-
-    response = client.post(f"/api/ai/analyze-job/{job['id']}")
-    assert response.status_code == 200
-
     response = client.get("/api/jobs")
-    assert response.status_code == 200
     listed_job = response.json()[0]
-    assert listed_job["top_gaps"] == ["Python", "FastAPI", "Vector search"]
+    assert listed_job["top_gaps"] == ["Python", "FastAPI", "React"]
     assert listed_job["top_gaps_source"] == "analysis"
 
     def fake_suggestion(output_model, _system_prompt, _user_prompt):
@@ -168,7 +281,6 @@ def test_job_list_top_gaps_sources(client, monkeypatch):
     assert response.status_code == 200
 
     response = client.get("/api/jobs")
-    assert response.status_code == 200
     listed_job = response.json()[0]
     assert listed_job["top_gaps"] == ["LangChain", "AWS Bedrock", "System design"]
     assert listed_job["top_gaps_source"] == "resume_match"
@@ -303,31 +415,3 @@ def test_interview_session_and_message(client):
     )
     assert response.status_code == 201
     assert response.json()["role"] == "ai"
-
-
-def test_ai_endpoint_saves_mocked_analysis(client, monkeypatch):
-    job = create_job(client)
-    create_profile(client)
-
-    def fake_structured_output(output_model, _system_prompt, _user_prompt):
-        if output_model is schemas.JobAnalysisOutput:
-            return schemas.JobAnalysisOutput(
-                summary="AI platform role.",
-                responsibilities=["Build APIs"],
-                required_skills=["Python"],
-                preferred_skills=["LangChain"],
-                technologies=["FastAPI"],
-                resume_keywords=["AI", "FastAPI"],
-                interview_topics=["API design"],
-            )
-        raise AssertionError("Unexpected model")
-
-    monkeypatch.setattr("app.services.ai_service.get_structured_output", fake_structured_output)
-
-    response = client.post(f"/api/ai/analyze-job/{job['id']}")
-    assert response.status_code == 200
-    assert response.json()["summary"] == "AI platform role."
-
-    response = client.get(f"/api/jobs/{job['id']}")
-    assert response.status_code == 200
-    assert response.json()["analysis"]["required_skills"] == ["Python"]

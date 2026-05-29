@@ -18,25 +18,104 @@ def _unique_nonempty(values: list[str]) -> list[str]:
     return output
 
 
+def _normalize_link_url(url: str) -> str:
+    return url.strip()
+
+
+def _replace_links(db: Session, job: models.Job, links: list[schemas.JobLinkCreate]) -> None:
+    job.links.clear()
+    db.flush()
+    seen: set[tuple[str, str]] = set()
+    for link in links:
+        url = _normalize_link_url(str(link.url))
+        key = (link.kind.value, url.casefold())
+        if not url or key in seen:
+            continue
+        seen.add(key)
+        job.links.append(
+            models.JobLink(
+                kind=link.kind,
+                label=link.label.strip(),
+                url=url,
+            )
+        )
+
+
+def _status_event(
+    job: models.Job,
+    from_status: models.JobStatus | None,
+    to_status: models.JobStatus,
+    note: str | None = None,
+) -> models.JobStatusEvent:
+    return models.JobStatusEvent(
+        job=job,
+        from_status=from_status,
+        to_status=to_status,
+        note=note,
+    )
+
+
 def save_job(db: Session, payload: schemas.JobCreate) -> models.Job:
     job = models.Job(
         company=payload.company,
         role_title=payload.role_title,
-        job_url=str(payload.job_url) if payload.job_url else None,
-        job_description=payload.job_description,
+        category=payload.category,
+        location=payload.location,
+        remote_type=payload.remote_type,
+        summary=payload.summary,
+        responsibilities=payload.responsibilities,
+        required_skills=payload.required_skills,
+        source_content=payload.source_content,
+        status=payload.status,
         notes=payload.notes,
+        extraction_confidence=payload.extraction_confidence,
+        extraction_warnings=payload.extraction_warnings,
     )
     db.add(job)
+    db.flush()
+    _replace_links(db, job, payload.links)
+    db.add(_status_event(job, None, payload.status, payload.status_note))
     db.commit()
     db.refresh(job)
     return job
 
 
-def list_jobs(db: Session, include_archived: bool = False) -> list[models.Job]:
+def _matches_search(job: models.Job, search: str) -> bool:
+    query = search.casefold().strip()
+    if not query:
+        return True
+    values = [
+        job.company,
+        job.role_title,
+        job.category.value,
+        job.status.value,
+        job.notes or "",
+        job.location or "",
+        job.remote_type or "",
+    ]
+    values.extend(link.url for link in job.links)
+    values.extend(link.label for link in job.links)
+    return any(query in value.casefold() for value in values)
+
+
+def list_jobs(
+    db: Session,
+    include_archived: bool = False,
+    search: str | None = None,
+    status: models.JobStatus | None = None,
+    category: models.JobCategory | None = None,
+) -> list[models.Job]:
     statement = select(models.Job).order_by(models.Job.updated_at.desc())
     if not include_archived:
         statement = statement.where(models.Job.status != models.JobStatus.archived)
-    return list(db.scalars(statement).all())
+    if status:
+        statement = statement.where(models.Job.status == status)
+    if category:
+        statement = statement.where(models.Job.category == category)
+    jobs = list(db.scalars(statement).all())
+    if search:
+        jobs = [job for job in jobs if _matches_search(job, search)]
+    return jobs
 
 
 def top_gaps_for_job(db: Session, job: models.Job) -> tuple[list[str], str | None]:
@@ -49,6 +128,10 @@ def top_gaps_for_job(db: Session, job: models.Job) -> tuple[list[str], str | Non
         gaps = _unique_nonempty([*job.analysis.required_skills, *job.analysis.technologies])
         if gaps:
             return gaps[:MAX_TOP_GAPS], "analysis"
+
+    gaps = _unique_nonempty([*job.required_skills])
+    if gaps:
+        return gaps[:MAX_TOP_GAPS], "analysis"
 
     return [], None
 
@@ -63,10 +146,22 @@ def to_job_list_item(db: Session, job: models.Job) -> schemas.JobListItem:
     )
 
 
-def list_job_items(db: Session, include_archived: bool = False) -> list[schemas.JobListItem]:
+def list_job_items(
+    db: Session,
+    include_archived: bool = False,
+    search: str | None = None,
+    status: models.JobStatus | None = None,
+    category: models.JobCategory | None = None,
+) -> list[schemas.JobListItem]:
     return [
         to_job_list_item(db, job)
-        for job in list_jobs(db, include_archived=include_archived)
+        for job in list_jobs(
+            db,
+            include_archived=include_archived,
+            search=search,
+            status=status,
+            category=category,
+        )
     ]
 
 
@@ -76,10 +171,15 @@ def get_job(db: Session, job_id: str) -> models.Job | None:
 
 def update_job(db: Session, job: models.Job, payload: schemas.JobUpdate) -> models.Job:
     values = payload.model_dump(exclude_unset=True)
-    if "job_url" in values and values["job_url"] is not None:
-        values["job_url"] = str(values["job_url"])
+    links = values.pop("links", None)
+    status_note = values.pop("status_note", None)
+    old_status = job.status
     for key, value in values.items():
         setattr(job, key, value)
+    if links is not None:
+        _replace_links(db, job, [schemas.JobLinkCreate(**link) for link in links])
+    if "status" in values and old_status != job.status:
+        db.add(_status_event(job, old_status, job.status, status_note))
     db.add(job)
     db.commit()
     db.refresh(job)
@@ -92,9 +192,12 @@ def update_application_status(
     status: models.JobStatus,
     notes: str | None = None,
 ) -> models.Job:
+    old_status = job.status
     job.status = status
     if notes is not None:
         job.notes = notes
+    if old_status != status:
+        db.add(_status_event(job, old_status, status, notes))
     db.add(job)
     db.commit()
     db.refresh(job)
@@ -115,3 +218,35 @@ def latest_resume_suggestion(
         .order_by(models.ResumeSuggestion.created_at.desc())
         .limit(1)
     ).first()
+
+
+def find_duplicate_candidates(
+    db: Session,
+    company: str,
+    role_title: str,
+    urls: list[str],
+) -> list[schemas.JobDuplicateCandidate]:
+    normalized_urls = {url.strip().casefold() for url in urls if url and url.strip()}
+    candidates: dict[str, schemas.JobDuplicateCandidate] = {}
+
+    for job in db.scalars(select(models.Job)).all():
+        matched_on: list[str] = []
+        if company.strip() and role_title.strip():
+            same_company = job.company.strip().casefold() == company.strip().casefold()
+            same_role = job.role_title.strip().casefold() == role_title.strip().casefold()
+            if same_company and same_role:
+                matched_on.append("company_role")
+        if normalized_urls:
+            job_urls = {link.url.strip().casefold() for link in job.links}
+            if job_urls.intersection(normalized_urls):
+                matched_on.append("url")
+        if matched_on:
+            candidates[job.id] = schemas.JobDuplicateCandidate(
+                id=job.id,
+                company=job.company,
+                role_title=job.role_title,
+                status=job.status,
+                matched_on=matched_on,
+            )
+
+    return list(candidates.values())

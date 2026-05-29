@@ -1,51 +1,88 @@
 "use client";
 
-import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, ExternalLink, Plus, Save } from "lucide-react";
+import { Archive, ExternalLink, FileText, Plus, Save, Search, Sparkles, X } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
-import { useForm } from "react-hook-form";
-import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { Badge, PageHeader, Panel } from "@/components/ui/panel";
 import { api } from "@/lib/api";
-import { jobStatuses, type JobListItem, type JobStatus } from "@/lib/types";
-import { formatDate } from "@/lib/utils";
+import {
+  jobCategories,
+  jobStatuses,
+  remoteTypes,
+  type JobCategory,
+  type JobCreatePayload,
+  type JobExtractPreview,
+  type JobLinkInput,
+  type JobListItem,
+  type JobStatus,
+  type RemoteType
+} from "@/lib/types";
+import { csvToList, formatDate, listToCsv } from "@/lib/utils";
 
-const jobSchema = z.object({
-  company: z.string().min(1),
-  role_title: z.string().min(1),
-  job_url: z.string().url().or(z.literal("")).optional(),
-  job_description: z.string().min(1),
-  notes: z.string().optional()
-});
+type IntakeState = {
+  source_url: string;
+  source_content: string;
+};
 
-type JobForm = z.infer<typeof jobSchema>;
+type ReviewState = JobCreatePayload & {
+  duplicateCount: number;
+};
+
+const linkKindLabels: Record<JobLinkInput["kind"], string> = {
+  source: "Source",
+  company_portal: "Company portal",
+  application_portal: "Application portal",
+  recruiter: "Recruiter",
+  custom: "Custom"
+};
+
+const defaultLinks: JobLinkInput[] = [
+  { kind: "source", label: "Source", url: "" },
+  { kind: "company_portal", label: "Company portal", url: "" },
+  { kind: "application_portal", label: "Application portal", url: "" },
+  { kind: "recruiter", label: "Recruiter", url: "" },
+  { kind: "custom", label: "Custom", url: "" }
+];
 
 export default function JobsPage() {
   const queryClient = useQueryClient();
   const [showArchived, setShowArchived] = useState(false);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<JobStatus | "">("");
+  const [categoryFilter, setCategoryFilter] = useState<JobCategory | "">("");
+  const [selectedJob, setSelectedJob] = useState<JobListItem | null>(null);
+  const [intake, setIntake] = useState<IntakeState>({ source_url: "", source_content: "" });
+  const [preview, setPreview] = useState<JobExtractPreview | null>(null);
+  const [review, setReview] = useState<ReviewState | null>(null);
+
   const { data: jobs = [], isLoading, error } = useQuery({
-    queryKey: ["jobs", showArchived],
-    queryFn: () => api.jobs(showArchived)
+    queryKey: ["jobs", showArchived, search, statusFilter, categoryFilter],
+    queryFn: () =>
+      api.jobs({
+        includeArchived: showArchived || statusFilter === "Archived",
+        search: search.trim() || undefined,
+        status: statusFilter,
+        category: categoryFilter
+      })
   });
-  const form = useForm<JobForm>({
-    resolver: zodResolver(jobSchema),
-    defaultValues: {
-      company: "",
-      role_title: "",
-      job_url: "",
-      job_description: "",
-      notes: ""
+
+  const extractMutation = useMutation({
+    mutationFn: api.extractJobPreview,
+    onSuccess: (data) => {
+      setPreview(data);
+      setReview(reviewFromPreview(data));
     }
   });
 
   const createMutation = useMutation({
     mutationFn: api.createJob,
     onSuccess: () => {
-      form.reset();
+      setIntake({ source_url: "", source_content: "" });
+      setPreview(null);
+      setReview(null);
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     }
@@ -60,88 +97,150 @@ export default function JobsPage() {
   });
 
   const archiveMutation = useMutation({
-    mutationFn: api.archiveJob,
+    mutationFn: (id: string) => api.updateJob(id, { status: "Archived" }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     }
   });
 
-  const onSubmit = (values: JobForm) => {
-    createMutation.mutate({
-      ...values,
-      job_url: values.job_url || null,
-      notes: values.notes || null
-    });
+  const startManualFallback = () => {
+    setPreview(null);
+    setReview(blankReview(intake));
+  };
+
+  const saveReview = () => {
+    if (!review) return;
+    createMutation.mutate(cleanReview(review, intake.source_url));
   };
 
   return (
     <div className="grid gap-6">
       <PageHeader
         title="Job Tracker"
-        description="Save job descriptions, track status, and keep notes ready for AI analysis."
+        description="Extract a job from a posting, review it, then manage the application pipeline from a searchable tracker."
       />
 
-      <div className="grid gap-4 xl:grid-cols-[420px_1fr]">
+      <div className="grid gap-4 xl:grid-cols-[430px_1fr]">
         <Panel>
           <div className="mb-4 flex items-center gap-2">
             <Plus className="h-4 w-4 text-primary" />
             <h2 className="text-base font-semibold">Add Job</h2>
           </div>
-          <form className="grid gap-4" onSubmit={form.handleSubmit(onSubmit)}>
-            <Field label="Company" error={form.formState.errors.company?.message}>
-              <Input {...form.register("company")} />
+
+          <div className="grid gap-4">
+            <Field label="Job URL">
+              <Input
+                value={intake.source_url}
+                onChange={(event) => setIntake((current) => ({ ...current, source_url: event.target.value }))}
+                placeholder="https://..."
+              />
             </Field>
-            <Field label="Role title" error={form.formState.errors.role_title?.message}>
-              <Input {...form.register("role_title")} />
+            <Field label="Pasted page content">
+              <Textarea
+                value={intake.source_content}
+                onChange={(event) => setIntake((current) => ({ ...current, source_content: event.target.value }))}
+                className="min-h-44"
+                placeholder="Paste the job description or full job page text."
+              />
             </Field>
-            <Field label="Job URL" error={form.formState.errors.job_url?.message}>
-              <Input {...form.register("job_url")} placeholder="https://..." />
-            </Field>
-            <Field label="Job description" error={form.formState.errors.job_description?.message}>
-              <Textarea {...form.register("job_description")} className="min-h-44" />
-            </Field>
-            <Field label="Notes">
-              <Textarea {...form.register("notes")} />
-            </Field>
-            {createMutation.error ? <p className="text-sm text-destructive">{(createMutation.error as Error).message}</p> : null}
-            <Button type="submit" disabled={createMutation.isPending}>
-              <Save className="h-4 w-4" />
-              {createMutation.isPending ? "Saving..." : "Save job"}
-            </Button>
-          </form>
+            {extractMutation.error ? (
+              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                <div>{(extractMutation.error as Error).message}</div>
+                <Button className="mt-3" size="sm" variant="secondary" onClick={startManualFallback}>
+                  Use manual fallback
+                </Button>
+              </div>
+            ) : null}
+            <div className="flex flex-wrap gap-2">
+              <Button
+                onClick={() =>
+                  extractMutation.mutate({
+                    source_url: intake.source_url || null,
+                    source_content: intake.source_content || null
+                  })
+                }
+                disabled={extractMutation.isPending || (!intake.source_url.trim() && !intake.source_content.trim())}
+              >
+                <Sparkles className="h-4 w-4" />
+                {extractMutation.isPending ? "Extracting..." : "Extract fields"}
+              </Button>
+              <Button variant="secondary" onClick={startManualFallback}>
+                Manual entry
+              </Button>
+            </div>
+          </div>
+
+          {review ? (
+            <div className="mt-6 border-t border-border pt-5">
+              <ReviewEditor review={review} onChange={setReview} preview={preview} />
+              {createMutation.error ? <p className="mt-3 text-sm text-destructive">{(createMutation.error as Error).message}</p> : null}
+              <Button className="mt-4 w-full" onClick={saveReview} disabled={createMutation.isPending || !review.company.trim() || !review.role_title.trim()}>
+                <Save className="h-4 w-4" />
+                {createMutation.isPending ? "Saving..." : "Save reviewed job"}
+              </Button>
+            </div>
+          ) : null}
         </Panel>
 
         <Panel className="overflow-hidden">
-          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3">
-              <h2 className="text-base font-semibold">Saved Jobs</h2>
-              <Badge>{showArchived ? `${jobs.length} shown` : `${jobs.length} active`}</Badge>
+          <div className="mb-4 grid gap-3">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex items-center gap-3">
+                <h2 className="text-base font-semibold">Applications</h2>
+                <Badge>{jobs.length} shown</Badge>
+              </div>
+              <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-border text-primary"
+                  checked={showArchived}
+                  onChange={(event) => setShowArchived(event.target.checked)}
+                />
+                Show archived
+              </label>
             </div>
-            <label className="flex items-center gap-2 text-sm text-muted-foreground">
-              <input
-                type="checkbox"
-                className="h-4 w-4 rounded border-border text-primary"
-                checked={showArchived}
-                onChange={(event) => setShowArchived(event.target.checked)}
-              />
-              Show archived
-            </label>
+            <div className="grid gap-2 lg:grid-cols-[1fr_190px_220px]">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  className="pl-9"
+                  placeholder="Search company, role, notes, status, URL..."
+                />
+              </div>
+              <Select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as JobStatus | "")}>
+                <option value="">All statuses</option>
+                {jobStatuses.map((status) => (
+                  <option key={status} value={status}>
+                    {status}
+                  </option>
+                ))}
+              </Select>
+              <Select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value as JobCategory | "")}>
+                <option value="">All categories</option>
+                {jobCategories.map((category) => (
+                  <option key={category} value={category}>
+                    {category}
+                  </option>
+                ))}
+              </Select>
+            </div>
           </div>
           {error ? <p className="text-sm text-destructive">{(error as Error).message}</p> : null}
           {isLoading ? <p className="text-sm text-muted-foreground">Loading jobs...</p> : null}
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1120px] text-left text-sm">
+            <table className="w-full min-w-[1180px] text-left text-sm">
               <thead className="border-b border-border text-xs uppercase text-muted-foreground">
                 <tr>
                   <th className="py-2 pr-4">Company</th>
                   <th className="py-2 pr-4">Role</th>
+                  <th className="py-2 pr-4">Category</th>
                   <th className="py-2 pr-4">Status</th>
-                  <th className="py-2 pr-4">Fit</th>
-                  <th className="py-2 pr-4">Top gaps</th>
-                  <th className="py-2 pr-4">Job URL</th>
+                  <th className="py-2 pr-4">Location</th>
+                  <th className="py-2 pr-4">Source</th>
                   <th className="py-2 pr-4">Updated</th>
-                  <th className="py-2 pr-4">Notes</th>
                   <th className="py-2 pr-4">Actions</th>
                 </tr>
               </thead>
@@ -150,28 +249,229 @@ export default function JobsPage() {
                   <JobRow
                     key={job.id}
                     job={job}
-                    onStatus={(status) => updateMutation.mutate({ id: job.id, status })}
+                    onSelect={() => setSelectedJob(job)}
+                    onStatus={(nextStatus) => updateMutation.mutate({ id: job.id, status: nextStatus })}
                     onArchive={() => archiveMutation.mutate(job.id)}
                   />
                 ))}
               </tbody>
             </table>
-            {!jobs.length && !isLoading ? <p className="py-8 text-sm text-muted-foreground">No jobs saved yet.</p> : null}
+            {!jobs.length && !isLoading ? <p className="py-8 text-sm text-muted-foreground">No jobs match the current filters.</p> : null}
           </div>
         </Panel>
+      </div>
+
+      {selectedJob ? <JobDrawer job={selectedJob} onClose={() => setSelectedJob(null)} /> : null}
+    </div>
+  );
+}
+
+function reviewFromPreview(preview: JobExtractPreview): ReviewState {
+  return {
+    company: preview.company,
+    role_title: preview.role_title,
+    category: preview.category,
+    location: preview.location,
+    remote_type: preview.remote_type,
+    summary: preview.summary,
+    responsibilities: preview.responsibilities,
+    required_skills: preview.required_skills,
+    source_content: preview.source_content,
+    links: mergeLinks(preview.links, preview.source_url),
+    status: "Saved",
+    status_note: null,
+    notes: null,
+    extraction_confidence: preview.confidence,
+    extraction_warnings: preview.warnings,
+    duplicateCount: preview.duplicate_candidates.length
+  };
+}
+
+function blankReview(intake: IntakeState): ReviewState {
+  return {
+    company: "",
+    role_title: "",
+    category: "Other",
+    location: null,
+    remote_type: "Unknown",
+    summary: "",
+    responsibilities: [],
+    required_skills: [],
+    source_content: intake.source_content,
+    links: mergeLinks([], intake.source_url || null),
+    status: "Saved",
+    status_note: null,
+    notes: null,
+    extraction_confidence: null,
+    extraction_warnings: ["Manual fallback was used."],
+    duplicateCount: 0
+  };
+}
+
+function mergeLinks(links: JobLinkInput[], sourceUrl: string | null): JobLinkInput[] {
+  const rows = defaultLinks.map((row) => ({ ...row }));
+  for (const link of links) {
+    const index = rows.findIndex((row) => row.kind === link.kind && !row.url);
+    if (index >= 0) rows[index] = { ...link };
+    else rows.push({ ...link });
+  }
+  if (sourceUrl && !rows.some((row) => row.url.trim().toLowerCase() === sourceUrl.trim().toLowerCase())) {
+    rows[0] = { kind: "source", label: "Source", url: sourceUrl };
+  }
+  return rows;
+}
+
+function cleanReview(review: ReviewState, fallbackSourceUrl: string): JobCreatePayload {
+  const links = review.links
+    .map((link) => ({ ...link, label: link.label.trim() || linkKindLabels[link.kind], url: link.url.trim() }))
+    .filter((link) => link.url);
+  if (fallbackSourceUrl && !links.some((link) => link.url.toLowerCase() === fallbackSourceUrl.trim().toLowerCase())) {
+    links.unshift({ kind: "source", label: "Source", url: fallbackSourceUrl.trim() });
+  }
+  return {
+    company: review.company.trim(),
+    role_title: review.role_title.trim(),
+    category: review.category,
+    location: review.location?.trim() || null,
+    remote_type: review.remote_type,
+    summary: review.summary?.trim() || null,
+    source_content: review.source_content,
+    responsibilities: review.responsibilities.map((item) => item.trim()).filter(Boolean),
+    required_skills: review.required_skills.map((item) => item.trim()).filter(Boolean),
+    links,
+    status: review.status,
+    status_note: review.status_note,
+    notes: review.notes?.trim() || null,
+    extraction_confidence: review.extraction_confidence,
+    extraction_warnings: review.extraction_warnings
+  };
+}
+
+function ReviewEditor({
+  review,
+  onChange,
+  preview
+}: {
+  review: ReviewState;
+  onChange: (next: ReviewState) => void;
+  preview: JobExtractPreview | null;
+}) {
+  const set = <K extends keyof ReviewState>(key: K, value: ReviewState[K]) => onChange({ ...review, [key]: value });
+  const setLink = (index: number, patch: Partial<JobLinkInput>) => {
+    const links = review.links.map((link, currentIndex) => (currentIndex === index ? { ...link, ...patch } : link));
+    onChange({ ...review, links });
+  };
+
+  return (
+    <div className="grid gap-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge tone={review.extraction_confidence && review.extraction_confidence >= 80 ? "good" : "warn"}>
+          Confidence {review.extraction_confidence ?? "manual"}
+        </Badge>
+        {review.duplicateCount ? <Badge tone="warn">{review.duplicateCount} possible duplicate</Badge> : null}
+      </div>
+      {preview?.duplicate_candidates.length ? (
+        <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          {preview.duplicate_candidates.map((candidate) => (
+            <div key={candidate.id}>
+              Possible duplicate:{" "}
+              <Link href={`/jobs/${candidate.id}`} className="font-medium underline">
+                {candidate.company} - {candidate.role_title}
+              </Link>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {(review.extraction_warnings ?? []).length ? (
+        <div className="grid gap-1 text-xs text-amber-700">
+          {(review.extraction_warnings ?? []).map((warning) => (
+            <div key={warning}>{warning}</div>
+          ))}
+        </div>
+      ) : null}
+      <div className="grid gap-3 md:grid-cols-2">
+        <Field label="Company">
+          <Input value={review.company} onChange={(event) => set("company", event.target.value)} />
+        </Field>
+        <Field label="Role title">
+          <Input value={review.role_title} onChange={(event) => set("role_title", event.target.value)} />
+        </Field>
+        <Field label="Category">
+          <Select value={review.category} onChange={(event) => set("category", event.target.value as JobCategory)}>
+            {jobCategories.map((category) => (
+              <option key={category} value={category}>
+                {category}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Remote">
+          <Select value={review.remote_type ?? "Unknown"} onChange={(event) => set("remote_type", event.target.value as RemoteType)}>
+            {remoteTypes.map((remoteType) => (
+              <option key={remoteType} value={remoteType}>
+                {remoteType}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      </div>
+      <Field label="Location">
+        <Input value={review.location ?? ""} onChange={(event) => set("location", event.target.value)} />
+      </Field>
+      <Field label="Summary">
+        <Textarea value={review.summary ?? ""} onChange={(event) => set("summary", event.target.value)} />
+      </Field>
+      <Field label="Main responsibilities">
+        <Textarea value={listToCsv(review.responsibilities)} onChange={(event) => set("responsibilities", csvToList(event.target.value))} />
+      </Field>
+      <Field label="Required skills">
+        <Textarea value={listToCsv(review.required_skills)} onChange={(event) => set("required_skills", csvToList(event.target.value))} />
+      </Field>
+      <Field label="Notes">
+        <Textarea value={review.notes ?? ""} onChange={(event) => set("notes", event.target.value)} />
+      </Field>
+      <div className="grid gap-3">
+        <div className="text-sm font-medium">Links</div>
+        {review.links.map((link, index) => (
+          <div key={`${link.kind}-${index}`} className="grid gap-2 sm:grid-cols-[150px_1fr]">
+            <Select value={link.kind} onChange={(event) => setLink(index, { kind: event.target.value as JobLinkInput["kind"] })}>
+              {Object.entries(linkKindLabels).map(([kind, label]) => (
+                <option key={kind} value={kind}>
+                  {label}
+                </option>
+              ))}
+            </Select>
+            <Input value={link.url} onChange={(event) => setLink(index, { url: event.target.value })} placeholder="https://..." />
+          </div>
+        ))}
       </div>
     </div>
   );
 }
 
-function JobRow({ job, onStatus, onArchive }: { job: JobListItem; onStatus: (status: JobStatus) => void; onArchive: () => void }) {
+function JobRow({
+  job,
+  onStatus,
+  onArchive,
+  onSelect
+}: {
+  job: JobListItem;
+  onStatus: (status: JobStatus) => void;
+  onArchive: () => void;
+  onSelect: () => void;
+}) {
+  const source = job.links.find((link) => link.kind === "source") ?? job.links[0];
   return (
     <tr className="border-b border-border last:border-0">
       <td className="py-3 pr-4 align-top font-medium">{job.company}</td>
       <td className="py-3 pr-4 align-top">
-        <Link href={`/jobs/${job.id}`} className="font-medium text-primary">
+        <button className="text-left font-medium text-primary" onClick={onSelect}>
           {job.role_title}
-        </Link>
+        </button>
+        {job.summary ? <div className="mt-1 line-clamp-2 max-w-[300px] text-xs text-muted-foreground">{job.summary}</div> : null}
+      </td>
+      <td className="py-3 pr-4 align-top">
+        <Badge>{job.category}</Badge>
       </td>
       <td className="py-3 pr-4 align-top">
         <Select value={job.status} onChange={(event) => onStatus(event.target.value as JobStatus)}>
@@ -182,28 +482,13 @@ function JobRow({ job, onStatus, onArchive }: { job: JobListItem; onStatus: (sta
           ))}
         </Select>
       </td>
-      <td className="py-3 pr-4 align-top">{job.fit_score ?? "--"}</td>
-      <td className="py-3 pr-4 align-top">
-        {job.top_gaps.length ? (
-          <div className="grid gap-2">
-            <div className="flex max-w-[260px] flex-wrap gap-1.5">
-              {job.top_gaps.map((gap) => (
-                <Badge key={gap} tone={job.top_gaps_source === "resume_match" ? "warn" : "neutral"}>
-                  {gap}
-                </Badge>
-              ))}
-            </div>
-            <span className="text-xs text-muted-foreground">
-              {job.top_gaps_source === "resume_match" ? "Resume match" : "Analysis"}
-            </span>
-          </div>
-        ) : (
-          <span className="text-muted-foreground">Not analyzed</span>
-        )}
+      <td className="py-3 pr-4 align-top text-muted-foreground">
+        <div>{job.location || "Unknown"}</div>
+        <div className="text-xs">{job.remote_type || "Unknown"}</div>
       </td>
       <td className="py-3 pr-4 align-top">
-        {job.job_url ? (
-          <a href={job.job_url} target="_blank" rel="noreferrer" title="Open job URL">
+        {source ? (
+          <a href={source.url} target="_blank" rel="noreferrer" title="Open source link">
             <Button variant="secondary" size="icon">
               <ExternalLink className="h-4 w-4" />
             </Button>
@@ -214,15 +499,89 @@ function JobRow({ job, onStatus, onArchive }: { job: JobListItem; onStatus: (sta
       </td>
       <td className="py-3 pr-4 align-top text-muted-foreground">{formatDate(job.updated_at)}</td>
       <td className="py-3 pr-4 align-top">
-        <div className="line-clamp-3 max-w-[240px] text-xs text-muted-foreground">{job.notes || "No notes"}</div>
-      </td>
-      <td className="py-3 pr-4 align-top">
-        {job.status !== "Archived" ? (
-          <Button variant="secondary" size="icon" onClick={onArchive} title="Archive job">
-            <Archive className="h-4 w-4" />
+        <div className="flex gap-2">
+          <Button variant="secondary" size="sm" onClick={onSelect}>
+            Details
           </Button>
-        ) : null}
+          {job.status !== "Archived" ? (
+            <Button variant="secondary" size="icon" onClick={onArchive} title="Archive job">
+              <Archive className="h-4 w-4" />
+            </Button>
+          ) : null}
+        </div>
       </td>
     </tr>
+  );
+}
+
+function JobDrawer({ job, onClose }: { job: JobListItem; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-30 bg-black/20" onClick={onClose}>
+      <aside
+        className="ml-auto h-full w-full max-w-xl overflow-y-auto border-l border-border bg-white p-5 shadow-xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-sm text-muted-foreground">{job.company}</div>
+            <h2 className="mt-1 text-xl font-semibold">{job.role_title}</h2>
+          </div>
+          <Button variant="ghost" size="icon" onClick={onClose} title="Close drawer">
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Badge>{job.status}</Badge>
+          <Badge>{job.category}</Badge>
+          {job.extraction_confidence !== null ? <Badge tone="good">Confidence {job.extraction_confidence}</Badge> : null}
+        </div>
+        {job.summary ? <p className="mt-4 text-sm leading-6 text-muted-foreground">{job.summary}</p> : null}
+        <DrawerList title="Responsibilities" items={job.responsibilities} />
+        <DrawerList title="Required Skills" items={job.required_skills} />
+        <div className="mt-5">
+          <h3 className="mb-2 text-sm font-semibold">Links</h3>
+          <div className="grid gap-2">
+            {job.links.length ? (
+              job.links.map((link) => (
+                <a key={link.id} href={link.url} target="_blank" rel="noreferrer" className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2 text-sm">
+                  <span>{link.label || linkKindLabels[link.kind]}</span>
+                  <ExternalLink className="h-4 w-4 text-muted-foreground" />
+                </a>
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground">No links saved.</p>
+            )}
+          </div>
+        </div>
+        <div className="mt-6 flex gap-2">
+          <Link href={`/jobs/${job.id}`}>
+            <Button>
+              <FileText className="h-4 w-4" />
+              Full detail
+            </Button>
+          </Link>
+          <Button variant="secondary" onClick={onClose}>
+            Close
+          </Button>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function DrawerList({ title, items }: { title: string; items: string[] }) {
+  return (
+    <div className="mt-5">
+      <h3 className="mb-2 text-sm font-semibold">{title}</h3>
+      {items.length ? (
+        <div className="flex flex-wrap gap-2">
+          {items.map((item) => (
+            <Badge key={item}>{item}</Badge>
+          ))}
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">None captured.</p>
+      )}
+    </div>
   );
 }

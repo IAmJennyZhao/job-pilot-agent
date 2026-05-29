@@ -5,7 +5,10 @@ import type {
   InterviewQuestionResponse,
   InterviewSession,
   Job,
+  JobCategory,
+  JobCreatePayload,
   JobDetail,
+  JobExtractPreview,
   JobIntelligenceResponse,
   JobListItem,
   JobStatus,
@@ -54,21 +57,32 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   dashboard: () => request<DashboardSummary>("/api/dashboard/summary"),
-  jobs: (includeArchived = false) =>
-    request<JobListItem[]>(`/api/jobs${includeArchived ? "?include_archived=true" : ""}`),
+  jobs: (params?: {
+    includeArchived?: boolean;
+    search?: string;
+    status?: JobStatus | "";
+    category?: JobCategory | "";
+  }) => {
+    const query = new URLSearchParams();
+    if (params?.includeArchived) query.set("include_archived", "true");
+    if (params?.search) query.set("search", params.search);
+    if (params?.status) query.set("status_filter", params.status);
+    if (params?.category) query.set("category", params.category);
+    const suffix = query.toString() ? `?${query}` : "";
+    return request<JobListItem[]>(`/api/jobs${suffix}`);
+  },
   job: (id: string) => request<JobDetail>(`/api/jobs/${id}`),
-  createJob: (payload: {
-    company: string;
-    role_title: string;
-    job_url?: string | null;
-    job_description: string;
-    notes?: string | null;
-  }) =>
-    request<Job>("/api/jobs", {
+  extractJobPreview: (payload: { source_url?: string | null; source_content?: string | null }) =>
+    request<JobExtractPreview>("/api/jobs/extract-preview", {
       method: "POST",
       body: JSON.stringify(payload)
     }),
-  updateJob: (id: string, payload: Partial<Job> & { status?: JobStatus }) =>
+  createJob: (payload: JobCreatePayload) =>
+    request<JobDetail>("/api/jobs", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+  updateJob: (id: string, payload: Partial<JobCreatePayload> & { status?: JobStatus; fit_score?: number | null }) =>
     request<Job>(`/api/jobs/${id}`, {
       method: "PATCH",
       body: JSON.stringify(payload)

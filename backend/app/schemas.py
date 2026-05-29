@@ -1,10 +1,12 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 
 from app.models import (
     InterviewMode,
+    JobCategory,
+    JobLinkKind,
     JobStatus,
     MessageRole,
     Priority,
@@ -21,33 +23,127 @@ class AIModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class JobLinkBase(BaseModel):
+    kind: JobLinkKind = JobLinkKind.custom
+    label: str = Field(min_length=1, max_length=255)
+    url: str = Field(min_length=1, max_length=2048)
+
+
+class JobLinkCreate(JobLinkBase):
+    pass
+
+
+class JobLinkRead(CareerPilotModel):
+    id: str
+    job_id: str
+    kind: JobLinkKind
+    label: str
+    url: str
+    created_at: datetime
+
+
+class JobStatusEventRead(CareerPilotModel):
+    id: str
+    job_id: str
+    from_status: JobStatus | None
+    to_status: JobStatus
+    note: str | None
+    changed_at: datetime
+
+
+class JobDuplicateCandidate(BaseModel):
+    id: str
+    company: str
+    role_title: str
+    status: JobStatus
+    matched_on: list[str] = Field(default_factory=list)
+
+
+class JobExtractPreviewRequest(BaseModel):
+    source_url: HttpUrl | str | None = None
+    source_content: str | None = None
+
+    @model_validator(mode="after")
+    def has_source_material(self) -> "JobExtractPreviewRequest":
+        if not self.source_url and not (self.source_content and self.source_content.strip()):
+            raise ValueError("Provide a job URL, pasted job content, or both.")
+        return self
+
+
+class JobExtractionOutput(AIModel):
+    company: str
+    role_title: str
+    category: JobCategory = JobCategory.other
+    location: str | None = None
+    remote_type: Literal["Remote", "Hybrid", "On-site", "Unknown"] = "Unknown"
+    summary: str
+    responsibilities: list[str] = Field(default_factory=list)
+    required_skills: list[str] = Field(default_factory=list)
+    links: list[JobLinkBase] = Field(default_factory=list)
+    confidence: int = Field(ge=0, le=100)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class JobExtractPreview(JobExtractionOutput):
+    source_url: str | None = None
+    source_content: str
+    duplicate_candidates: list[JobDuplicateCandidate] = Field(default_factory=list)
+
+
 class JobCreate(BaseModel):
     company: str = Field(min_length=1, max_length=255)
     role_title: str = Field(min_length=1, max_length=255)
-    job_url: HttpUrl | str | None = None
-    job_description: str = Field(min_length=1)
+    category: JobCategory = JobCategory.other
+    location: str | None = Field(default=None, max_length=255)
+    remote_type: Literal["Remote", "Hybrid", "On-site", "Unknown"] | None = "Unknown"
+    summary: str | None = None
+    responsibilities: list[str] = Field(default_factory=list)
+    required_skills: list[str] = Field(default_factory=list)
+    source_content: str = ""
+    links: list[JobLinkCreate] = Field(default_factory=list)
+    status: JobStatus = JobStatus.saved
+    status_note: str | None = None
     notes: str | None = None
+    extraction_confidence: int | None = Field(default=None, ge=0, le=100)
+    extraction_warnings: list[str] = Field(default_factory=list)
 
 
 class JobUpdate(BaseModel):
     company: str | None = Field(default=None, min_length=1, max_length=255)
     role_title: str | None = Field(default=None, min_length=1, max_length=255)
-    job_url: HttpUrl | str | None = None
-    job_description: str | None = Field(default=None, min_length=1)
+    category: JobCategory | None = None
+    location: str | None = Field(default=None, max_length=255)
+    remote_type: Literal["Remote", "Hybrid", "On-site", "Unknown"] | None = None
+    summary: str | None = None
+    responsibilities: list[str] | None = None
+    required_skills: list[str] | None = None
+    source_content: str | None = None
+    links: list[JobLinkCreate] | None = None
     status: JobStatus | None = None
+    status_note: str | None = None
     notes: str | None = None
     fit_score: int | None = Field(default=None, ge=0, le=100)
+    extraction_confidence: int | None = Field(default=None, ge=0, le=100)
+    extraction_warnings: list[str] | None = None
 
 
 class JobRead(CareerPilotModel):
     id: str
     company: str
     role_title: str
-    job_url: str | None
-    job_description: str
+    category: JobCategory
+    location: str | None
+    remote_type: str | None
+    summary: str | None
+    responsibilities: list[str]
+    required_skills: list[str]
     status: JobStatus
     notes: str | None
     fit_score: int | None
+    extraction_confidence: int | None
+    extraction_warnings: list[str]
+    links: list[JobLinkRead] = Field(default_factory=list)
+    source_url: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -91,6 +187,8 @@ class ResumeSuggestionRead(CareerPilotModel):
 
 
 class JobDetail(JobRead):
+    source_content: str
+    status_events: list[JobStatusEventRead] = Field(default_factory=list)
     analysis: JobAnalysisRead | None = None
     latest_resume_suggestion: ResumeSuggestionRead | None = None
 

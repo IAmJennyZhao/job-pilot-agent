@@ -89,11 +89,15 @@ def ai_readiness(db: Session, job: models.Job) -> schemas.AIReadiness:
     )
 
 
+def _job_source_text(job: models.Job) -> str:
+    return job.source_content or job.summary or "\n".join(job.responsibilities)
+
+
 def analyze_job_description(db: Session, job: models.Job) -> models.JobAnalysis:
     output = get_structured_output(
         schemas.JobAnalysisOutput,
         prompts.SYSTEM_PROMPT,
-        prompts.job_analysis_prompt(job.company, job.role_title, job.job_description),
+        prompts.job_analysis_prompt(job.company, job.role_title, _job_source_text(job)),
     )
     analysis = job.analysis or models.JobAnalysis(job_id=job.id, summary=output.summary)
     for key, value in output.model_dump().items():
@@ -125,7 +129,7 @@ def suggest_resume_changes(
         prompts.resume_suggestion_prompt(
             job.company,
             job.role_title,
-            job.job_description,
+            _job_source_text(job),
             profile.resume_text,
             profile.summary,
             profile.skills,
@@ -201,7 +205,7 @@ def generate_interview_questions(
         prompts.interview_questions_prompt(
             job.company,
             job.role_title,
-            job.job_description,
+            _job_source_text(job),
             profile.resume_text if profile else "",
             request.question_type,
             request.count,
@@ -247,7 +251,7 @@ def evaluate_interview_answer(
         prompts.interview_feedback_prompt(
             job.company,
             job.role_title,
-            job.job_description,
+            _job_source_text(job),
             request.question,
             request.answer,
         ),

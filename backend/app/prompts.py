@@ -19,6 +19,32 @@ Extract only information supported by the job description.
 """.strip()
 
 
+def job_intake_prompt(source_url: str | None, source_content: str) -> str:
+    return f"""
+Extract tracker-ready information from this job posting.
+
+Source URL:
+{source_url or ""}
+
+Job posting content:
+{source_content}
+
+Use one controlled category only:
+- AI/ML Engineer
+- Backend Engineer
+- Frontend Engineer
+- Full Stack Engineer
+- Data Engineer
+- DevOps/Infrastructure
+- Product/Platform Engineer
+- Other
+
+Extract only information supported by the posting. If a field is unclear, use "Unknown" or add a warning.
+Keep responsibilities and required skills concise enough for a job tracker.
+Include useful links only if the posting clearly contains them.
+""".strip()
+
+
 def resume_suggestion_prompt(
     company: str,
     role_title: str,

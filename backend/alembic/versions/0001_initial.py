@@ -22,18 +22,56 @@ def upgrade() -> None:
         sa.Column("id", sa.String(length=36), nullable=False),
         sa.Column("company", sa.String(length=255), nullable=False),
         sa.Column("role_title", sa.String(length=255), nullable=False),
-        sa.Column("job_url", sa.String(length=2048), nullable=True),
-        sa.Column("job_description", sa.Text(), nullable=False),
+        sa.Column("category", sa.String(length=64), nullable=False),
+        sa.Column("location", sa.String(length=255), nullable=True),
+        sa.Column("remote_type", sa.String(length=64), nullable=True),
+        sa.Column("summary", sa.Text(), nullable=True),
+        sa.Column("responsibilities", sa.JSON(), nullable=False),
+        sa.Column("required_skills", sa.JSON(), nullable=False),
+        sa.Column("source_content", sa.Text(), nullable=False),
         sa.Column("status", sa.String(length=32), nullable=False),
         sa.Column("notes", sa.Text(), nullable=True),
         sa.Column("fit_score", sa.Integer(), nullable=True),
+        sa.Column("extraction_confidence", sa.Integer(), nullable=True),
+        sa.Column("extraction_warnings", sa.JSON(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_jobs_company", "jobs", ["company"])
     op.create_index("ix_jobs_role_title", "jobs", ["role_title"])
+    op.create_index("ix_jobs_category", "jobs", ["category"])
     op.create_index("ix_jobs_status", "jobs", ["status"])
+
+    op.create_table(
+        "job_links",
+        sa.Column("id", sa.String(length=36), nullable=False),
+        sa.Column("job_id", sa.String(length=36), nullable=False),
+        sa.Column("kind", sa.String(length=64), nullable=False),
+        sa.Column("label", sa.String(length=255), nullable=False),
+        sa.Column("url", sa.String(length=2048), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.ForeignKeyConstraint(["job_id"], ["jobs.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_index("ix_job_links_job_id", "job_links", ["job_id"])
+    op.create_index("ix_job_links_kind", "job_links", ["kind"])
+    op.create_index("ix_job_links_url", "job_links", ["url"])
+
+    op.create_table(
+        "job_status_events",
+        sa.Column("id", sa.String(length=36), nullable=False),
+        sa.Column("job_id", sa.String(length=36), nullable=False),
+        sa.Column("from_status", sa.String(length=32), nullable=True),
+        sa.Column("to_status", sa.String(length=32), nullable=False),
+        sa.Column("note", sa.Text(), nullable=True),
+        sa.Column("changed_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.ForeignKeyConstraint(["job_id"], ["jobs.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_index("ix_job_status_events_job_id", "job_status_events", ["job_id"])
+    op.create_index("ix_job_status_events_to_status", "job_status_events", ["to_status"])
+    op.create_index("ix_job_status_events_changed_at", "job_status_events", ["changed_at"])
 
     op.create_table(
         "resume_profiles",
@@ -149,6 +187,8 @@ def downgrade() -> None:
     op.drop_table("interview_sessions")
     op.drop_table("resume_suggestions")
     op.drop_table("job_analyses")
+    op.drop_table("job_status_events")
+    op.drop_table("job_links")
     op.drop_table("resume_profiles")
     op.drop_table("jobs")
 

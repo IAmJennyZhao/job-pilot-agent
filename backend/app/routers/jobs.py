@@ -1,21 +1,38 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app import schemas
+from app import models, schemas
 from app.database import get_db
-from app.services import job_service
+from app.services import job_intake_service, job_service
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
 
-@router.post("", response_model=schemas.JobRead, status_code=status.HTTP_201_CREATED)
+@router.post("/extract-preview", response_model=schemas.JobExtractPreview)
+def extract_job_preview(payload: schemas.JobExtractPreviewRequest, db: Session = Depends(get_db)):
+    return job_intake_service.extract_preview(db, payload)
+
+
+@router.post("", response_model=schemas.JobDetail, status_code=status.HTTP_201_CREATED)
 def create_job(payload: schemas.JobCreate, db: Session = Depends(get_db)):
     return job_service.save_job(db, payload)
 
 
 @router.get("", response_model=list[schemas.JobListItem])
-def get_jobs(include_archived: bool = False, db: Session = Depends(get_db)):
-    return job_service.list_job_items(db, include_archived=include_archived)
+def get_jobs(
+    include_archived: bool = False,
+    search: str | None = None,
+    status_filter: models.JobStatus | None = None,
+    category: models.JobCategory | None = None,
+    db: Session = Depends(get_db),
+):
+    return job_service.list_job_items(
+        db,
+        include_archived=include_archived,
+        search=search,
+        status=status_filter,
+        category=category,
+    )
 
 
 @router.get("/{job_id}", response_model=schemas.JobDetail)

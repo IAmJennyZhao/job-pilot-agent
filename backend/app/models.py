@@ -28,14 +28,33 @@ def enum_values(enum_cls: type[enum.Enum]) -> list[str]:
 
 class JobStatus(str, enum.Enum):
     saved = "Saved"
-    resume_tailored = "Resume Tailored"
     applied = "Applied"
     recruiter_screen = "Recruiter Screen"
     tech_screen = "Tech Screen"
     final_interview = "Final Interview"
     offer = "Offer"
     rejected = "Rejected"
+    withdrawn = "Withdrawn"
     archived = "Archived"
+
+
+class JobCategory(str, enum.Enum):
+    ai_ml_engineer = "AI/ML Engineer"
+    backend_engineer = "Backend Engineer"
+    frontend_engineer = "Frontend Engineer"
+    full_stack_engineer = "Full Stack Engineer"
+    data_engineer = "Data Engineer"
+    devops_infrastructure = "DevOps/Infrastructure"
+    product_platform_engineer = "Product/Platform Engineer"
+    other = "Other"
+
+
+class JobLinkKind(str, enum.Enum):
+    source = "source"
+    company_portal = "company_portal"
+    application_portal = "application_portal"
+    recruiter = "recruiter"
+    custom = "custom"
 
 
 class InterviewMode(str, enum.Enum):
@@ -87,8 +106,23 @@ class Job(TimestampMixin, Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
     company: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     role_title: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    job_url: Mapped[str | None] = mapped_column(String(2048))
-    job_description: Mapped[str] = mapped_column(Text, nullable=False)
+    category: Mapped[JobCategory] = mapped_column(
+        Enum(
+            JobCategory,
+            values_callable=enum_values,
+            native_enum=False,
+            validate_strings=True,
+        ),
+        default=JobCategory.other,
+        nullable=False,
+        index=True,
+    )
+    location: Mapped[str | None] = mapped_column(String(255))
+    remote_type: Mapped[str | None] = mapped_column(String(64))
+    summary: Mapped[str | None] = mapped_column(Text)
+    responsibilities: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    required_skills: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    source_content: Mapped[str] = mapped_column(Text, default="", nullable=False)
     status: Mapped[JobStatus] = mapped_column(
         Enum(
             JobStatus,
@@ -102,6 +136,8 @@ class Job(TimestampMixin, Base):
     )
     notes: Mapped[str | None] = mapped_column(Text)
     fit_score: Mapped[int | None] = mapped_column(Integer)
+    extraction_confidence: Mapped[int | None] = mapped_column(Integer)
+    extraction_warnings: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
 
     analysis: Mapped["JobAnalysis | None"] = relationship(
         back_populates="job",
@@ -116,6 +152,93 @@ class Job(TimestampMixin, Base):
         back_populates="job",
         cascade="all, delete-orphan",
     )
+    links: Mapped[list["JobLink"]] = relationship(
+        back_populates="job",
+        cascade="all, delete-orphan",
+        order_by="JobLink.created_at",
+    )
+    status_events: Mapped[list["JobStatusEvent"]] = relationship(
+        back_populates="job",
+        cascade="all, delete-orphan",
+        order_by="JobStatusEvent.changed_at",
+    )
+
+    @property
+    def source_url(self) -> str | None:
+        for link in self.links:
+            if link.kind == JobLinkKind.source:
+                return link.url
+        return self.links[0].url if self.links else None
+
+
+class JobLink(Base):
+    __tablename__ = "job_links"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    job_id: Mapped[str] = mapped_column(
+        ForeignKey("jobs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    kind: Mapped[JobLinkKind] = mapped_column(
+        Enum(
+            JobLinkKind,
+            values_callable=enum_values,
+            native_enum=False,
+            validate_strings=True,
+        ),
+        default=JobLinkKind.custom,
+        nullable=False,
+        index=True,
+    )
+    label: Mapped[str] = mapped_column(String(255), nullable=False)
+    url: Mapped[str] = mapped_column(String(2048), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    job: Mapped[Job] = relationship(back_populates="links")
+
+
+class JobStatusEvent(Base):
+    __tablename__ = "job_status_events"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    job_id: Mapped[str] = mapped_column(
+        ForeignKey("jobs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    from_status: Mapped[JobStatus | None] = mapped_column(
+        Enum(
+            JobStatus,
+            values_callable=enum_values,
+            native_enum=False,
+            validate_strings=True,
+        ),
+        nullable=True,
+    )
+    to_status: Mapped[JobStatus] = mapped_column(
+        Enum(
+            JobStatus,
+            values_callable=enum_values,
+            native_enum=False,
+            validate_strings=True,
+        ),
+        nullable=False,
+        index=True,
+    )
+    note: Mapped[str | None] = mapped_column(Text)
+    changed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+        index=True,
+    )
+
+    job: Mapped[Job] = relationship(back_populates="status_events")
 
 
 class JobAnalysis(TimestampMixin, Base):

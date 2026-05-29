@@ -68,14 +68,29 @@ def ensure_job(
 
     job.company = payload.company
     job.role_title = payload.role_title
-    job.job_url = str(payload.job_url) if payload.job_url else None
-    job.job_description = payload.job_description
+    job.category = payload.category
+    job.location = payload.location
+    job.remote_type = payload.remote_type
+    job.summary = payload.summary
+    job.responsibilities = payload.responsibilities
+    job.required_skills = payload.required_skills
+    job.source_content = payload.source_content
+    job.extraction_confidence = payload.extraction_confidence
+    job.extraction_warnings = payload.extraction_warnings
     job.notes = notes
     job.status = status
     job.fit_score = fit_score
+    job.links.clear()
+    for link in payload.links:
+        job.links.append(
+            models.JobLink(kind=link.kind, label=link.label, url=str(link.url))
+        )
     db.add(job)
     db.commit()
     db.refresh(job)
+    if not job.status_events:
+        db.add(models.JobStatusEvent(job_id=job.id, from_status=None, to_status=status))
+        db.commit()
     return job
 
 
@@ -172,15 +187,32 @@ def main() -> None:
             JobCreate(
                 company="Northstar AI",
                 role_title="Applied AI Engineer",
-                job_url="https://example.com/jobs/applied-ai-engineer",
-                job_description=(
+                category=models.JobCategory.ai_ml_engineer,
+                location="Remote",
+                remote_type="Remote",
+                summary="Applied AI role focused on production LLM features and React interfaces.",
+                responsibilities=[
+                    "Build AI product features",
+                    "Create evaluation workflows",
+                    "Ship customer-facing interfaces",
+                ],
+                required_skills=["Python", "FastAPI", "LLM APIs", "React"],
+                links=[
+                    {
+                        "kind": models.JobLinkKind.source,
+                        "label": "Job post",
+                        "url": "https://example.com/jobs/applied-ai-engineer",
+                    }
+                ],
+                source_content=(
                     "Build AI product features with Python, FastAPI, LLM APIs, vector search, "
                     "evaluation workflows, and customer-facing React interfaces. Experience with "
                     "LangChain or LangGraph and cloud deployment preferred."
                 ),
+                extraction_confidence=94,
                 notes="Resume tailored once. Still needs stronger LangChain and evaluation examples.",
             ),
-            models.JobStatus.resume_tailored,
+            models.JobStatus.saved,
             "Resume tailored once. Still needs stronger LangChain and evaluation examples.",
             fit_score=82,
         )
@@ -189,11 +221,28 @@ def main() -> None:
             JobCreate(
                 company="VectorWorks",
                 role_title="GenAI Software Engineer",
-                job_url="https://example.com/jobs/genai-engineer",
-                job_description=(
+                category=models.JobCategory.ai_ml_engineer,
+                location="New York, NY",
+                remote_type="Hybrid",
+                summary="GenAI engineering role focused on LLM tools, embeddings, and production monitoring.",
+                responsibilities=[
+                    "Own LLM-powered internal tools",
+                    "Build prompt evaluation workflows",
+                    "Monitor production AI features",
+                ],
+                required_skills=["Python", "TypeScript", "Postgres", "Embeddings"],
+                links=[
+                    {
+                        "kind": models.JobLinkKind.source,
+                        "label": "Job post",
+                        "url": "https://example.com/jobs/genai-engineer",
+                    }
+                ],
+                source_content=(
                     "Own LLM-powered tools using Python, TypeScript, Postgres, embeddings, "
                     "prompt evaluation, and production monitoring. AWS Bedrock experience a plus."
                 ),
+                extraction_confidence=91,
                 notes="Need stronger cloud and eval examples.",
             ),
             models.JobStatus.applied,
@@ -204,12 +253,29 @@ def main() -> None:
             JobCreate(
                 company="AgentOps Labs",
                 role_title="AI Software Engineer",
-                job_url="https://example.com/jobs/ai-software-engineer",
-                job_description=(
+                category=models.JobCategory.ai_ml_engineer,
+                location="San Francisco, CA",
+                remote_type="Remote",
+                summary="Agentic workflow role with tracing, evaluation, and observability expectations.",
+                responsibilities=[
+                    "Design agentic workflow features",
+                    "Build evaluation harnesses",
+                    "Prepare production observability",
+                ],
+                required_skills=["Python", "TypeScript", "FastAPI", "React", "System design"],
+                links=[
+                    {
+                        "kind": models.JobLinkKind.source,
+                        "label": "Job post",
+                        "url": "https://example.com/jobs/ai-software-engineer",
+                    }
+                ],
+                source_content=(
                     "Design agentic workflow features with Python, TypeScript, tracing, "
                     "evaluation harnesses, and production observability. Experience with "
                     "FastAPI, React, LangGraph, and system design interviews expected."
                 ),
+                extraction_confidence=89,
                 notes="Tech screen scheduled. Prepare to discuss workflow tracing and evals.",
             ),
             models.JobStatus.tech_screen,
@@ -221,11 +287,28 @@ def main() -> None:
             JobCreate(
                 company="Legacy Cloud",
                 role_title="Backend Platform Engineer",
-                job_url="https://example.com/jobs/backend-platform-engineer",
-                job_description=(
+                category=models.JobCategory.backend_engineer,
+                location="Austin, TX",
+                remote_type="On-site",
+                summary="Backend platform role for enterprise SaaS services and deployment pipelines.",
+                responsibilities=[
+                    "Maintain backend services",
+                    "Own internal APIs",
+                    "Support deployment pipelines",
+                ],
+                required_skills=["Backend services", "Internal APIs", "Deployment pipelines"],
+                links=[
+                    {
+                        "kind": models.JobLinkKind.source,
+                        "label": "Job post",
+                        "url": "https://example.com/jobs/backend-platform-engineer",
+                    }
+                ],
+                source_content=(
                     "Maintain backend services, internal APIs, and deployment pipelines for "
                     "enterprise SaaS systems. AI product experience is optional."
                 ),
+                extraction_confidence=88,
                 notes="Archived after reviewing role fit.",
             ),
             models.JobStatus.archived,

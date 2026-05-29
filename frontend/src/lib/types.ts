@@ -1,28 +1,95 @@
 export const jobStatuses = [
   "Saved",
-  "Resume Tailored",
   "Applied",
   "Recruiter Screen",
   "Tech Screen",
   "Final Interview",
   "Offer",
   "Rejected",
+  "Withdrawn",
   "Archived"
 ] as const;
 
+export const jobCategories = [
+  "AI/ML Engineer",
+  "Backend Engineer",
+  "Frontend Engineer",
+  "Full Stack Engineer",
+  "Data Engineer",
+  "DevOps/Infrastructure",
+  "Product/Platform Engineer",
+  "Other"
+] as const;
+
+export const remoteTypes = ["Remote", "Hybrid", "On-site", "Unknown"] as const;
+export const jobLinkKinds = ["source", "company_portal", "application_portal", "recruiter", "custom"] as const;
+
 export type JobStatus = (typeof jobStatuses)[number];
+export type JobCategory = (typeof jobCategories)[number];
+export type RemoteType = (typeof remoteTypes)[number];
+export type JobLinkKind = (typeof jobLinkKinds)[number];
+
+export type JobLink = {
+  id: string;
+  job_id: string;
+  kind: JobLinkKind;
+  label: string;
+  url: string;
+  created_at: string;
+};
+
+export type JobLinkInput = {
+  kind: JobLinkKind;
+  label: string;
+  url: string;
+};
+
+export type JobStatusEvent = {
+  id: string;
+  job_id: string;
+  from_status: JobStatus | null;
+  to_status: JobStatus;
+  note: string | null;
+  changed_at: string;
+};
 
 export type Job = {
   id: string;
   company: string;
   role_title: string;
-  job_url: string | null;
-  job_description: string;
+  category: JobCategory;
+  location: string | null;
+  remote_type: RemoteType | string | null;
+  summary: string | null;
+  responsibilities: string[];
+  required_skills: string[];
   status: JobStatus;
   notes: string | null;
   fit_score: number | null;
+  extraction_confidence: number | null;
+  extraction_warnings: string[];
+  links: JobLink[];
+  source_url: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type JobCreatePayload = {
+  company: string;
+  role_title: string;
+  category: JobCategory;
+  location?: string | null;
+  remote_type?: RemoteType | null;
+  summary?: string | null;
+  responsibilities: string[];
+  required_skills: string[];
+  source_content: string;
+  links: JobLinkInput[];
+  status?: JobStatus;
+  status_note?: string | null;
+  notes?: string | null;
+  extraction_confidence?: number | null;
+  extraction_warnings?: string[];
 };
 
 export type JobListItem = Job & {
@@ -58,8 +125,35 @@ export type ResumeSuggestion = {
 };
 
 export type JobDetail = Job & {
+  source_content: string;
+  status_events: JobStatusEvent[];
   analysis: JobAnalysis | null;
   latest_resume_suggestion: ResumeSuggestion | null;
+};
+
+export type JobDuplicateCandidate = {
+  id: string;
+  company: string;
+  role_title: string;
+  status: JobStatus;
+  matched_on: string[];
+};
+
+export type JobExtractPreview = {
+  company: string;
+  role_title: string;
+  category: JobCategory;
+  location: string | null;
+  remote_type: RemoteType;
+  summary: string;
+  responsibilities: string[];
+  required_skills: string[];
+  links: JobLinkInput[];
+  confidence: number;
+  warnings: string[];
+  source_url: string | null;
+  source_content: string;
+  duplicate_candidates: JobDuplicateCandidate[];
 };
 
 export type ResumeProfile = {

@@ -714,6 +714,12 @@ function JobDrawer({ job, onClose }: { job: JobListItem; onClose: () => void }) 
           <InfoRow label="Pay" value={formatPay(job)} />
           <InfoRow label="Annual" value={formatAnnualPay(job)} />
         </div>
+        <Link href={`/jobs/${job.id}`} className="mt-4 block">
+          <Button className="h-12 w-full text-sm">
+            <FileText className="h-4 w-4" />
+            View Full Details
+          </Button>
+        </Link>
         <DrawerList title="Responsibilities" items={job.responsibilities} />
         <DrawerList title="Required Skills" items={job.required_skills} />
         <div className="mt-5">
@@ -732,12 +738,6 @@ function JobDrawer({ job, onClose }: { job: JobListItem; onClose: () => void }) 
           </div>
         </div>
         <div className="mt-6 flex gap-2">
-          <Link href={`/jobs/${job.id}`}>
-            <Button>
-              <FileText className="h-4 w-4" />
-              Full detail
-            </Button>
-          </Link>
           <Button variant="secondary" onClick={onClose}>
             Close
           </Button>

@@ -2,18 +2,27 @@
 
 FastAPI + Next.js MVP foundation for an AI-assisted job search dashboard.
 
-## Running: 
+## Running
+
 From the repo root:
 
+```powershell
 .\pilot.ps1 dev
-Starts backend and frontend in separate visible PowerShell windows, so you can stop each with Ctrl+C.
+```
 
-Other modes:
+Starts backend and frontend in the current terminal. In VS Code, run this from the integrated terminal or use `Tasks: Run Task -> CareerPilot: dev`. Stop both servers with `Ctrl+C`.
 
-.\pilot.ps1 backend   # backend only
-.\pilot.ps1 frontend  # frontend only
-.\pilot.ps1 test      # backend tests + frontend typecheck
-.\pilot.ps1 build     # backend tests + frontend typecheck 
+Pilot modes:
+
+```powershell
+.\pilot.ps1 dev          # backend + frontend in the current terminal
+.\pilot.ps1 dev-windows  # backend + frontend in separate visible PowerShell windows
+.\pilot.ps1 status       # show whether ports 3000 and 8000 are occupied
+.\pilot.ps1 backend      # backend only on http://localhost:8000
+.\pilot.ps1 frontend     # frontend only on http://localhost:3000
+.\pilot.ps1 test         # backend tests + frontend typecheck
+.\pilot.ps1 build        # backend tests + frontend typecheck + frontend production build
+```
 
 ## Backend
 

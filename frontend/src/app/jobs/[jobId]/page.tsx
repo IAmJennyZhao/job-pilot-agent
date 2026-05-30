@@ -98,6 +98,10 @@ export default function JobDetailPage() {
       invalidateJob();
     }
   });
+  const statusMutation = useMutation({
+    mutationFn: (status: JobStatus) => api.updateJob(jobId, { status }),
+    onSuccess: invalidateJob
+  });
 
   const advancedMutation = useMutation({
     mutationFn: (refreshCompany: boolean) => api.runAdvancedAnalysis(jobId, refreshCompany),
@@ -152,7 +156,13 @@ export default function JobDetailPage() {
               />
             ) : (
               <div className="grid gap-5 xl:grid-cols-[1fr_380px]">
-                <JobOverview job={job} />
+                <JobOverview
+                  job={job}
+                  onStatusChange={(status) => {
+                    if (status !== job.status) statusMutation.mutate(status);
+                  }}
+                  isSavingStatus={statusMutation.isPending}
+                />
                 <AdvancedAnalysisControl
                   readiness={readiness}
                   readinessLoading={readinessLoading}
@@ -173,6 +183,7 @@ export default function JobDetailPage() {
               </div>
             ) : null}
             {advancedMutation.error ? <p className="mt-3 text-sm text-destructive">{(advancedMutation.error as Error).message}</p> : null}
+            {statusMutation.error ? <p className="mt-3 text-sm text-destructive">{(statusMutation.error as Error).message}</p> : null}
           </Panel>
 
           {!isEditing ? (
@@ -213,7 +224,14 @@ export default function JobDetailPage() {
 
               <div className="grid gap-4 xl:grid-cols-[0.8fr_1.2fr]">
                 <Panel>
-                  <StatusHistoryEditor job={job} onChanged={invalidateJob} />
+                  <StatusHistoryEditor
+                    job={job}
+                    onChanged={invalidateJob}
+                    onStatusChange={(status) => {
+                      if (status !== job.status) statusMutation.mutate(status);
+                    }}
+                    isSavingStatus={statusMutation.isPending}
+                  />
                 </Panel>
                 <Panel>
                   <h2 className="text-base font-semibold">Source Material</h2>
@@ -277,12 +295,46 @@ function cleanForm(form: JobEditForm) {
   };
 }
 
-function JobOverview({ job }: { job: JobDetail }) {
+function QuickStatusSelect({
+  value,
+  onChange,
+  disabled
+}: {
+  value: JobStatus;
+  onChange: (status: JobStatus) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <Select
+      value={value}
+      onChange={(event) => onChange(event.target.value as JobStatus)}
+      disabled={disabled}
+      className="h-8 w-auto min-w-44 px-2 text-xs font-medium"
+      aria-label="Change job status"
+    >
+      {jobStatuses.map((status) => (
+        <option key={status} value={status}>
+          {status}
+        </option>
+      ))}
+    </Select>
+  );
+}
+
+function JobOverview({
+  job,
+  onStatusChange,
+  isSavingStatus
+}: {
+  job: JobDetail;
+  onStatusChange: (status: JobStatus) => void;
+  isSavingStatus: boolean;
+}) {
   const source = job.links.find((link) => link.kind === "source") ?? job.links[0];
   return (
     <div>
-      <div className="flex flex-wrap gap-2">
-        <Badge>{job.status}</Badge>
+      <div className="flex flex-wrap items-center gap-2">
+        <QuickStatusSelect value={job.status} onChange={onStatusChange} disabled={isSavingStatus} />
         <Badge>{job.category}</Badge>
         {job.extraction_confidence !== null ? <Badge tone={job.extraction_confidence >= 80 ? "good" : "warn"}>Confidence {job.extraction_confidence}</Badge> : null}
       </div>
@@ -445,8 +497,19 @@ function JobEditFormView({
   );
 }
 
-function StatusHistoryEditor({ job, onChanged }: { job: JobDetail; onChanged: () => void }) {
+function StatusHistoryEditor({
+  job,
+  onChanged,
+  onStatusChange,
+  isSavingStatus
+}: {
+  job: JobDetail;
+  onChanged: () => void;
+  onStatusChange: (status: JobStatus) => void;
+  isSavingStatus: boolean;
+}) {
   const sortedEvents = [...job.status_events].sort((a, b) => new Date(a.changed_at).getTime() - new Date(b.changed_at).getTime());
+  const [isEditing, setIsEditing] = useState(false);
   const [newEvent, setNewEvent] = useState<JobStatusEventPayload>({
     to_status: job.status,
     changed_at: toDateTimeLocalValue(new Date().toISOString()),
@@ -472,48 +535,78 @@ function StatusHistoryEditor({ job, onChanged }: { job: JobDetail; onChanged: ()
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-base font-semibold">Status History</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Correct accidental status changes or add missing steps. The latest event sets the current status.</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {isEditing ? "Correct accidental status changes or add missing steps. The latest event sets the current status." : "Application timeline for this job."}
+          </p>
         </div>
-        <Badge>{job.status}</Badge>
-      </div>
-      <div className="mt-4 grid gap-3">
-        {sortedEvents.map((event) => (
-          <StatusEventRow
-            key={event.id}
-            event={event}
-            isSaving={updateMutation.isPending}
-            isDeleting={deleteMutation.isPending}
-            onSave={(payload) => updateMutation.mutate({ eventId: event.id, payload })}
-            onDelete={() => deleteMutation.mutate(event.id)}
-          />
-        ))}
-      </div>
-      <div className="mt-5 rounded-md border border-border bg-muted/30 p-3">
-        <div className="mb-3 text-sm font-semibold">Add status step</div>
-        <div className="grid gap-2 md:grid-cols-[180px_220px_1fr_auto]">
-          <Select value={newEvent.to_status} onChange={(event) => setNewEvent((current) => ({ ...current, to_status: event.target.value as JobStatus }))}>
-            {jobStatuses.map((status) => (
-              <option key={status} value={status}>
-                {status}
-              </option>
-            ))}
-          </Select>
-          <Input type="datetime-local" value={newEvent.changed_at ?? ""} onChange={(event) => setNewEvent((current) => ({ ...current, changed_at: event.target.value }))} />
-          <Input value={newEvent.note ?? ""} onChange={(event) => setNewEvent((current) => ({ ...current, note: event.target.value }))} placeholder="Optional note" />
-          <Button
-            size="sm"
-            onClick={() => createMutation.mutate(newEvent)}
-            disabled={createMutation.isPending}
-          >
-            Add
+        <div className="ml-auto flex items-center gap-2">
+          <QuickStatusSelect value={job.status} onChange={onStatusChange} disabled={isSavingStatus} />
+          <Button variant="secondary" size="sm" onClick={() => setIsEditing((current) => !current)}>
+            {isEditing ? <X className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
+            {isEditing ? "Done" : "Edit"}
           </Button>
         </div>
       </div>
-      {createMutation.error || updateMutation.error || deleteMutation.error ? (
-        <p className="mt-3 text-sm text-destructive">
-          {((createMutation.error || updateMutation.error || deleteMutation.error) as Error).message}
-        </p>
-      ) : null}
+      {!isEditing ? (
+        <div className="mt-4 grid gap-3">
+          {sortedEvents.length ? (
+            sortedEvents.map((event) => <StatusEventDisplayRow key={event.id} event={event} />)
+          ) : (
+            <p className="text-sm text-muted-foreground">No status history yet.</p>
+          )}
+        </div>
+      ) : (
+        <>
+          <div className="mt-4 grid gap-3">
+            {sortedEvents.map((event) => (
+              <StatusEventRow
+                key={event.id}
+                event={event}
+                isSaving={updateMutation.isPending}
+                isDeleting={deleteMutation.isPending}
+                onSave={(payload) => updateMutation.mutate({ eventId: event.id, payload })}
+                onDelete={() => deleteMutation.mutate(event.id)}
+              />
+            ))}
+          </div>
+          <div className="mt-5 rounded-md border border-border bg-muted/30 p-3">
+            <div className="mb-3 text-sm font-semibold">Add status step</div>
+            <div className="grid items-center gap-2 md:grid-cols-[180px_220px_minmax(0,1fr)_88px]">
+              <Select value={newEvent.to_status} onChange={(event) => setNewEvent((current) => ({ ...current, to_status: event.target.value as JobStatus }))}>
+                {jobStatuses.map((status) => (
+                  <option key={status} value={status}>
+                    {status}
+                  </option>
+                ))}
+              </Select>
+              <Input type="datetime-local" value={newEvent.changed_at ?? ""} onChange={(event) => setNewEvent((current) => ({ ...current, changed_at: event.target.value }))} />
+              <Input value={newEvent.note ?? ""} onChange={(event) => setNewEvent((current) => ({ ...current, note: event.target.value }))} placeholder="Notes" />
+              <Button onClick={() => createMutation.mutate(newEvent)} disabled={createMutation.isPending}>
+                Add
+              </Button>
+            </div>
+          </div>
+          {createMutation.error || updateMutation.error || deleteMutation.error ? (
+            <p className="mt-3 text-sm text-destructive">
+              {((createMutation.error || updateMutation.error || deleteMutation.error) as Error).message}
+            </p>
+          ) : null}
+        </>
+      )}
+    </div>
+  );
+}
+
+function StatusEventDisplayRow({ event }: { event: JobStatusEvent }) {
+  return (
+    <div className="rounded-md border border-border bg-white p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="text-sm font-medium">
+          {event.from_status ?? "Created"} to {event.to_status}
+        </div>
+        <span className="text-xs text-muted-foreground">{formatDate(event.changed_at)}</span>
+      </div>
+      {event.note ? <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">{event.note}</p> : null}
     </div>
   );
 }
@@ -548,9 +641,9 @@ function StatusEventRow({
   return (
     <div className="rounded-md border border-border bg-white p-3">
       <div className="mb-2 text-xs text-muted-foreground">
-        {event.from_status ?? "Created"} to {event.to_status} · {formatDate(event.changed_at)}
+        {event.from_status ?? "Created"} to {event.to_status} - {formatDate(event.changed_at)}
       </div>
-      <div className="grid gap-2 md:grid-cols-[180px_220px_1fr_auto_auto]">
+      <div className="grid items-center gap-2 md:grid-cols-[180px_220px_minmax(0,1fr)_88px_88px]">
         <Select value={draft.to_status} onChange={(input) => setDraft((current) => ({ ...current, to_status: input.target.value as JobStatus }))}>
           {jobStatuses.map((status) => (
             <option key={status} value={status}>
@@ -559,11 +652,11 @@ function StatusEventRow({
           ))}
         </Select>
         <Input type="datetime-local" value={draft.changed_at ?? ""} onChange={(input) => setDraft((current) => ({ ...current, changed_at: input.target.value }))} />
-        <Input value={draft.note ?? ""} onChange={(input) => setDraft((current) => ({ ...current, note: input.target.value }))} placeholder="Optional note" />
-        <Button size="sm" variant="secondary" onClick={() => onSave(draft)} disabled={isSaving}>
+        <Input value={draft.note ?? ""} onChange={(input) => setDraft((current) => ({ ...current, note: input.target.value }))} placeholder="Notes" />
+        <Button variant="secondary" onClick={() => onSave(draft)} disabled={isSaving}>
           Save
         </Button>
-        <Button size="sm" variant="ghost" onClick={onDelete} disabled={isDeleting}>
+        <Button variant="ghost" onClick={onDelete} disabled={isDeleting}>
           Delete
         </Button>
       </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, CheckCircle2, ExternalLink, Pencil, RefreshCw, Save, Sparkles, X } from "lucide-react";
+import { AlertCircle, CheckCircle2, ChevronDown, ExternalLink, Pencil, RefreshCw, Save, Sparkles, X } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -25,7 +25,7 @@ import {
   type JobStatusEventPayload,
   type RemoteType
 } from "@/lib/types";
-import { csvToList, formatDate, listToCsv } from "@/lib/utils";
+import { cn, csvToList, formatDate, listToCsv } from "@/lib/utils";
 
 type JobEditForm = Omit<JobCreatePayload, "source_content" | "extraction_confidence" | "extraction_warnings" | "status_note">;
 
@@ -352,20 +352,23 @@ function JobOverview({
   isSavingStatus: boolean;
 }) {
   const source = job.links.find((link) => link.kind === "source") ?? job.links[0];
+  const companyLink = job.links.find((link) => link.kind === "company_info" || link.kind === "company_portal");
+  const annualPay = formatAnnualPay(job);
+  const payDisplay = annualPay === "Annual not calculated" ? formatPay(job) : `${formatPay(job)} · ${annualPay}`;
+  const locationDisplay = [job.location, job.remote_type].filter(Boolean).join(" · ") || "Unknown";
   return (
     <div>
       <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm text-muted-foreground">Application Status:</span>
         <QuickStatusSelect value={job.status} onChange={onStatusChange} disabled={isSavingStatus} />
         <Badge>{job.category}</Badge>
         {job.extraction_confidence !== null ? <Badge tone={job.extraction_confidence >= 80 ? "good" : "warn"}>Confidence {job.extraction_confidence}</Badge> : null}
       </div>
       <div className="mt-5 grid gap-3 text-sm md:grid-cols-2">
-        <InfoRow label="Company" value={job.company} />
+        <InfoRow label="Company" value={job.company} href={companyLink?.url} />
         <InfoRow label="Role" value={job.role_title} />
-        <InfoRow label="Location" value={job.location || "Unknown"} />
-        <InfoRow label="Remote" value={job.remote_type || "Unknown"} />
-        <InfoRow label="Pay" value={formatPay(job)} />
-        <InfoRow label="Annual Equivalent" value={formatAnnualPay(job)} />
+        <InfoRow label="Location" value={locationDisplay} />
+        <InfoRow label="Pay" value={payDisplay} />
         <InfoRow
           label="Job Posting"
           value={source ? source.label || linkKindLabels[source.kind] : "Not saved"}
@@ -400,14 +403,14 @@ function MergedJobDetail({
   const skillKeys = new Set<string>();
   const insightKeys = new Set<string>();
   const roleSignals = compactItems([...(insights?.role_focus ?? []), insights?.seniority_signal], { limit: 4, usedKeys: insightKeys, textLimit: 56 });
-  const responsibilities = compactItems(insights?.responsibilities?.length ? insights.responsibilities : job.responsibilities, { limit: 5, usedKeys: insightKeys });
-  const mustHaveTech = compactItems([...(job.required_skills ?? []), ...(insights?.must_have_skills ?? [])], { limit: 6, techOnly: true, usedKeys: skillKeys, textLimit: 42 });
-  const niceToHaveTech = compactItems(insights?.nice_to_have_skills ?? [], { limit: 5, techOnly: true, usedKeys: skillKeys, textLimit: 42 });
+  const responsibilities = compactItems(insights?.responsibilities?.length ? insights.responsibilities : job.responsibilities, { limit: 7, usedKeys: insightKeys, textLimit: 200 });
+  const mustHaveTech = compactItems([...(job.required_skills ?? []), ...(insights?.must_have_skills ?? [])], { limit: 10, techOnly: true, usedKeys: skillKeys, textLimit: 80 });
+  const niceToHaveTech = compactItems(insights?.nice_to_have_skills ?? [], { limit: 7, techOnly: true, usedKeys: skillKeys, textLimit: 80 });
   const benefits = compactItems(job.benefits, { limit: 5, textLimit: 48 });
-  const companySignals = compactItems([sentiment?.summary, ...(sentiment?.themes ?? [])], { limit: 5, textLimit: 62 });
-  const fitSignals = compactItems(analysis?.top_company_fit ?? [], { limit: 4, textLimit: 58 });
+  const companySignals = compactItems([sentiment?.summary, ...(sentiment?.themes ?? [])], { limit: 7, textLimit: 100 });
+  const fitSignals = compactItems(analysis?.top_company_fit ?? [], { limit: 5, textLimit: 100 });
   const resumeKeywords = compactItems(analysis?.resume_keywords ?? [], { limit: 8, techOnly: true, textLimit: 38 });
-  const risksGaps = compactItems(analysis?.risks_gaps ?? [], { limit: 4, textLimit: 58 });
+  const risksGaps = compactItems(analysis?.risks_gaps ?? [], { limit: 5, textLimit: 100 });
   const sourceLinks = analysis?.source_links.length ? analysis.source_links : sentiment?.source_links ?? [];
   return (
     <div className="grid gap-4">
@@ -435,13 +438,13 @@ function MergedJobDetail({
             <List items={roleSignals.length ? roleSignals : [job.category]} />
           </Section>
           <Section title="Responsibilities">
-            <List items={responsibilities} />
+            <BulletList items={responsibilities} />
           </Section>
           <div className="grid gap-5 md:grid-cols-2">
-            <Section title="Must-Have Tech">
+            <Section title="Skills">
               <List items={mustHaveTech} />
             </Section>
-            <Section title="Nice-To-Have Tech">
+            <Section title="Nice to Have">
               <List items={niceToHaveTech} />
             </Section>
           </div>
@@ -467,9 +470,15 @@ function MergedJobDetail({
           <Panel>
             <h2 className="mb-5 text-base font-semibold">Fit And Gaps</h2>
             <div className="grid gap-5 md:grid-cols-3">
-              <List title="Fit" items={fitSignals} tone="good" />
+              <div>
+                <h3 className="mb-2 text-sm font-medium text-green-700">Fit</h3>
+                <BulletList items={fitSignals} />
+              </div>
               <List title="Keywords" items={resumeKeywords} />
-              <List title="Gaps" items={risksGaps} tone="warn" />
+              <div>
+                <h3 className="mb-2 text-sm font-medium text-amber-700">Gaps</h3>
+                <BulletList items={risksGaps} />
+              </div>
             </div>
           </Panel>
           {sentiment ? (
@@ -481,8 +490,8 @@ function MergedJobDetail({
                   {typeof sentiment.confidence === "number" ? <Badge tone={sentiment.confidence >= 70 ? "good" : "warn"}>{sentiment.confidence}% coverage</Badge> : null}
                 </div>
               </div>
-              <List items={companySignals} />
-              {sentiment.coverage_note ? <p className="mt-4 text-sm text-muted-foreground">{compactText(sentiment.coverage_note, 110)}</p> : null}
+              <BulletList items={companySignals} />
+              {sentiment.coverage_note ? <p className="mt-4 text-sm text-muted-foreground">{compactText(sentiment.coverage_note, 180)}</p> : null}
               <SourceLinks links={sourceLinks} />
             </Panel>
           ) : null}
@@ -954,38 +963,101 @@ function Section({
 }
 
 function SourceLinks({ links }: { links: Array<{ title?: string; url?: string }> }) {
-  if (!links.length) return null;
+  const [open, setOpen] = useState(false);
+  const valid = links.filter((l) => l.url);
+  if (!valid.length) return null;
   return (
-    <div>
-      <h3 className="mb-2 mt-4 font-medium">Sources</h3>
-      <div className="grid gap-2 sm:grid-cols-2">
-        {links.map((link, index) => (
-          link.url ? (
+    <div className="mt-4">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <ChevronDown className={cn("h-4 w-4 transition-transform duration-200", open && "rotate-180")} />
+        Sources ({valid.length})
+      </button>
+      {open && (
+        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+          {valid.map((link, index) => (
             <a key={`${link.url}-${index}`} href={link.url} target="_blank" rel="noreferrer" className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2 text-sm">
               <span className="line-clamp-1">{link.title || link.url}</span>
               <ExternalLink className="h-4 w-4 text-muted-foreground" />
             </a>
-          ) : null
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const questionTypeColors: Record<string, string> = {
+  technical: "bg-violet-100 text-violet-800 border-violet-200",
+  behavioral: "bg-amber-100 text-amber-800 border-amber-200",
+  resume: "bg-blue-100 text-blue-800 border-blue-200",
+  company: "bg-teal-100 text-teal-800 border-teal-200",
+  role_specific: "bg-rose-100 text-rose-800 border-rose-200",
+  system_design: "bg-indigo-100 text-indigo-800 border-indigo-200",
+  mixed: "bg-gray-100 text-gray-700 border-gray-200",
+};
+
+function QuestionList({ questions }: { questions: Array<{ question: string; type: string; why_it_matters: string }> }) {
+  const [filter, setFilter] = useState<string>("all");
+  if (!questions.length) return <p className="text-sm text-muted-foreground">No questions generated.</p>;
+  const types = [...new Set(questions.map((q) => q.type))];
+  const visible = filter === "all" ? questions : questions.filter((q) => q.type === filter);
+  return (
+    <div>
+      <div className="mb-4 flex flex-wrap gap-2">
+        <button
+          onClick={() => setFilter("all")}
+          className={cn(
+            "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+            filter === "all" ? "bg-foreground text-background border-foreground" : "border-border hover:bg-muted text-muted-foreground"
+          )}
+        >
+          All ({questions.length})
+        </button>
+        {types.map((type) => (
+          <button
+            key={type}
+            onClick={() => setFilter(type)}
+            className={cn(
+              "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+              filter === type
+                ? (questionTypeColors[type] ?? "bg-muted border-border text-foreground")
+                : "border-border hover:bg-muted text-muted-foreground"
+            )}
+          >
+            {type.replace("_", " ")} ({questions.filter((q) => q.type === type).length})
+          </button>
+        ))}
+      </div>
+      <div className="grid gap-3">
+        {visible.map((question, index) => (
+          <div key={`${question.question}-${index}`} className="rounded-md border border-border p-3 text-sm">
+            <div className="flex flex-wrap items-start gap-2">
+              <span className={cn("shrink-0 rounded border px-1.5 py-0.5 text-xs font-medium", questionTypeColors[question.type] ?? "bg-muted text-muted-foreground border-border")}>
+                {question.type.replace("_", " ")}
+              </span>
+              <span className="font-medium leading-snug">{question.question}</span>
+            </div>
+          </div>
         ))}
       </div>
     </div>
   );
 }
 
-function QuestionList({ questions }: { questions: Array<{ question: string; type: string; why_it_matters: string }> }) {
-  if (!questions.length) return <p className="text-sm text-muted-foreground">No questions generated.</p>;
+function BulletList({ items }: { items: string[] }) {
+  if (!items.length) return <p className="text-sm text-muted-foreground">None captured.</p>;
   return (
-    <div className="grid max-h-[420px] gap-3 overflow-y-auto pr-2">
-      {questions.map((question, index) => (
-        <div key={`${question.question}-${index}`} className="rounded-md border border-border p-3 text-sm">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge>{question.type}</Badge>
-            <span className="font-medium">{compactText(question.question, 120)}</span>
-          </div>
-          <p className="mt-2 text-muted-foreground">{compactText(question.why_it_matters, 90)}</p>
-        </div>
+    <ul className="grid gap-1.5 text-sm">
+      {items.map((item) => (
+        <li key={item} className="flex gap-2">
+          <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/50" />
+          <span>{item}</span>
+        </li>
       ))}
-    </div>
+    </ul>
   );
 }
 

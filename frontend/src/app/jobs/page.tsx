@@ -20,7 +20,7 @@ import {
   type JobStatus,
   type RemoteType
 } from "@/lib/types";
-import { csvToList, formatDate, listToCsv } from "@/lib/utils";
+import { cn, csvToList, formatDate, listToCsv } from "@/lib/utils";
 
 type IntakeState = {
   source_url: string;
@@ -135,7 +135,7 @@ export default function JobsPage() {
         description="Extract a job from a posting, review it, then manage the application pipeline from a searchable tracker."
       />
 
-      <div className="grid gap-4 xl:grid-cols-[430px_1fr]">
+      <div className={cn("grid gap-4 transition-[grid-template-columns] duration-500 ease-in-out", review ? "xl:grid-cols-2" : "xl:grid-cols-[430px_1fr]")}>
         <Panel>
           <div className="mb-4 flex items-center gap-2">
             <Plus className="h-4 w-4 text-primary" />
@@ -461,6 +461,12 @@ function ReviewEditor({
       <Field label="Summary">
         <Textarea value={review.summary ?? ""} onChange={(event) => set("summary", event.target.value)} />
       </Field>
+      <Field label="Main responsibilities">
+        <Textarea value={listToCsv(review.responsibilities)} onChange={(event) => set("responsibilities", csvToList(event.target.value))} />
+      </Field>
+      <Field label="Skills">
+        <Textarea value={listToCsv(review.required_skills)} onChange={(event) => set("required_skills", csvToList(event.target.value))} />
+      </Field>
       <div className="grid gap-3 md:grid-cols-2">
         <Field label="Pay minimum">
           <Input type="number" value={review.pay_min ?? ""} onChange={(event) => set("pay_min", event.target.value ? Number(event.target.value) : null)} />
@@ -487,12 +493,6 @@ function ReviewEditor({
       <Field label="Benefits">
         <Textarea value={listToCsv(review.benefits ?? [])} onChange={(event) => set("benefits", csvToList(event.target.value))} />
       </Field>
-      <Field label="Main responsibilities">
-        <Textarea value={listToCsv(review.responsibilities)} onChange={(event) => set("responsibilities", csvToList(event.target.value))} />
-      </Field>
-      <Field label="Required skills">
-        <Textarea value={listToCsv(review.required_skills)} onChange={(event) => set("required_skills", csvToList(event.target.value))} />
-      </Field>
       <Field label="Notes">
         <Textarea value={review.notes ?? ""} onChange={(event) => set("notes", event.target.value)} />
       </Field>
@@ -508,7 +508,7 @@ function ReviewEditor({
           </Button>
         </div>
         {review.links.map((link, index) => (
-          <div key={`${link.kind}-${index}`} className="grid gap-2 sm:grid-cols-[120px_minmax(140px,0.8fr)_minmax(240px,1.4fr)_40px]">
+          <div key={`${link.kind}-${index}`} className="grid gap-2 sm:grid-cols-[100px_minmax(0,0.7fr)_minmax(0,1fr)_36px]">
             <Select value={link.kind} onChange={(event) => setLink(index, { kind: event.target.value as JobLinkInput["kind"] })}>
               {editableLinkKinds.map((kind) => (
                 <option key={kind} value={kind}>

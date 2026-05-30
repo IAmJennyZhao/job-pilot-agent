@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app import models, prompts, schemas
 from app.services import ai_service, profile_service
+from app.services.research_service import CompanyResearchRetrievalAgent
 
 
 def normalize_company_name(company_name: str) -> str:
@@ -89,13 +90,27 @@ class PostingAnalysisAgent:
 
 
 class CompanyResearchAgent:
-    @staticmethod
-    def run(db: Session, job: models.Job) -> models.CompanyResearchSnapshot:
-        output = ai_service.get_research_structured_output(
+    def __init__(
+        self,
+        retrieval_agent: CompanyResearchRetrievalAgent | None = None,
+    ) -> None:
+        self.retrieval_agent = retrieval_agent or CompanyResearchRetrievalAgent()
+
+    def run(self, db: Session, job: models.Job) -> models.CompanyResearchSnapshot:
+        research_context = self.retrieval_agent.run(job.company, job.role_title)
+        output = ai_service.get_structured_output(
             schemas.CompanyResearchOutput,
             prompts.SYSTEM_PROMPT,
-            prompts.company_research_prompt(job.company, job.role_title),
+            prompts.company_research_prompt(
+                job.company,
+                job.role_title,
+                research_context.prompt_text(),
+                research_context.warnings,
+            ),
         )
+        if research_context.warnings:
+            warning_note = " ".join(research_context.warnings)
+            output.coverage_note = f"{output.coverage_note} {warning_note}".strip()
         return _save_company_research(db, job.company, output)
 
 
@@ -160,7 +175,7 @@ def run_advanced_analysis(
 
     if company_research is None:
         try:
-            company_research = CompanyResearchAgent.run(db, job)
+            company_research = CompanyResearchAgent().run(db, job)
         except Exception as exc:
             errors.append(f"Company research failed: {_error_message(exc)}")
 

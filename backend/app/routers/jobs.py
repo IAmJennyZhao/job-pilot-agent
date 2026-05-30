@@ -56,6 +56,49 @@ def update_job(job_id: str, payload: schemas.JobUpdate, db: Session = Depends(ge
     return job_service.update_job(db, job, payload)
 
 
+@router.post("/{job_id}/status-events", response_model=schemas.JobDetail)
+def create_status_event(
+    job_id: str,
+    payload: schemas.JobStatusEventCreate,
+    db: Session = Depends(get_db),
+):
+    job = job_service.get_job(db, job_id)
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+    return job_service.create_status_event(db, job, payload)
+
+
+@router.patch("/{job_id}/status-events/{event_id}", response_model=schemas.JobDetail)
+def update_status_event(
+    job_id: str,
+    event_id: str,
+    payload: schemas.JobStatusEventUpdate,
+    db: Session = Depends(get_db),
+):
+    job = job_service.get_job(db, job_id)
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+    try:
+        return job_service.update_status_event(db, job, event_id, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.delete("/{job_id}/status-events/{event_id}", response_model=schemas.JobDetail)
+def delete_status_event(
+    job_id: str,
+    event_id: str,
+    db: Session = Depends(get_db),
+):
+    job = job_service.get_job(db, job_id)
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+    try:
+        return job_service.delete_status_event(db, job, event_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
 @router.delete("/{job_id}", response_model=schemas.JobRead)
 def archive_job(job_id: str, db: Session = Depends(get_db)):
     job = job_service.get_job(db, job_id)

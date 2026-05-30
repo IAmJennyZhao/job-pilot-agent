@@ -21,6 +21,8 @@ import {
   type JobDetail,
   type JobLinkInput,
   type JobStatus,
+  type JobStatusEvent,
+  type JobStatusEventPayload,
   type RemoteType
 } from "@/lib/types";
 import { csvToList, formatDate, listToCsv } from "@/lib/utils";
@@ -36,7 +38,8 @@ const linkKindLabels: Record<JobLinkInput["kind"], string> = {
   custom: "Custom"
 };
 
-const additionalLinkKinds: JobLinkInput["kind"][] = [
+const editableLinkKinds: JobLinkInput["kind"][] = [
+  "source",
   "application_portal",
   "company_portal",
   "recruiter",
@@ -46,7 +49,7 @@ const additionalLinkKinds: JobLinkInput["kind"][] = [
 
 const advancedSteps = [
   "Reading the posting",
-  "Researching the company",
+  "Searching public company sources",
   "Summarizing employee sentiment",
   "Comparing resume fit",
   "Preparing interview signals"
@@ -210,18 +213,7 @@ export default function JobDetailPage() {
 
               <div className="grid gap-4 xl:grid-cols-[0.8fr_1.2fr]">
                 <Panel>
-                  <h2 className="text-base font-semibold">Status History</h2>
-                  <div className="mt-4 grid gap-3">
-                    {job.status_events.map((event) => (
-                      <div key={event.id} className="border-b border-border pb-3 last:border-0 last:pb-0">
-                        <div className="text-sm font-medium">
-                          {event.from_status ?? "Created"} to {event.to_status}
-                        </div>
-                        <div className="text-xs text-muted-foreground">{formatDate(event.changed_at)}</div>
-                        {event.note ? <p className="mt-1 text-sm text-muted-foreground">{event.note}</p> : null}
-                      </div>
-                    ))}
-                  </div>
+                  <StatusHistoryEditor job={job} onChanged={invalidateJob} />
                 </Panel>
                 <Panel>
                   <h2 className="text-base font-semibold">Source Material</h2>
@@ -300,6 +292,7 @@ function JobOverview({ job }: { job: JobDetail }) {
         <InfoRow label="Location" value={job.location || "Unknown"} />
         <InfoRow label="Remote" value={job.remote_type || "Unknown"} />
         <InfoRow label="Pay" value={formatPay(job)} />
+        <InfoRow label="Annual Equivalent" value={formatAnnualPay(job)} />
         <InfoRow
           label="Job Posting"
           value={source ? source.label || linkKindLabels[source.kind] : "Not saved"}
@@ -332,7 +325,7 @@ function JobEditFormView({
     const links = form.links.map((link, currentIndex) => (currentIndex === index ? { ...link, ...nextPatch } : link));
     onChange({ ...form, links });
   };
-  const addLink = () => onChange({ ...form, links: [...form.links, { kind: "custom", label: "Custom", url: "" }] });
+  const addLink = () => onChange({ ...form, links: [...form.links, { kind: "source", label: "Job Posting", url: "" }] });
   const removeLink = (index: number) => onChange({ ...form, links: form.links.filter((_link, currentIndex) => currentIndex !== index) });
 
   return (
@@ -421,27 +414,19 @@ function JobEditFormView({
           </Button>
         </div>
         {form.links.map((link, index) => (
-          <div key={`${link.kind}-${index}`} className="grid gap-2 md:grid-cols-[170px_1fr_1fr_40px]">
-            {link.kind === "source" ? (
-              <Input value="Job Posting" disabled />
-            ) : (
-              <Select value={link.kind} onChange={(event) => setLink(index, { kind: event.target.value as JobLinkInput["kind"] })}>
-                {additionalLinkKinds.map((kind) => (
-                  <option key={kind} value={kind}>
-                    {linkKindLabels[kind]}
-                  </option>
-                ))}
-              </Select>
-            )}
+          <div key={`${link.kind}-${index}`} className="grid gap-2 md:grid-cols-[120px_minmax(140px,0.8fr)_minmax(240px,1.4fr)_40px]">
+            <Select value={link.kind} onChange={(event) => setLink(index, { kind: event.target.value as JobLinkInput["kind"] })}>
+              {editableLinkKinds.map((kind) => (
+                <option key={kind} value={kind}>
+                  {linkKindLabels[kind]}
+                </option>
+              ))}
+            </Select>
             <Input value={link.label} onChange={(event) => setLink(index, { label: event.target.value })} />
             <Input value={link.url} onChange={(event) => setLink(index, { url: event.target.value })} placeholder="https://..." />
-            {link.kind !== "source" ? (
-              <Button variant="ghost" size="icon" onClick={() => removeLink(index)} title="Remove link">
-                <X className="h-4 w-4" />
-              </Button>
-            ) : (
-              <span />
-            )}
+            <Button variant="ghost" size="icon" onClick={() => removeLink(index)} title="Remove link">
+              <X className="h-4 w-4" />
+            </Button>
           </div>
         ))}
       </div>
@@ -457,6 +442,132 @@ function JobEditFormView({
         </Button>
       </div>
     </form>
+  );
+}
+
+function StatusHistoryEditor({ job, onChanged }: { job: JobDetail; onChanged: () => void }) {
+  const sortedEvents = [...job.status_events].sort((a, b) => new Date(a.changed_at).getTime() - new Date(b.changed_at).getTime());
+  const [newEvent, setNewEvent] = useState<JobStatusEventPayload>({
+    to_status: job.status,
+    changed_at: toDateTimeLocalValue(new Date().toISOString()),
+    note: ""
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (payload: JobStatusEventPayload) => api.createStatusEvent(job.id, normalizeStatusPayload(payload)),
+    onSuccess: onChanged
+  });
+  const updateMutation = useMutation({
+    mutationFn: ({ eventId, payload }: { eventId: string; payload: Partial<JobStatusEventPayload> }) =>
+      api.updateStatusEvent(job.id, eventId, normalizeStatusPayload(payload)),
+    onSuccess: onChanged
+  });
+  const deleteMutation = useMutation({
+    mutationFn: (eventId: string) => api.deleteStatusEvent(job.id, eventId),
+    onSuccess: onChanged
+  });
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold">Status History</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Correct accidental status changes or add missing steps. The latest event sets the current status.</p>
+        </div>
+        <Badge>{job.status}</Badge>
+      </div>
+      <div className="mt-4 grid gap-3">
+        {sortedEvents.map((event) => (
+          <StatusEventRow
+            key={event.id}
+            event={event}
+            isSaving={updateMutation.isPending}
+            isDeleting={deleteMutation.isPending}
+            onSave={(payload) => updateMutation.mutate({ eventId: event.id, payload })}
+            onDelete={() => deleteMutation.mutate(event.id)}
+          />
+        ))}
+      </div>
+      <div className="mt-5 rounded-md border border-border bg-muted/30 p-3">
+        <div className="mb-3 text-sm font-semibold">Add status step</div>
+        <div className="grid gap-2 md:grid-cols-[180px_220px_1fr_auto]">
+          <Select value={newEvent.to_status} onChange={(event) => setNewEvent((current) => ({ ...current, to_status: event.target.value as JobStatus }))}>
+            {jobStatuses.map((status) => (
+              <option key={status} value={status}>
+                {status}
+              </option>
+            ))}
+          </Select>
+          <Input type="datetime-local" value={newEvent.changed_at ?? ""} onChange={(event) => setNewEvent((current) => ({ ...current, changed_at: event.target.value }))} />
+          <Input value={newEvent.note ?? ""} onChange={(event) => setNewEvent((current) => ({ ...current, note: event.target.value }))} placeholder="Optional note" />
+          <Button
+            size="sm"
+            onClick={() => createMutation.mutate(newEvent)}
+            disabled={createMutation.isPending}
+          >
+            Add
+          </Button>
+        </div>
+      </div>
+      {createMutation.error || updateMutation.error || deleteMutation.error ? (
+        <p className="mt-3 text-sm text-destructive">
+          {((createMutation.error || updateMutation.error || deleteMutation.error) as Error).message}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function StatusEventRow({
+  event,
+  isSaving,
+  isDeleting,
+  onSave,
+  onDelete
+}: {
+  event: JobStatusEvent;
+  isSaving: boolean;
+  isDeleting: boolean;
+  onSave: (payload: Partial<JobStatusEventPayload>) => void;
+  onDelete: () => void;
+}) {
+  const [draft, setDraft] = useState<JobStatusEventPayload>({
+    to_status: event.to_status,
+    changed_at: toDateTimeLocalValue(event.changed_at),
+    note: event.note ?? ""
+  });
+
+  useEffect(() => {
+    setDraft({
+      to_status: event.to_status,
+      changed_at: toDateTimeLocalValue(event.changed_at),
+      note: event.note ?? ""
+    });
+  }, [event.to_status, event.changed_at, event.note]);
+
+  return (
+    <div className="rounded-md border border-border bg-white p-3">
+      <div className="mb-2 text-xs text-muted-foreground">
+        {event.from_status ?? "Created"} to {event.to_status} · {formatDate(event.changed_at)}
+      </div>
+      <div className="grid gap-2 md:grid-cols-[180px_220px_1fr_auto_auto]">
+        <Select value={draft.to_status} onChange={(input) => setDraft((current) => ({ ...current, to_status: input.target.value as JobStatus }))}>
+          {jobStatuses.map((status) => (
+            <option key={status} value={status}>
+              {status}
+            </option>
+          ))}
+        </Select>
+        <Input type="datetime-local" value={draft.changed_at ?? ""} onChange={(input) => setDraft((current) => ({ ...current, changed_at: input.target.value }))} />
+        <Input value={draft.note ?? ""} onChange={(input) => setDraft((current) => ({ ...current, note: input.target.value }))} placeholder="Optional note" />
+        <Button size="sm" variant="secondary" onClick={() => onSave(draft)} disabled={isSaving}>
+          Save
+        </Button>
+        <Button size="sm" variant="ghost" onClick={onDelete} disabled={isDeleting}>
+          Delete
+        </Button>
+      </div>
+    </div>
   );
 }
 
@@ -484,7 +595,7 @@ function AdvancedAnalysisControl({
   const skippedNotes = readiness
     ? [
         ...readiness.missing_requirements.filter((item) => item !== "OPENAI_API_KEY" && item !== "OPENAI_MODEL"),
-        ...(readiness.has_openai_research_model ? [] : ["OPENAI_RESEARCH_MODEL for company research"])
+        ...(readiness.has_tavily_api_key ? [] : ["TAVILY_API_KEY for public company retrieval"])
       ]
     : [];
 
@@ -527,9 +638,9 @@ function AdvancedAnalysisControl({
           Extraction model: {readiness.model}
         </div>
       ) : null}
-      {readiness?.research_model ? (
-        <div className="mb-3 text-sm text-muted-foreground">Research model: {readiness.research_model}</div>
-      ) : null}
+      <div className="mb-3 text-sm text-muted-foreground">
+        Company retrieval: {readiness?.has_tavily_api_key ? "Tavily enabled" : "limited fallback"}
+      </div>
       {savedAt ? <div className="mb-3 text-xs text-muted-foreground">Last run {formatDate(savedAt)}</div> : null}
       <div className="flex flex-wrap gap-2">
         <Button onClick={onRun} disabled={!canRun || isRunning}>
@@ -702,7 +813,7 @@ function SourceLinks({ links }: { links: Array<{ title?: string; url?: string }>
 function QuestionList({ questions }: { questions: Array<{ question: string; type: string; why_it_matters: string }> }) {
   if (!questions.length) return <p className="text-sm text-muted-foreground">No questions generated.</p>;
   return (
-    <div className="grid gap-3">
+    <div className="grid max-h-[420px] gap-3 overflow-y-auto pr-2">
       {questions.map((question, index) => (
         <div key={`${question.question}-${index}`} className="rounded-md border border-border bg-white p-3 text-sm">
           <div className="flex flex-wrap items-center gap-2">
@@ -757,6 +868,29 @@ function formatPay(job: { pay_min: number | null; pay_max: number | null; pay_cu
   if (job.pay_min !== null) return `${currency} ${job.pay_min.toLocaleString()}+${suffix}`;
   if (job.pay_max !== null) return `Up to ${currency} ${job.pay_max.toLocaleString()}${suffix}`;
   return "Not listed";
+}
+
+function formatAnnualPay(job: { pay_annual_min: number | null; pay_annual_max: number | null; pay_currency: string | null }) {
+  const currency = job.pay_currency ?? "USD";
+  if (job.pay_annual_min !== null && job.pay_annual_max !== null) return `${currency} ${job.pay_annual_min.toLocaleString()}-${job.pay_annual_max.toLocaleString()} / year`;
+  if (job.pay_annual_min !== null) return `${currency} ${job.pay_annual_min.toLocaleString()}+ / year`;
+  if (job.pay_annual_max !== null) return `Up to ${currency} ${job.pay_annual_max.toLocaleString()} / year`;
+  return "Annual not calculated";
+}
+
+function toDateTimeLocalValue(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const offsetMs = date.getTimezoneOffset() * 60 * 1000;
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+}
+
+function normalizeStatusPayload<T extends Partial<JobStatusEventPayload>>(payload: T): T {
+  return {
+    ...payload,
+    changed_at: payload.changed_at ? new Date(payload.changed_at).toISOString() : payload.changed_at,
+    note: payload.note?.trim() || null
+  };
 }
 
 function errorFor(errors: string[], prefix: string) {

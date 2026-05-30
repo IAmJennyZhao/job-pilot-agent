@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     database_url: str = Field(default="sqlite:///./careerpilot.db", alias="DATABASE_URL")
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
     openai_model: str | None = Field(default=None, alias="OPENAI_MODEL")
-    openai_research_model: str | None = Field(default=None, alias="OPENAI_RESEARCH_MODEL")
+    tavily_api_key: str | None = Field(default=None, alias="TAVILY_API_KEY")
     backend_cors_origins: str = Field(
         default="http://localhost:3000,http://127.0.0.1:3000",
         alias="BACKEND_CORS_ORIGINS",

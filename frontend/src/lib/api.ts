@@ -12,6 +12,7 @@ import type {
   JobExtractPreview,
   JobIntelligenceResponse,
   JobListItem,
+  JobStatusEventPayload,
   JobStatus,
   ResumeProfile,
   ResumeSuggestion,
@@ -88,6 +89,18 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(payload)
     }),
+  createStatusEvent: (jobId: string, payload: JobStatusEventPayload) =>
+    request<JobDetail>(`/api/jobs/${jobId}/status-events`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+  updateStatusEvent: (jobId: string, eventId: string, payload: Partial<JobStatusEventPayload>) =>
+    request<JobDetail>(`/api/jobs/${jobId}/status-events/${eventId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload)
+    }),
+  deleteStatusEvent: (jobId: string, eventId: string) =>
+    request<JobDetail>(`/api/jobs/${jobId}/status-events/${eventId}`, { method: "DELETE" }),
   archiveJob: (id: string) => request<Job>(`/api/jobs/${id}`, { method: "DELETE" }),
   profile: () => request<ResumeProfile | null>("/api/profile"),
   saveProfile: (payload: Partial<ResumeProfile>) =>

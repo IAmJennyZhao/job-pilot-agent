@@ -5,6 +5,14 @@ from app import models, schemas
 
 MAX_TOP_GAPS = 3
 
+PAY_MULTIPLIERS = {
+    "hour": 40 * 52,
+    "day": 260,
+    "week": 52,
+    "month": 12,
+    "year": 1,
+}
+
 
 def _unique_nonempty(values: list[str]) -> list[str]:
     output: list[str] = []
@@ -41,6 +49,37 @@ def _replace_links(db: Session, job: models.Job, links: list[schemas.JobLinkCrea
         )
 
 
+def annualize_pay(
+    pay_min: int | None,
+    pay_max: int | None,
+    pay_period: str | None,
+) -> tuple[int | None, int | None, str | None]:
+    period = (pay_period or "unknown").strip().casefold()
+    multiplier = PAY_MULTIPLIERS.get(period)
+    if multiplier is None or (pay_min is None and pay_max is None):
+        return None, None, None
+    note = "Annual equivalent"
+    if period != "year":
+        note = {
+            "hour": "Annual equivalent using 40 hours/week and 52 weeks/year.",
+            "day": "Annual equivalent using 260 work days/year.",
+            "week": "Annual equivalent using 52 weeks/year.",
+            "month": "Annual equivalent using 12 months/year.",
+        }.get(period, note)
+    return (
+        pay_min * multiplier if pay_min is not None else None,
+        pay_max * multiplier if pay_max is not None else None,
+        note,
+    )
+
+
+def _apply_pay_annualization(job: models.Job) -> None:
+    annual_min, annual_max, note = annualize_pay(job.pay_min, job.pay_max, job.pay_period)
+    job.pay_annual_min = annual_min
+    job.pay_annual_max = annual_max
+    job.pay_conversion_note = note
+
+
 def _status_event(
     job: models.Job,
     from_status: models.JobStatus | None,
@@ -53,6 +92,32 @@ def _status_event(
         to_status=to_status,
         note=note,
     )
+
+
+def _ordered_status_events(db: Session, job: models.Job) -> list[models.JobStatusEvent]:
+    return list(
+        db.scalars(
+            select(models.JobStatusEvent)
+            .where(models.JobStatusEvent.job_id == job.id)
+            .order_by(models.JobStatusEvent.changed_at, models.JobStatusEvent.id)
+        ).all()
+    )
+
+
+def _reconcile_status_history(db: Session, job: models.Job) -> None:
+    events = _ordered_status_events(db, job)
+    if not events:
+        replacement = _status_event(job, None, models.JobStatus.saved)
+        db.add(replacement)
+        db.flush()
+        events = [replacement]
+
+    previous_status: models.JobStatus | None = None
+    for event in events:
+        event.from_status = previous_status
+        previous_status = event.to_status
+        db.add(event)
+    job.status = events[-1].to_status
 
 
 def save_job(db: Session, payload: schemas.JobCreate) -> models.Job:
@@ -77,6 +142,7 @@ def save_job(db: Session, payload: schemas.JobCreate) -> models.Job:
         extraction_confidence=payload.extraction_confidence,
         extraction_warnings=payload.extraction_warnings,
     )
+    _apply_pay_annualization(job)
     db.add(job)
     db.flush()
     _replace_links(db, job, payload.links)
@@ -180,12 +246,71 @@ def update_job(db: Session, job: models.Job, payload: schemas.JobUpdate) -> mode
     links = values.pop("links", None)
     status_note = values.pop("status_note", None)
     old_status = job.status
+    pay_keys = {"pay_min", "pay_max", "pay_currency", "pay_period", "pay_raw"}
     for key, value in values.items():
         setattr(job, key, value)
+    if pay_keys.intersection(values):
+        _apply_pay_annualization(job)
     if links is not None:
         _replace_links(db, job, [schemas.JobLinkCreate(**link) for link in links])
     if "status" in values and old_status != job.status:
         db.add(_status_event(job, old_status, job.status, status_note))
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    return job
+
+
+def create_status_event(
+    db: Session,
+    job: models.Job,
+    payload: schemas.JobStatusEventCreate,
+) -> models.Job:
+    event = models.JobStatusEvent(job=job, to_status=payload.to_status, note=payload.note)
+    if payload.changed_at is not None:
+        event.changed_at = payload.changed_at
+    db.add(event)
+    db.flush()
+    _reconcile_status_history(db, job)
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    return job
+
+
+def update_status_event(
+    db: Session,
+    job: models.Job,
+    event_id: str,
+    payload: schemas.JobStatusEventUpdate,
+) -> models.Job:
+    event = next((item for item in job.status_events if item.id == event_id), None)
+    if event is None:
+        raise ValueError("Status event not found")
+    values = payload.model_dump(exclude_unset=True)
+    for key, value in values.items():
+        setattr(event, key, value)
+    db.add(event)
+    db.flush()
+    _reconcile_status_history(db, job)
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    return job
+
+
+def delete_status_event(
+    db: Session,
+    job: models.Job,
+    event_id: str,
+) -> models.Job:
+    event = next((item for item in job.status_events if item.id == event_id), None)
+    if event is None:
+        raise ValueError("Status event not found")
+    db.delete(event)
+    db.flush()
+    db.refresh(job)
+    _reconcile_status_history(db, job)
     db.add(job)
     db.commit()
     db.refresh(job)

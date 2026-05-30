@@ -51,6 +51,18 @@ class JobStatusEventRead(CareerPilotModel):
     changed_at: datetime
 
 
+class JobStatusEventCreate(BaseModel):
+    to_status: JobStatus
+    changed_at: datetime | None = None
+    note: str | None = None
+
+
+class JobStatusEventUpdate(BaseModel):
+    to_status: JobStatus | None = None
+    changed_at: datetime | None = None
+    note: str | None = None
+
+
 class JobDuplicateCandidate(BaseModel):
     id: str
     company: str
@@ -160,6 +172,9 @@ class JobRead(CareerPilotModel):
     pay_currency: str | None
     pay_period: str | None
     pay_raw: str | None
+    pay_annual_min: int | None
+    pay_annual_max: int | None
+    pay_conversion_note: str | None
     benefits: list[str]
     status: JobStatus
     notes: str | None
@@ -475,9 +490,8 @@ class AIReadiness(BaseModel):
     ready: bool
     has_openai_api_key: bool
     has_openai_model: bool
-    has_openai_research_model: bool
+    has_tavily_api_key: bool
     model: str | None
-    research_model: str | None
     job_id: str
     profile_id: str | None
     has_profile: bool

@@ -79,6 +79,14 @@ def ensure_job(
     job.pay_currency = payload.pay_currency
     job.pay_period = payload.pay_period
     job.pay_raw = payload.pay_raw
+    annual_min, annual_max, conversion_note = job_service.annualize_pay(
+        payload.pay_min,
+        payload.pay_max,
+        payload.pay_period,
+    )
+    job.pay_annual_min = annual_min
+    job.pay_annual_max = annual_max
+    job.pay_conversion_note = conversion_note
     job.benefits = payload.benefits
     job.source_content = payload.source_content
     job.extraction_confidence = payload.extraction_confidence

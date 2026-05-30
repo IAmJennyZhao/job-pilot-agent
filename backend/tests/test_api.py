@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -212,7 +213,7 @@ def test_extract_preview_fetches_url_content(client, monkeypatch):
 def test_extract_preview_failure_allows_manual_create(client, monkeypatch):
     monkeypatch.setattr(
         "app.services.ai_service.get_settings",
-        lambda: SimpleNamespace(openai_api_key=None, openai_model="gpt-5-mini", openai_research_model=None),
+        lambda: SimpleNamespace(openai_api_key=None, openai_model="gpt-5-mini", tavily_api_key=None),
     )
 
     response = client.post(
@@ -267,6 +268,8 @@ def test_job_status_history_search_filter_and_archive(client):
         ],
     )
     assert job["pay_raw"] == "$120k-$160k base"
+    assert job["pay_annual_min"] == 120000
+    assert job["pay_annual_max"] == 160000
     assert job["benefits"] == ["Health insurance", "Remote work"]
     assert other["links"][1]["kind"] == "company_info"
 
@@ -354,10 +357,89 @@ def test_job_list_top_gaps_sources(client, monkeypatch):
     assert listed_job["top_gaps_source"] == "resume_match"
 
 
+def test_pay_annualization_for_non_yearly_periods(client):
+    hourly = create_job(
+        client,
+        pay_min=50,
+        pay_max=75,
+        pay_period="hour",
+        pay_raw=None,
+    )
+    assert hourly["pay_annual_min"] == 104000
+    assert hourly["pay_annual_max"] == 156000
+    assert "40 hours/week" in hourly["pay_conversion_note"]
+
+    response = client.patch(
+        f"/api/jobs/{hourly['id']}",
+        json={"pay_min": 9000, "pay_max": 12000, "pay_period": "month", "pay_raw": None},
+    )
+    assert response.status_code == 200
+    updated = response.json()
+    assert updated["pay_annual_min"] == 108000
+    assert updated["pay_annual_max"] == 144000
+    assert "12 months/year" in updated["pay_conversion_note"]
+
+    unknown = create_job(client, pay_min=3000, pay_max=5000, pay_period="contract", pay_raw="$3k-$5k contract")
+    assert unknown["pay_annual_min"] is None
+    assert unknown["pay_annual_max"] is None
+    assert unknown["pay_conversion_note"] is None
+
+
+def test_status_event_hard_edit_add_delete_reconciles_current_status(client):
+    job = create_job(client)
+    base_time = datetime.now(timezone.utc).replace(microsecond=0)
+
+    response = client.post(
+        f"/api/jobs/{job['id']}/status-events",
+        json={
+            "to_status": "Applied",
+            "changed_at": (base_time + timedelta(days=1)).isoformat(),
+            "note": "Applied on portal.",
+        },
+    )
+    assert response.status_code == 200
+    detail = response.json()
+    assert detail["status"] == "Applied"
+    applied_event = detail["status_events"][-1]
+    assert applied_event["from_status"] == "Saved"
+
+    response = client.post(
+        f"/api/jobs/{job['id']}/status-events",
+        json={
+            "to_status": "Tech Screen",
+            "changed_at": (base_time + timedelta(days=3)).isoformat(),
+            "note": "Wrong stage.",
+        },
+    )
+    assert response.status_code == 200
+    tech_event = response.json()["status_events"][-1]
+
+    response = client.patch(
+        f"/api/jobs/{job['id']}/status-events/{tech_event['id']}",
+        json={
+            "to_status": "Recruiter Screen",
+            "changed_at": (base_time + timedelta(days=2)).isoformat(),
+            "note": "Corrected stage.",
+        },
+    )
+    assert response.status_code == 200
+    detail = response.json()
+    assert detail["status"] == "Recruiter Screen"
+    assert [event["to_status"] for event in detail["status_events"]] == ["Saved", "Applied", "Recruiter Screen"]
+    assert detail["status_events"][2]["from_status"] == "Applied"
+    assert detail["status_events"][2]["note"] == "Corrected stage."
+
+    response = client.delete(f"/api/jobs/{job['id']}/status-events/{tech_event['id']}")
+    assert response.status_code == 200
+    detail = response.json()
+    assert detail["status"] == "Applied"
+    assert [event["to_status"] for event in detail["status_events"]] == ["Saved", "Applied"]
+
+
 def test_ai_config_requires_key_and_model(monkeypatch):
     monkeypatch.setattr(
         "app.services.ai_service.get_settings",
-        lambda: SimpleNamespace(openai_api_key=None, openai_model="gpt-5-mini", openai_research_model=None),
+        lambda: SimpleNamespace(openai_api_key=None, openai_model="gpt-5-mini", tavily_api_key=None),
     )
     with pytest.raises(HTTPException) as missing_key:
         ai_service.get_structured_output(schemas.JobAnalysisOutput, "system", "user")
@@ -366,21 +448,12 @@ def test_ai_config_requires_key_and_model(monkeypatch):
 
     monkeypatch.setattr(
         "app.services.ai_service.get_settings",
-        lambda: SimpleNamespace(openai_api_key="sk-test", openai_model=None, openai_research_model="gpt-5-mini"),
+        lambda: SimpleNamespace(openai_api_key="sk-test", openai_model=None, tavily_api_key="tvly-test"),
     )
     with pytest.raises(HTTPException) as missing_model:
         ai_service.get_structured_output(schemas.JobAnalysisOutput, "system", "user")
     assert missing_model.value.status_code == 503
     assert "OPENAI_MODEL" in missing_model.value.detail
-
-    monkeypatch.setattr(
-        "app.services.ai_service.get_settings",
-        lambda: SimpleNamespace(openai_api_key="sk-test", openai_model="gpt-5-mini", openai_research_model=None),
-    )
-    with pytest.raises(HTTPException) as missing_research_model:
-        ai_service.get_research_structured_output(schemas.CompanyResearchOutput, "system", "user")
-    assert missing_research_model.value.status_code == 503
-    assert "OPENAI_RESEARCH_MODEL" in missing_research_model.value.detail
 
 
 def test_ai_readiness_reports_missing_requirements(client, monkeypatch):
@@ -402,7 +475,7 @@ def test_ai_readiness_reports_missing_requirements(client, monkeypatch):
     assert response.status_code == 201
     monkeypatch.setattr(
         "app.services.ai_service.get_settings",
-        lambda: SimpleNamespace(openai_api_key=None, openai_model=None, openai_research_model=None),
+        lambda: SimpleNamespace(openai_api_key=None, openai_model=None, tavily_api_key=None),
     )
 
     response = client.get(f"/api/ai/readiness/{job['id']}")
@@ -410,8 +483,7 @@ def test_ai_readiness_reports_missing_requirements(client, monkeypatch):
     readiness = response.json()
     assert readiness["ready"] is False
     assert readiness["model"] is None
-    assert readiness["research_model"] is None
-    assert readiness["has_openai_research_model"] is False
+    assert readiness["has_tavily_api_key"] is False
     assert "openai_api_key" not in readiness
     assert set(readiness["missing_requirements"]) == {
         "OPENAI_API_KEY",
@@ -489,14 +561,17 @@ def test_run_advanced_analysis_persists_sections_and_company_research(client, mo
             return fake_resume_fit_output()
         if output_model is schemas.AdvancedInterviewPrepOutput:
             return fake_advanced_interview_output()
+        if output_model is schemas.CompanyResearchOutput:
+            return fake_company_research_output()
         raise AssertionError("Unexpected model")
 
     monkeypatch.setattr("app.services.ai_service.get_structured_output", fake_structured_output)
     monkeypatch.setattr(
-        "app.services.ai_service.get_research_structured_output",
-        lambda output_model, _system_prompt, _user_prompt: fake_company_research_output()
-        if output_model is schemas.CompanyResearchOutput
-        else None,
+        "app.services.advanced_analysis_service.CompanyResearchRetrievalAgent.run",
+        lambda _self, _company, _role_title: SimpleNamespace(
+            prompt_text=lambda: "Review source text.",
+            warnings=[],
+        ),
     )
 
     response = client.post(f"/api/ai/run-advanced-analysis/{job['id']}")
@@ -521,7 +596,7 @@ def test_advanced_analysis_reuses_company_research_for_same_company(client, monk
         links=[{"kind": "source", "label": "Job Posting", "url": "https://example.com/job-two"}],
     )
     create_profile(client)
-    research_calls = 0
+    retrieval_calls = 0
 
     def fake_structured_output(output_model, _system_prompt, _user_prompt):
         if output_model is schemas.JobInsightsOutput:
@@ -530,26 +605,27 @@ def test_advanced_analysis_reuses_company_research_for_same_company(client, monk
             return fake_resume_fit_output()
         if output_model is schemas.AdvancedInterviewPrepOutput:
             return fake_advanced_interview_output()
+        if output_model is schemas.CompanyResearchOutput:
+            return fake_company_research_output()
         raise AssertionError("Unexpected model")
 
-    def fake_research_output(output_model, _system_prompt, _user_prompt):
-        nonlocal research_calls
-        assert output_model is schemas.CompanyResearchOutput
-        research_calls += 1
-        return fake_company_research_output()
+    def fake_retrieval(_self, _company, _role_title):
+        nonlocal retrieval_calls
+        retrieval_calls += 1
+        return SimpleNamespace(prompt_text=lambda: "Review source text.", warnings=[])
 
     monkeypatch.setattr("app.services.ai_service.get_structured_output", fake_structured_output)
-    monkeypatch.setattr("app.services.ai_service.get_research_structured_output", fake_research_output)
+    monkeypatch.setattr("app.services.advanced_analysis_service.CompanyResearchRetrievalAgent.run", fake_retrieval)
 
     assert client.post(f"/api/ai/run-advanced-analysis/{first['id']}").status_code == 200
     assert client.post(f"/api/ai/run-advanced-analysis/{second['id']}").status_code == 200
-    assert research_calls == 1
+    assert retrieval_calls == 1
 
     assert client.post(f"/api/ai/run-advanced-analysis/{second['id']}?refresh_company=true").status_code == 200
-    assert research_calls == 2
+    assert retrieval_calls == 2
 
 
-def test_advanced_analysis_partial_when_research_model_missing(client, monkeypatch):
+def test_advanced_analysis_uses_limited_company_research_without_tavily(client, monkeypatch):
     job = create_job(client)
     create_profile(client)
 
@@ -560,26 +636,27 @@ def test_advanced_analysis_partial_when_research_model_missing(client, monkeypat
             return fake_resume_fit_output()
         if output_model is schemas.AdvancedInterviewPrepOutput:
             return fake_advanced_interview_output()
+        if output_model is schemas.CompanyResearchOutput:
+            return fake_company_research_output()
         raise AssertionError("Unexpected model")
 
     monkeypatch.setattr("app.services.ai_service.get_structured_output", fake_structured_output)
     monkeypatch.setattr(
-        "app.services.ai_service.get_settings",
-        lambda: SimpleNamespace(
-            openai_api_key="sk-test",
-            openai_model="gpt-5-mini",
-            openai_research_model=None,
+        "app.services.advanced_analysis_service.CompanyResearchRetrievalAgent.run",
+        lambda _self, _company, _role_title: SimpleNamespace(
+            prompt_text=lambda: "No public web snippets were retrieved.",
+            warnings=["TAVILY_API_KEY is not configured; company research used limited context only."],
         ),
     )
 
     response = client.post(f"/api/ai/run-advanced-analysis/{job['id']}")
     assert response.status_code == 200
     result = response.json()
-    assert result["status"] == "partial"
-    assert result["company_research"] is None
+    assert result["status"] == "complete"
+    assert result["company_research"]["sentiment"] == "mixed"
     assert result["analysis"]["job_insights"]["summary"] == "Applied AI role with product engineering expectations."
-    assert result["analysis"]["company_sentiment"] is None
-    assert any("OPENAI_RESEARCH_MODEL" in error for error in result["errors"])
+    assert "TAVILY_API_KEY" in result["company_research"]["coverage_note"]
+    assert result["errors"] == []
 
 
 def test_interview_session_and_message(client):

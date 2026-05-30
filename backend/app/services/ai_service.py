@@ -53,55 +53,13 @@ def get_structured_output(
     return response.output_parsed
 
 
-def get_research_structured_output(
-    output_model: type[T],
-    system_prompt: str,
-    user_prompt: str,
-) -> T:
-    settings = get_settings()
-    api_key = settings.openai_api_key.strip() if settings.openai_api_key else ""
-    model = settings.openai_research_model.strip() if settings.openai_research_model else ""
-    if not api_key:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="OPENAI_API_KEY is not configured. Add it to .env to use AI actions.",
-        )
-    if not model:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="OPENAI_RESEARCH_MODEL is not configured. Add it to .env to use web-sourced analysis.",
-        )
-
-    client = OpenAI(api_key=api_key)
-    try:
-        response = client.responses.parse(
-            model=model,
-            instructions=system_prompt,
-            input=user_prompt,
-            text_format=output_model,
-            tools=[{"type": "web_search_preview"}],
-        )
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"OpenAI research request failed: {exc}",
-        ) from exc
-    if response.output_parsed is None:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="OpenAI returned no structured research output.",
-        )
-    return response.output_parsed
-
-
 def ai_readiness(db: Session, job: models.Job) -> schemas.AIReadiness:
     settings = get_settings()
     model = settings.openai_model.strip() if settings.openai_model else None
-    research_model = settings.openai_research_model.strip() if settings.openai_research_model else None
     profile = profile_service.get_active_profile(db)
     has_api_key = bool(settings.openai_api_key and settings.openai_api_key.strip())
     has_model = bool(model)
-    has_research_model = bool(research_model)
+    has_tavily_api_key = bool(settings.tavily_api_key and settings.tavily_api_key.strip())
     has_profile = profile is not None
     has_resume_text = bool(profile and profile.resume_text.strip())
     has_skills = bool(profile and profile.skills)
@@ -122,9 +80,8 @@ def ai_readiness(db: Session, job: models.Job) -> schemas.AIReadiness:
         ready=not missing_requirements,
         has_openai_api_key=has_api_key,
         has_openai_model=has_model,
-        has_openai_research_model=has_research_model,
+        has_tavily_api_key=has_tavily_api_key,
         model=model,
-        research_model=research_model,
         job_id=job.id,
         profile_id=profile.id if profile else None,
         has_profile=has_profile,

@@ -2,6 +2,19 @@
 
 FastAPI + Next.js MVP foundation for an AI-assisted job search dashboard.
 
+## Running: 
+From the repo root:
+
+.\pilot.ps1 dev
+Starts backend and frontend in separate visible PowerShell windows, so you can stop each with Ctrl+C.
+
+Other modes:
+
+.\pilot.ps1 backend   # backend only
+.\pilot.ps1 frontend  # frontend only
+.\pilot.ps1 test      # backend tests + frontend typecheck
+.\pilot.ps1 build     # backend tests + frontend typecheck 
+
 ## Backend
 
 ```powershell
@@ -45,9 +58,9 @@ npm run build
 
 ## Environment
 
-Copy `.env.example` to `.env` and fill in `OPENAI_API_KEY` and `OPENAI_MODEL` for AI actions. Set `OPENAI_RESEARCH_MODEL` to enable web-sourced company research inside Advanced Detailed Analysis. The app defaults to SQLite for local development and can switch to Postgres by changing `DATABASE_URL`.
+Copy `.env.example` to `.env` and fill in `OPENAI_API_KEY` and `OPENAI_MODEL` for AI actions. Set `TAVILY_API_KEY` to enable public web retrieval for company research inside Advanced Detailed Analysis. The app defaults to SQLite for local development and can switch to Postgres by changing `DATABASE_URL`.
 
-AI actions are synchronous button-triggered calls. If `OPENAI_API_KEY` or `OPENAI_MODEL` is missing, the backend returns a clear `503` and the frontend displays the error. If `OPENAI_RESEARCH_MODEL` is missing, advanced analysis still saves completed job/resume/interview sections and marks company research unavailable.
+AI actions are synchronous button-triggered calls. If `OPENAI_API_KEY` or `OPENAI_MODEL` is missing, the backend returns a clear `503` and the frontend displays the error. If `TAVILY_API_KEY` is missing or retrieval fails, advanced analysis still uses the normal OpenAI model and saves a limited company research section with a coverage note.
 
 ## Week 1 Demo Script
 

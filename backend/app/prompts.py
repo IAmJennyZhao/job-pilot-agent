@@ -61,15 +61,27 @@ Keep it grounded in the posting. Do not invent company facts.
 """.strip()
 
 
-def company_research_prompt(company: str, role_title: str) -> str:
+def company_research_prompt(
+    company: str,
+    role_title: str,
+    research_context: str,
+    retrieval_warnings: list[str],
+) -> str:
     return f"""
-Research public, recent information about this company as an employer.
+Summarize public company research for this employer.
 
 Company: {company}
 Role context: {role_title}
 
-Summarize employee sentiment and recurring themes from public sources. Include source links.
-If public employee review data is thin or unavailable, say that clearly in the coverage note.
+Retrieved public source snippets:
+{research_context}
+
+Retrieval warnings:
+{retrieval_warnings}
+
+Use only the retrieved snippets and the provided warnings. Include source links for snippets used.
+Summarize employee sentiment and recurring themes when supported by snippets.
+If public employee review data is thin, unavailable, or retrieval failed, say that clearly in the coverage note and use "unknown" sentiment when needed.
 Do not invent reviews, ratings, or employee claims.
 """.strip()
 

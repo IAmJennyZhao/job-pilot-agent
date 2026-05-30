@@ -128,6 +128,9 @@ class Job(TimestampMixin, Base):
     pay_currency: Mapped[str | None] = mapped_column(String(16))
     pay_period: Mapped[str | None] = mapped_column(String(64))
     pay_raw: Mapped[str | None] = mapped_column(Text)
+    pay_annual_min: Mapped[int | None] = mapped_column(Integer)
+    pay_annual_max: Mapped[int | None] = mapped_column(Integer)
+    pay_conversion_note: Mapped[str | None] = mapped_column(Text)
     benefits: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
     source_content: Mapped[str] = mapped_column(Text, default="", nullable=False)
     status: Mapped[JobStatus] = mapped_column(

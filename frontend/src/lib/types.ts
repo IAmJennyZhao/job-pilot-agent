@@ -53,6 +53,12 @@ export type JobStatusEvent = {
   changed_at: string;
 };
 
+export type JobStatusEventPayload = {
+  to_status: JobStatus;
+  changed_at?: string | null;
+  note?: string | null;
+};
+
 export type Job = {
   id: string;
   company: string;
@@ -68,6 +74,9 @@ export type Job = {
   pay_currency: string | null;
   pay_period: string | null;
   pay_raw: string | null;
+  pay_annual_min: number | null;
+  pay_annual_max: number | null;
+  pay_conversion_note: string | null;
   benefits: string[];
   status: JobStatus;
   notes: string | null;
@@ -322,9 +331,8 @@ export type AIReadiness = {
   ready: boolean;
   has_openai_api_key: boolean;
   has_openai_model: boolean;
-  has_openai_research_model: boolean;
+  has_tavily_api_key: boolean;
   model: string | null;
-  research_model: string | null;
   job_id: string;
   profile_id: string | null;
   has_profile: boolean;

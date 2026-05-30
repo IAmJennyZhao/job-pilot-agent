@@ -44,7 +44,8 @@ const defaultLinks: JobLinkInput[] = [
   { kind: "source", label: "Job Posting", url: "" }
 ];
 
-const additionalLinkKinds: JobLinkInput["kind"][] = [
+const editableLinkKinds: JobLinkInput["kind"][] = [
+  "source",
   "application_portal",
   "company_portal",
   "recruiter",
@@ -102,7 +103,7 @@ export default function JobsPage() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: JobStatus }) => api.updateJob(id, { status }),
+    mutationFn: ({ id, payload }: { id: string; payload: Partial<JobCreatePayload> & { status?: JobStatus } }) => api.updateJob(id, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
@@ -265,7 +266,9 @@ export default function JobsPage() {
                     key={job.id}
                     job={job}
                     onSelect={() => setSelectedJob(job)}
-                    onStatus={(nextStatus) => updateMutation.mutate({ id: job.id, status: nextStatus })}
+                    onStatus={(nextStatus) => updateMutation.mutate({ id: job.id, payload: { status: nextStatus } })}
+                    onCategory={(nextCategory) => updateMutation.mutate({ id: job.id, payload: { category: nextCategory } })}
+                    onPay={(payload) => updateMutation.mutate({ id: job.id, payload })}
                     onArchive={() => archiveMutation.mutate(job.id)}
                   />
                 ))}
@@ -499,33 +502,25 @@ function ReviewEditor({
           <Button
             size="sm"
             variant="secondary"
-            onClick={() => onChange({ ...review, links: [...review.links, { kind: "application_portal", label: "Application Portal", url: "" }] })}
+            onClick={() => onChange({ ...review, links: [...review.links, { kind: "source", label: "Job Posting", url: "" }] })}
           >
             Add link
           </Button>
         </div>
         {review.links.map((link, index) => (
-          <div key={`${link.kind}-${index}`} className="grid gap-2 sm:grid-cols-[170px_1fr_1fr_40px]">
-            {link.kind === "source" ? (
-              <Input value="Job Posting" disabled />
-            ) : (
-              <Select value={link.kind} onChange={(event) => setLink(index, { kind: event.target.value as JobLinkInput["kind"] })}>
-                {additionalLinkKinds.map((kind) => (
-                  <option key={kind} value={kind}>
-                    {linkKindLabels[kind]}
-                  </option>
-                ))}
-              </Select>
-            )}
+          <div key={`${link.kind}-${index}`} className="grid gap-2 sm:grid-cols-[120px_minmax(140px,0.8fr)_minmax(240px,1.4fr)_40px]">
+            <Select value={link.kind} onChange={(event) => setLink(index, { kind: event.target.value as JobLinkInput["kind"] })}>
+              {editableLinkKinds.map((kind) => (
+                <option key={kind} value={kind}>
+                  {linkKindLabels[kind]}
+                </option>
+              ))}
+            </Select>
             <Input value={link.label} onChange={(event) => setLink(index, { label: event.target.value })} />
             <Input value={link.url} onChange={(event) => setLink(index, { url: event.target.value })} placeholder="https://..." />
-            {link.kind !== "source" ? (
-              <Button variant="ghost" size="icon" onClick={() => removeLink(index)} title="Remove link">
-                <X className="h-4 w-4" />
-              </Button>
-            ) : (
-              <span />
-            )}
+            <Button variant="ghost" size="icon" onClick={() => removeLink(index)} title="Remove link">
+              <X className="h-4 w-4" />
+            </Button>
           </div>
         ))}
       </div>
@@ -536,11 +531,15 @@ function ReviewEditor({
 function JobRow({
   job,
   onStatus,
+  onCategory,
+  onPay,
   onArchive,
   onSelect
 }: {
   job: JobListItem;
   onStatus: (status: JobStatus) => void;
+  onCategory: (category: JobCategory) => void;
+  onPay: (payload: Partial<JobCreatePayload>) => void;
   onArchive: () => void;
   onSelect: () => void;
 }) {
@@ -555,7 +554,13 @@ function JobRow({
         {job.summary ? <div className="mt-1 line-clamp-2 max-w-[300px] text-xs text-muted-foreground">{job.summary}</div> : null}
       </td>
       <td className="py-3 pr-4 align-top">
-        <Badge>{job.category}</Badge>
+        <Select value={job.category} onChange={(event) => onCategory(event.target.value as JobCategory)} className="min-w-48">
+          {jobCategories.map((category) => (
+            <option key={category} value={category}>
+              {category}
+            </option>
+          ))}
+        </Select>
       </td>
       <td className="py-3 pr-4 align-top">
         <Select value={job.status} onChange={(event) => onStatus(event.target.value as JobStatus)}>
@@ -570,7 +575,9 @@ function JobRow({
         <div>{job.location || "Unknown"}</div>
         <div className="text-xs">{job.remote_type || "Unknown"}</div>
       </td>
-      <td className="py-3 pr-4 align-top text-muted-foreground">{formatPay(job)}</td>
+      <td className="py-3 pr-4 align-top text-muted-foreground">
+        <PayEditor job={job} onSave={onPay} />
+      </td>
       <td className="py-3 pr-4 align-top">
         {source ? (
           <a href={source.url} target="_blank" rel="noreferrer" title="Open source link">
@@ -599,6 +606,87 @@ function JobRow({
   );
 }
 
+function PayEditor({ job, onSave }: { job: JobListItem; onSave: (payload: Partial<JobCreatePayload>) => void }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [draft, setDraft] = useState({
+    pay_min: job.pay_min,
+    pay_max: job.pay_max,
+    pay_currency: job.pay_currency ?? "USD",
+    pay_period: job.pay_period ?? "unknown",
+    pay_raw: job.pay_raw ?? ""
+  });
+
+  useEffect(() => {
+    setDraft({
+      pay_min: job.pay_min,
+      pay_max: job.pay_max,
+      pay_currency: job.pay_currency ?? "USD",
+      pay_period: job.pay_period ?? "unknown",
+      pay_raw: job.pay_raw ?? ""
+    });
+  }, [job.pay_min, job.pay_max, job.pay_currency, job.pay_period, job.pay_raw]);
+
+  const save = () => {
+    onSave({
+      pay_min: draft.pay_min,
+      pay_max: draft.pay_max,
+      pay_currency: draft.pay_currency.trim() || null,
+      pay_period: draft.pay_period,
+      pay_raw: draft.pay_raw.trim() || null
+    });
+    setIsOpen(false);
+  };
+
+  return (
+    <div className="relative min-w-48">
+      <button className="text-left" onClick={() => setIsOpen((current) => !current)}>
+        <div className="font-medium text-foreground">{formatPay(job)}</div>
+        <div className="text-xs text-muted-foreground">{formatAnnualPay(job)}</div>
+      </button>
+      {isOpen ? (
+        <div className="absolute right-0 z-20 mt-2 w-80 rounded-md border border-border bg-white p-3 shadow-xl">
+          <div className="grid gap-3">
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Min">
+                <Input type="number" value={draft.pay_min ?? ""} onChange={(event) => setDraft((current) => ({ ...current, pay_min: event.target.value ? Number(event.target.value) : null }))} />
+              </Field>
+              <Field label="Max">
+                <Input type="number" value={draft.pay_max ?? ""} onChange={(event) => setDraft((current) => ({ ...current, pay_max: event.target.value ? Number(event.target.value) : null }))} />
+              </Field>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Currency">
+                <Input value={draft.pay_currency} onChange={(event) => setDraft((current) => ({ ...current, pay_currency: event.target.value }))} />
+              </Field>
+              <Field label="Period">
+                <Select value={draft.pay_period} onChange={(event) => setDraft((current) => ({ ...current, pay_period: event.target.value }))}>
+                  {["unknown", "hour", "day", "week", "month", "year", "contract"].map((period) => (
+                    <option key={period} value={period}>
+                      {period}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            </div>
+            <Field label="Raw pay">
+              <Input value={draft.pay_raw} onChange={(event) => setDraft((current) => ({ ...current, pay_raw: event.target.value }))} />
+            </Field>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" size="sm" onClick={() => setIsOpen(false)}>
+                Cancel
+              </Button>
+              <Button size="sm" onClick={save}>
+                <Save className="h-4 w-4" />
+                Save
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function JobDrawer({ job, onClose }: { job: JobListItem; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-30 bg-black/20" onClick={onClose}>
@@ -624,6 +712,7 @@ function JobDrawer({ job, onClose }: { job: JobListItem; onClose: () => void }) 
         <div className="mt-4 grid gap-3 rounded-md border border-border bg-muted/40 p-3 text-sm">
           <InfoRow label="Location" value={[job.location, job.remote_type].filter(Boolean).join(" - ") || "Unknown"} />
           <InfoRow label="Pay" value={formatPay(job)} />
+          <InfoRow label="Annual" value={formatAnnualPay(job)} />
         </div>
         <DrawerList title="Responsibilities" items={job.responsibilities} />
         <DrawerList title="Required Skills" items={job.required_skills} />
@@ -686,6 +775,14 @@ function formatPay(job: { pay_min: number | null; pay_max: number | null; pay_cu
   if (job.pay_min !== null) return `${currency} ${job.pay_min.toLocaleString()}+${suffix}`;
   if (job.pay_max !== null) return `Up to ${currency} ${job.pay_max.toLocaleString()}${suffix}`;
   return "Not listed";
+}
+
+function formatAnnualPay(job: { pay_annual_min: number | null; pay_annual_max: number | null; pay_currency: string | null }) {
+  const currency = job.pay_currency ?? "USD";
+  if (job.pay_annual_min !== null && job.pay_annual_max !== null) return `${currency} ${job.pay_annual_min.toLocaleString()}-${job.pay_annual_max.toLocaleString()} / year`;
+  if (job.pay_annual_min !== null) return `${currency} ${job.pay_annual_min.toLocaleString()}+ / year`;
+  if (job.pay_annual_max !== null) return `Up to ${currency} ${job.pay_annual_max.toLocaleString()} / year`;
+  return "Annual not calculated";
 }
 
 function InfoRow({ label, value }: { label: string; value: string }) {

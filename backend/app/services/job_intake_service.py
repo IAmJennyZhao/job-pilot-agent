@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app import models, prompts, schemas
 from app.services import ai_service, job_service
+from app.services.concise_output import normalize_extraction_output
 
 MAX_FETCH_BYTES = 600_000
 
@@ -108,6 +109,7 @@ def extract_preview(
         prompts.SYSTEM_PROMPT,
         prompts.job_intake_prompt(source_url, source_content),
     )
+    output = normalize_extraction_output(output)
     links = _ensure_source_link(output.links, source_url)
     duplicate_candidates = job_service.find_duplicate_candidates(
         db,

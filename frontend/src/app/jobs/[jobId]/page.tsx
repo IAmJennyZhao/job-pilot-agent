@@ -55,6 +55,65 @@ const advancedSteps = [
   "Preparing interview signals"
 ];
 
+const softSkillPattern = /\b(collaboration|communication|stakeholder|cross-functional|teamwork|leadership|written|verbal|presentation|interpersonal|relationship)\b/i;
+const displayStopWords = new Set(["a", "an", "and", "as", "for", "in", "of", "on", "or", "the", "to", "with"]);
+
+function compactText(value: string | null | undefined, limit = 140) {
+  const text = (value ?? "").replace(/\s+/g, " ").trim();
+  if (text.length <= limit) return text;
+  return `${text.slice(0, limit + 1).replace(/\s+\S*$/, "").replace(/[.,;:]$/, "")}...`;
+}
+
+function displayKey(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9+#.]+/g, " ")
+    .split(" ")
+    .filter((token) => token && !displayStopWords.has(token))
+    .join(" ");
+}
+
+function isSimilarDisplayKey(candidate: string, usedKeys: Set<string>) {
+  if (!candidate || usedKeys.has(candidate)) return true;
+  const candidateTokens = new Set(candidate.split(" "));
+  for (const usedKey of usedKeys) {
+    const usedTokens = new Set(usedKey.split(" "));
+    const overlap = [...candidateTokens].filter((token) => usedTokens.has(token));
+    if (overlap.length >= 2 && overlap.length / Math.min(candidateTokens.size, usedTokens.size) >= 0.75) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function compactItems(
+  items: Array<string | null | undefined>,
+  {
+    limit = 5,
+    techOnly = false,
+    usedKeys = new Set<string>(),
+    textLimit = 64
+  }: {
+    limit?: number;
+    techOnly?: boolean;
+    usedKeys?: Set<string>;
+    textLimit?: number;
+  } = {}
+) {
+  const result: string[] = [];
+  for (const item of items) {
+    const text = compactText(item, textLimit);
+    if (!text) continue;
+    if (techOnly && softSkillPattern.test(text)) continue;
+    const key = displayKey(text);
+    if (isSimilarDisplayKey(key, usedKeys)) continue;
+    usedKeys.add(key);
+    result.push(text);
+    if (result.length >= limit) break;
+  }
+  return result;
+}
+
 export default function JobDetailPage() {
   const params = useParams<{ jobId: string }>();
   const jobId = params.jobId;
@@ -187,42 +246,12 @@ export default function JobDetailPage() {
           </Panel>
 
           {!isEditing ? (
-            <>
-              <div className="grid gap-4 xl:grid-cols-[1fr_0.8fr]">
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+              <MergedJobDetail job={job} analysis={advancedAnalysis} companyResearch={companyResearch} errors={advancedErrors} />
+              <div className="grid content-start gap-4">
                 <Panel>
-                  <h2 className="text-base font-semibold">Tracker Summary</h2>
-                  <div className="mt-4 grid gap-4 text-sm">
-                    {job.summary ? <p className="leading-6 text-muted-foreground">{job.summary}</p> : null}
-                    <List title="Responsibilities" items={job.responsibilities} />
-                    <List title="Concise Skills" items={job.required_skills} />
-                    <List title="Benefits" items={job.benefits} />
-                    {job.extraction_warnings.length ? <List title="Extraction Warnings" items={job.extraction_warnings} tone="warn" /> : null}
-                  </div>
+                  <JobLinks links={job.links} />
                 </Panel>
-                <Panel>
-                  <h2 className="text-base font-semibold">Links</h2>
-                  <div className="mt-4 grid gap-2">
-                    {job.links.length ? (
-                      job.links.map((link) => (
-                        <a key={link.id} href={link.url} target="_blank" rel="noreferrer" className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2 text-sm">
-                          <span>{link.label || linkKindLabels[link.kind]}</span>
-                          <ExternalLink className="h-4 w-4 text-muted-foreground" />
-                        </a>
-                      ))
-                    ) : (
-                      <p className="text-sm text-muted-foreground">No links saved.</p>
-                    )}
-                  </div>
-                </Panel>
-              </div>
-
-              <AdvancedAnalysisView
-                analysis={advancedAnalysis}
-                companyResearch={companyResearch}
-                errors={advancedErrors}
-              />
-
-              <div className="grid gap-4 xl:grid-cols-[0.8fr_1.2fr]">
                 <Panel>
                   <StatusHistoryEditor
                     job={job}
@@ -233,20 +262,12 @@ export default function JobDetailPage() {
                     isSavingStatus={statusMutation.isPending}
                   />
                 </Panel>
-                <Panel>
-                  <h2 className="text-base font-semibold">Source Material</h2>
-                  <details className="mt-3 text-sm">
-                    <summary className="cursor-pointer font-medium text-primary">Show stored source content</summary>
-                    <p className="mt-4 max-h-[360px] overflow-auto whitespace-pre-wrap leading-6 text-muted-foreground">{job.source_content || "No source content stored."}</p>
-                  </details>
-                </Panel>
               </div>
-
-              <Button variant="ghost" onClick={() => queryClient.invalidateQueries({ queryKey: ["job", jobId] })}>
+              <Button variant="ghost" className="justify-self-start xl:col-span-2" onClick={() => queryClient.invalidateQueries({ queryKey: ["job", jobId] })}>
                 <RefreshCw className="h-4 w-4" />
                 Refresh job data
               </Button>
-            </>
+            </div>
           ) : null}
         </>
       ) : null}
@@ -352,6 +373,150 @@ function JobOverview({
         />
       </div>
       {job.notes ? <p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{job.notes}</p> : null}
+    </div>
+  );
+}
+
+function MergedJobDetail({
+  job,
+  analysis,
+  companyResearch,
+  errors
+}: {
+  job: JobDetail;
+  analysis: AdvancedJobAnalysis | null;
+  companyResearch: CompanyResearch | null;
+  errors: string[];
+}) {
+  const insights = analysis?.job_insights ?? null;
+  const sentiment = analysis?.company_sentiment ?? (companyResearch ? {
+    sentiment: companyResearch.sentiment,
+    summary: companyResearch.summary,
+    themes: companyResearch.themes,
+    source_links: companyResearch.source_links,
+    confidence: companyResearch.confidence,
+    coverage_note: companyResearch.coverage_note
+  } : null);
+  const skillKeys = new Set<string>();
+  const insightKeys = new Set<string>();
+  const roleSignals = compactItems([...(insights?.role_focus ?? []), insights?.seniority_signal], { limit: 4, usedKeys: insightKeys, textLimit: 56 });
+  const responsibilities = compactItems(insights?.responsibilities?.length ? insights.responsibilities : job.responsibilities, { limit: 5, usedKeys: insightKeys });
+  const mustHaveTech = compactItems([...(job.required_skills ?? []), ...(insights?.must_have_skills ?? [])], { limit: 6, techOnly: true, usedKeys: skillKeys, textLimit: 42 });
+  const niceToHaveTech = compactItems(insights?.nice_to_have_skills ?? [], { limit: 5, techOnly: true, usedKeys: skillKeys, textLimit: 42 });
+  const benefits = compactItems(job.benefits, { limit: 5, textLimit: 48 });
+  const companySignals = compactItems([sentiment?.summary, ...(sentiment?.themes ?? [])], { limit: 5, textLimit: 62 });
+  const fitSignals = compactItems(analysis?.top_company_fit ?? [], { limit: 4, textLimit: 58 });
+  const resumeKeywords = compactItems(analysis?.resume_keywords ?? [], { limit: 8, techOnly: true, textLimit: 38 });
+  const risksGaps = compactItems(analysis?.risks_gaps ?? [], { limit: 4, textLimit: 58 });
+  const sourceLinks = analysis?.source_links.length ? analysis.source_links : sentiment?.source_links ?? [];
+  return (
+    <div className="grid gap-4">
+      <Panel>
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-base font-semibold">Role Snapshot</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {compactText(insights?.summary || job.summary || "No summary captured.", 120)}
+            </p>
+          </div>
+          {analysis ? <Badge tone={analysis.status === "complete" ? "good" : "warn"}>{analysis.status}</Badge> : <Badge>Tracker only</Badge>}
+        </div>
+
+        {errors.length ? (
+          <div className="mb-5 grid gap-1 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+            {errors.map((error) => (
+              <div key={error}>{compactText(error, 120)}</div>
+            ))}
+          </div>
+        ) : null}
+
+        <div className="grid gap-5">
+          <Section title="Role Signals">
+            <List items={roleSignals.length ? roleSignals : [job.category]} />
+          </Section>
+          <Section title="Responsibilities">
+            <List items={responsibilities} />
+          </Section>
+          <div className="grid gap-5 md:grid-cols-2">
+            <Section title="Must-Have Tech">
+              <List items={mustHaveTech} />
+            </Section>
+            <Section title="Nice-To-Have Tech">
+              <List items={niceToHaveTech} />
+            </Section>
+          </div>
+          <Section title="Pay And Benefits">
+            <div className="grid gap-3 md:grid-cols-2">
+              <InfoRow label="Pay" value={formatPay(job)} />
+              <InfoRow label="Annual Equivalent" value={formatAnnualPay(job)} />
+            </div>
+            <div className="mt-4">
+              <List items={benefits} />
+            </div>
+          </Section>
+          {job.extraction_warnings.length ? (
+            <Section title="Extraction Warnings">
+              <List items={compactItems(job.extraction_warnings, { limit: 4, textLimit: 90 })} tone="warn" />
+            </Section>
+          ) : null}
+        </div>
+      </Panel>
+
+      {analysis ? (
+        <>
+          <Panel>
+            <h2 className="mb-5 text-base font-semibold">Fit And Gaps</h2>
+            <div className="grid gap-5 md:grid-cols-3">
+              <List title="Fit" items={fitSignals} tone="good" />
+              <List title="Keywords" items={resumeKeywords} />
+              <List title="Gaps" items={risksGaps} tone="warn" />
+            </div>
+          </Panel>
+          {sentiment ? (
+            <Panel>
+              <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-base font-semibold">Company Signals</h2>
+                <div className="flex flex-wrap gap-2">
+                  {sentiment.sentiment ? <Badge>{sentiment.sentiment}</Badge> : null}
+                  {typeof sentiment.confidence === "number" ? <Badge tone={sentiment.confidence >= 70 ? "good" : "warn"}>{sentiment.confidence}% coverage</Badge> : null}
+                </div>
+              </div>
+              <List items={companySignals} />
+              {sentiment.coverage_note ? <p className="mt-4 text-sm text-muted-foreground">{compactText(sentiment.coverage_note, 110)}</p> : null}
+              <SourceLinks links={sourceLinks} />
+            </Panel>
+          ) : null}
+          <Panel>
+            <h2 className="mb-5 text-base font-semibold">Interview Prep</h2>
+            <QuestionList questions={analysis.expected_questions} />
+          </Panel>
+        </>
+      ) : (
+        <Panel>
+          <h2 className="text-base font-semibold">Prep Signals</h2>
+          <p className="mt-2 text-sm text-muted-foreground">Run Advanced Detailed Analysis to add fit, company, and interview prep signals.</p>
+        </Panel>
+      )}
+    </div>
+  );
+}
+
+function JobLinks({ links }: { links: JobDetail["links"] }) {
+  return (
+    <div>
+      <h2 className="text-base font-semibold">Links</h2>
+      <div className="mt-4 grid gap-2">
+        {links.length ? (
+          links.map((link) => (
+            <a key={link.id} href={link.url} target="_blank" rel="noreferrer" className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2 text-sm">
+              <span>{link.label || linkKindLabels[link.kind]}</span>
+              <ExternalLink className="h-4 w-4 text-muted-foreground" />
+            </a>
+          ))
+        ) : (
+          <p className="text-sm text-muted-foreground">No links saved.</p>
+        )}
+      </div>
     </div>
   );
 }
@@ -751,102 +916,6 @@ function AdvancedAnalysisControl({
   );
 }
 
-function AdvancedAnalysisView({
-  analysis,
-  companyResearch,
-  errors
-}: {
-  analysis: AdvancedJobAnalysis | null;
-  companyResearch: CompanyResearch | null;
-  errors: string[];
-}) {
-  if (!analysis) {
-    return (
-      <Panel>
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="text-base font-semibold">Advanced Detailed Analysis</h2>
-          <Badge>Not run</Badge>
-        </div>
-        <p className="mt-3 text-sm text-muted-foreground">Run advanced analysis when this application needs deeper company, resume, and interview prep.</p>
-      </Panel>
-    );
-  }
-
-  const insights = analysis.job_insights;
-  const sentiment = analysis.company_sentiment ?? (companyResearch ? {
-    sentiment: companyResearch.sentiment,
-    summary: companyResearch.summary,
-    themes: companyResearch.themes,
-    source_links: companyResearch.source_links,
-    confidence: companyResearch.confidence,
-    coverage_note: companyResearch.coverage_note
-  } : null);
-  const sourceLinks = analysis.source_links.length ? analysis.source_links : sentiment?.source_links ?? [];
-
-  return (
-    <Panel>
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-base font-semibold">Advanced Detailed Analysis</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Reusable company research plus job-specific prep signals.</p>
-        </div>
-        <Badge tone={analysis.status === "complete" ? "good" : "warn"}>{analysis.status}</Badge>
-      </div>
-
-      {errors.length ? (
-        <div className="mb-5 grid gap-1 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-          {errors.map((error) => (
-            <div key={error}>{error}</div>
-          ))}
-        </div>
-      ) : null}
-
-      <div className="grid gap-6 xl:grid-cols-2">
-        <Section title="Job And Role Insights" unavailable={!insights ? errorFor(errors, "Posting analysis failed") : null}>
-          {insights ? (
-            <div className="grid gap-4">
-              {insights.summary ? <p className="leading-6 text-muted-foreground">{insights.summary}</p> : null}
-              <List title="Role Focus" items={insights.role_focus ?? []} />
-              <List title="Responsibilities" items={insights.responsibilities ?? []} />
-              <List title="Must-Have Skills" items={insights.must_have_skills ?? []} />
-              <List title="Nice-To-Have Skills" items={insights.nice_to_have_skills ?? []} />
-              {insights.seniority_signal ? <InfoRow label="Seniority Signal" value={insights.seniority_signal} /> : null}
-              <List title="Concerns" items={insights.concerns ?? []} tone="warn" />
-            </div>
-          ) : null}
-        </Section>
-
-        <Section title="Company And Employee Sentiment" unavailable={!sentiment ? errorFor(errors, "Company research failed") : null}>
-          {sentiment ? (
-            <div className="grid gap-4">
-              <div className="flex flex-wrap gap-2">
-                {sentiment.sentiment ? <Badge>{sentiment.sentiment}</Badge> : null}
-                {typeof sentiment.confidence === "number" ? <Badge tone={sentiment.confidence >= 70 ? "good" : "warn"}>Confidence {sentiment.confidence}</Badge> : null}
-              </div>
-              {sentiment.summary ? <p className="leading-6 text-muted-foreground">{sentiment.summary}</p> : null}
-              <List title="Themes" items={sentiment.themes ?? []} />
-              {sentiment.coverage_note ? <p className="text-sm text-muted-foreground">{sentiment.coverage_note}</p> : null}
-              <SourceLinks links={sourceLinks} />
-            </div>
-          ) : null}
-        </Section>
-
-        <Section title="Resume Fit" unavailable={analysis.top_company_fit.length || analysis.resume_keywords.length || analysis.risks_gaps.length ? null : errorFor(errors, "Resume fit failed") ?? errorFor(errors, "Resume fit skipped")}>
-          <div className="grid gap-4">
-            <List title="Top Company Fit" items={analysis.top_company_fit} tone="good" />
-            <List title="Resume Keywords" items={analysis.resume_keywords} />
-            <List title="Risks And Gaps" items={analysis.risks_gaps} tone="warn" />
-          </div>
-        </Section>
-
-        <Section title="Expected Questions" unavailable={analysis.expected_questions.length ? null : errorFor(errors, "Interview prep failed")}>
-          <QuestionList questions={analysis.expected_questions} />
-        </Section>
-      </div>
-    </Panel>
-  );
-}
-
 function ProcessSteps({ active, steps }: { active: boolean; steps: string[] }) {
   const [index, setIndex] = useState(0);
 
@@ -877,10 +946,10 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-md border border-border bg-muted/30 p-4">
+    <section className="border-t border-border pt-4 first:border-t-0 first:pt-0">
       <h3 className="mb-3 text-sm font-semibold">{title}</h3>
       {unavailable ? <p className="text-sm text-muted-foreground">Unavailable: {unavailable}</p> : children}
-    </div>
+    </section>
   );
 }
 
@@ -888,12 +957,12 @@ function SourceLinks({ links }: { links: Array<{ title?: string; url?: string }>
   if (!links.length) return null;
   return (
     <div>
-      <h3 className="mb-2 font-medium">Sources</h3>
-      <div className="grid gap-2">
+      <h3 className="mb-2 mt-4 font-medium">Sources</h3>
+      <div className="grid gap-2 sm:grid-cols-2">
         {links.map((link, index) => (
           link.url ? (
-            <a key={`${link.url}-${index}`} href={link.url} target="_blank" rel="noreferrer" className="flex items-center justify-between gap-3 rounded-md border border-border bg-white px-3 py-2 text-sm">
-              <span>{link.title || link.url}</span>
+            <a key={`${link.url}-${index}`} href={link.url} target="_blank" rel="noreferrer" className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2 text-sm">
+              <span className="line-clamp-1">{link.title || link.url}</span>
               <ExternalLink className="h-4 w-4 text-muted-foreground" />
             </a>
           ) : null
@@ -908,22 +977,22 @@ function QuestionList({ questions }: { questions: Array<{ question: string; type
   return (
     <div className="grid max-h-[420px] gap-3 overflow-y-auto pr-2">
       {questions.map((question, index) => (
-        <div key={`${question.question}-${index}`} className="rounded-md border border-border bg-white p-3 text-sm">
+        <div key={`${question.question}-${index}`} className="rounded-md border border-border p-3 text-sm">
           <div className="flex flex-wrap items-center gap-2">
             <Badge>{question.type}</Badge>
-            <span className="font-medium">{question.question}</span>
+            <span className="font-medium">{compactText(question.question, 120)}</span>
           </div>
-          <p className="mt-2 text-muted-foreground">{question.why_it_matters}</p>
+          <p className="mt-2 text-muted-foreground">{compactText(question.why_it_matters, 90)}</p>
         </div>
       ))}
     </div>
   );
 }
 
-function List({ title, items, tone = "neutral" }: { title: string; items: string[]; tone?: "neutral" | "good" | "warn" | "bad" }) {
+function List({ title, items, tone = "neutral" }: { title?: string; items: string[]; tone?: "neutral" | "good" | "warn" | "bad" }) {
   return (
     <div>
-      <h3 className="mb-2 font-medium">{title}</h3>
+      {title ? <h3 className="mb-2 font-medium">{title}</h3> : null}
       {items.length ? (
         <div className="flex flex-wrap gap-2">
           {items.map((item) => (
@@ -984,8 +1053,4 @@ function normalizeStatusPayload<T extends Partial<JobStatusEventPayload>>(payloa
     changed_at: payload.changed_at ? new Date(payload.changed_at).toISOString() : payload.changed_at,
     note: payload.note?.trim() || null
   };
-}
-
-function errorFor(errors: string[], prefix: string) {
-  return errors.find((error) => error.startsWith(prefix)) ?? null;
 }

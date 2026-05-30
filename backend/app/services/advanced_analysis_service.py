@@ -6,6 +6,12 @@ from sqlalchemy.orm import Session
 
 from app import models, prompts, schemas
 from app.services import ai_service, profile_service
+from app.services.concise_output import (
+    normalize_company_research_output,
+    normalize_interview_prep_output,
+    normalize_job_insights,
+    normalize_resume_fit_output,
+)
 from app.services.research_service import CompanyResearchRetrievalAgent
 
 
@@ -67,6 +73,7 @@ def _save_company_research(
         normalized_company_name=normalized,
     )
     snapshot.company_name = company_name
+    output = normalize_company_research_output(output)
     snapshot.sentiment = output.sentiment
     snapshot.summary = output.summary
     snapshot.themes = output.themes
@@ -82,11 +89,12 @@ def _save_company_research(
 class PostingAnalysisAgent:
     @staticmethod
     def run(job: models.Job, job_source: str) -> schemas.JobInsightsOutput:
-        return ai_service.get_structured_output(
+        output = ai_service.get_structured_output(
             schemas.JobInsightsOutput,
             prompts.SYSTEM_PROMPT,
             prompts.advanced_posting_analysis_prompt(job.company, job.role_title, job_source),
         )
+        return normalize_job_insights(output)
 
 
 class CompanyResearchAgent:
@@ -121,7 +129,7 @@ class ResumeFitAgent:
         job_source: str,
         profile: models.ResumeProfile,
     ) -> schemas.ResumeFitOutput:
-        return ai_service.get_structured_output(
+        output = ai_service.get_structured_output(
             schemas.ResumeFitOutput,
             prompts.SYSTEM_PROMPT,
             prompts.resume_fit_prompt(
@@ -133,6 +141,7 @@ class ResumeFitAgent:
                 profile.skills,
             ),
         )
+        return normalize_resume_fit_output(output)
 
 
 class InterviewPrepAgent:
@@ -142,7 +151,7 @@ class InterviewPrepAgent:
         job_source: str,
         profile: models.ResumeProfile | None,
     ) -> schemas.AdvancedInterviewPrepOutput:
-        return ai_service.get_structured_output(
+        output = ai_service.get_structured_output(
             schemas.AdvancedInterviewPrepOutput,
             prompts.SYSTEM_PROMPT,
             prompts.advanced_interview_prep_prompt(
@@ -152,6 +161,7 @@ class InterviewPrepAgent:
                 profile.resume_text if profile else "",
             ),
         )
+        return normalize_interview_prep_output(output)
 
 
 def run_advanced_analysis(

@@ -40,7 +40,11 @@ Use one controlled category only:
 - Other
 
 Extract only information supported by the posting. If a field is unclear, use "Unknown" or add a warning.
-Keep responsibilities concise and paraphrase required skills into short normalized skills that are easy to scan later.
+Keep every user-facing field terse: summary is one short sentence; lists are 3-5 short phrases.
+Responsibilities must be actions/outcomes, not tools. Start them with verbs when possible.
+Required skills must be technical only: languages, frameworks, tools, platforms, technical domains.
+Do not put collaboration, communication, stakeholder management, ownership, or teamwork in required skills.
+Avoid repeating the same concept across summary, responsibilities, skills, and benefits.
 Extract pay and benefits only when the posting states them. Use pay_raw when the pay is not parseable as a clean range.
 Do not include links except links clearly present in the posting.
 """.strip()
@@ -56,7 +60,15 @@ Role: {role_title}
 Job posting:
 {job_source}
 
-Focus on durable role insights, likely expectations, must-have skills, seniority signals, and concerns.
+Return a terse snapshot, not a report.
+Hard rules:
+- summary: one short phrase or sentence.
+- role_focus: 2-3 short phrases about the role's real emphasis.
+- responsibilities: 3-5 actions/outcomes only; no tool lists.
+- must_have_skills and nice_to_have_skills: technical tools, languages, frameworks, platforms, or technical domains only.
+- Put collaboration, communication, stakeholder work, and ownership signals in role_focus only if they are central.
+- Do not repeat the same concept across role_focus, responsibilities, must-have skills, and nice-to-have skills.
+- Omit generic filler.
 Keep it grounded in the posting. Do not invent company facts.
 """.strip()
 
@@ -80,7 +92,8 @@ Retrieval warnings:
 {retrieval_warnings}
 
 Use only the retrieved snippets and the provided warnings. Include source links for snippets used.
-Summarize employee sentiment and recurring themes when supported by snippets.
+Keep summary to one short sentence. Put the useful takeaways in themes as 3-5 compact bullets.
+Themes should be scan-friendly employee/company signals, not paragraphs.
 If public employee review data is thin, unavailable, or retrieval failed, say that clearly in the coverage note and use "unknown" sentiment when needed.
 Do not invent reviews, ratings, or employee claims.
 """.strip()
@@ -112,7 +125,10 @@ Skills:
 Resume text:
 {resume_text}
 
-Return practical fit signals, resume keywords, and honest risks/gaps. Do not invent experience.
+Return practical fit signals, resume keywords, and honest risks/gaps. Keep every item short.
+Resume keywords should be technical keywords or role-specific keywords, not soft-skill phrases.
+Do not repeat items already covered by obvious responsibilities unless they matter for resume targeting.
+Do not invent experience.
 """.strip()
 
 
@@ -135,6 +151,7 @@ Candidate resume/profile:
 {resume_text}
 
 Cover technical, role-specific, company/context, resume, and behavioral signals where relevant.
+Keep questions direct and why_it_matters to one short phrase.
 """.strip()
 
 

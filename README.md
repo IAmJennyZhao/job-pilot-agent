@@ -34,6 +34,8 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\uvicorn app.main:app --reload --port 8000
 ```
 
+The seed script resets the local SQLite dev database before inserting fresh demo data.
+
 Health check:
 
 ```powershell

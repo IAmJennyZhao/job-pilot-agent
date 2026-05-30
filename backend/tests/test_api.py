@@ -190,6 +190,43 @@ def test_extract_preview_from_pasted_content(client, monkeypatch):
     assert preview["duplicate_candidates"] == []
 
 
+def test_extract_preview_compacts_repeated_and_soft_skill_output(client, monkeypatch):
+    def fake_structured_output(output_model, _system_prompt, user_prompt):
+        assert output_model is schemas.JobExtractionOutput
+        assert "Required skills must be technical only" in user_prompt
+        return schemas.JobExtractionOutput(
+            company="Acme AI",
+            role_title="Applied AI Engineer",
+            category=models.JobCategory.ai_ml_engineer,
+            location="Remote",
+            remote_type="Remote",
+            summary="Build AI job search tools with product and platform ownership across several teams.",
+            responsibilities=["Build APIs", "Build APIs", "Ship React dashboards"],
+            required_skills=[
+                "Python",
+                "Strong collaboration and communication skills",
+                "FastAPI",
+                "Python",
+            ],
+            benefits=["Health insurance", "Health insurance"],
+            confidence=88,
+            warnings=[],
+        )
+
+    monkeypatch.setattr("app.services.ai_service.get_structured_output", fake_structured_output)
+
+    response = client.post(
+        "/api/jobs/extract-preview",
+        json={"source_content": "We need Python, FastAPI, and React."},
+    )
+
+    assert response.status_code == 200
+    preview = response.json()
+    assert preview["responsibilities"] == ["Build APIs", "Ship React dashboards"]
+    assert preview["required_skills"] == ["Python", "FastAPI"]
+    assert preview["benefits"] == ["Health insurance"]
+
+
 def test_extract_preview_fetches_url_content(client, monkeypatch):
     monkeypatch.setattr(
         "app.services.job_intake_service.fetch_job_page_text",
@@ -586,6 +623,70 @@ def test_run_advanced_analysis_persists_sections_and_company_research(client, mo
 
     detail = client.get(f"/api/jobs/{job['id']}").json()
     assert detail["latest_advanced_analysis"]["resume_keywords"] == ["LLM features", "evaluation", "React"]
+
+
+def test_advanced_analysis_compacts_duplicate_and_soft_skill_output(client, monkeypatch):
+    job = create_job(client)
+    create_profile(client)
+
+    def fake_structured_output(output_model, _system_prompt, user_prompt):
+        if output_model is schemas.JobInsightsOutput:
+            assert "must_have_skills and nice_to_have_skills: technical" in user_prompt
+            return schemas.JobInsightsOutput(
+                summary="Applied AI role with product engineering expectations and repeated collaboration language.",
+                role_focus=[
+                    "LLM product ownership",
+                    "Cross-functional collaboration with stakeholders",
+                ],
+                responsibilities=["Build AI features", "Build AI features", "Own backend services"],
+                must_have_skills=[
+                    "Python",
+                    "Strong collaboration and communication skills",
+                    "FastAPI",
+                    "Python",
+                ],
+                nice_to_have_skills=["FastAPI", "Vector search"],
+                seniority_signal="Mid-level ownership language with lots of implementation scope.",
+                concerns=["Broad AI platform scope", "Broad AI platform scope"],
+            )
+        if output_model is schemas.ResumeFitOutput:
+            return schemas.ResumeFitOutput(
+                top_company_fit=["AI product engineering", "AI product engineering"],
+                resume_keywords=["LLM features", "LLM features", "React"],
+                risks_gaps=["Cloud deployment depth", "Cloud deployment depth"],
+            )
+        if output_model is schemas.AdvancedInterviewPrepOutput:
+            return fake_advanced_interview_output()
+        if output_model is schemas.CompanyResearchOutput:
+            return schemas.CompanyResearchOutput(
+                sentiment="mixed",
+                summary="Employees mention strong technical work and fast execution pressure across teams.",
+                themes=["Fast pace", "Fast pace", "Strong engineering culture"],
+                source_links=[],
+                confidence=74,
+                coverage_note="Public review coverage is limited but usable for directional signals.",
+            )
+        raise AssertionError("Unexpected model")
+
+    monkeypatch.setattr("app.services.ai_service.get_structured_output", fake_structured_output)
+    monkeypatch.setattr(
+        "app.services.advanced_analysis_service.CompanyResearchRetrievalAgent.run",
+        lambda _self, _company, _role_title: SimpleNamespace(
+            prompt_text=lambda: "Review source text.",
+            warnings=[],
+        ),
+    )
+
+    response = client.post(f"/api/ai/run-advanced-analysis/{job['id']}")
+    assert response.status_code == 200
+    result = response.json()
+    insights = result["analysis"]["job_insights"]
+    assert insights["responsibilities"] == ["Build AI features", "Own backend services"]
+    assert insights["must_have_skills"] == ["Python", "FastAPI"]
+    assert insights["nice_to_have_skills"] == ["Vector search"]
+    assert insights["concerns"] == ["Broad AI platform scope"]
+    assert result["analysis"]["resume_keywords"] == ["LLM features", "React"]
+    assert result["company_research"]["themes"] == ["Fast pace", "Strong engineering culture"]
 
 
 def test_advanced_analysis_reuses_company_research_for_same_company(client, monkeypatch):

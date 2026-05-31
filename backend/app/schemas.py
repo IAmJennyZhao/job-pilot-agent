@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
 
 from app.models import (
     InterviewMode,
@@ -215,6 +215,7 @@ class JobInsightsOutput(AIModel):
     summary: str
     role_focus: list[str]
     responsibilities: list[str]
+    responsibility_highlights: list[str] = Field(default_factory=list)
     must_have_skills: list[str]
     nice_to_have_skills: list[str]
     seniority_signal: str | None = None
@@ -225,6 +226,7 @@ class CompanyResearchOutput(AIModel):
     sentiment: Literal["positive", "mixed", "negative", "neutral", "unknown"] = "unknown"
     summary: str
     themes: list[str] = Field(default_factory=list)
+    highlight_phrases: list[str] = Field(default_factory=list)
     source_links: list[SourceLink] = Field(default_factory=list)
     confidence: int = Field(ge=0, le=100)
     coverage_note: str
@@ -232,8 +234,10 @@ class CompanyResearchOutput(AIModel):
 
 class ResumeFitOutput(AIModel):
     top_company_fit: list[str]
+    fit_highlights: list[str] = Field(default_factory=list)
     resume_keywords: list[str]
     risks_gaps: list[str]
+    gap_highlights: list[str] = Field(default_factory=list)
 
 
 class AdvancedInterviewQuestion(AIModel):
@@ -253,11 +257,17 @@ class CompanyResearchRead(CareerPilotModel):
     sentiment: str
     summary: str
     themes: list[str]
+    highlight_phrases: list[str] = Field(default_factory=list)
     source_links: list[dict[str, Any]]
     confidence: int | None
     coverage_note: str | None
     created_at: datetime
     updated_at: datetime
+
+    @field_validator("highlight_phrases", mode="before")
+    @classmethod
+    def default_highlight_phrases(cls, value: Any) -> list[str]:
+        return value or []
 
 
 class AdvancedJobAnalysisRead(CareerPilotModel):
@@ -270,11 +280,17 @@ class AdvancedJobAnalysisRead(CareerPilotModel):
     top_company_fit: list[str]
     resume_keywords: list[str]
     risks_gaps: list[str]
+    highlight_phrases: dict[str, list[str]] = Field(default_factory=dict)
     expected_questions: list[dict[str, Any]]
     source_links: list[dict[str, Any]]
     errors: list[str]
     created_at: datetime
     updated_at: datetime
+
+    @field_validator("highlight_phrases", mode="before")
+    @classmethod
+    def default_analysis_highlight_phrases(cls, value: Any) -> dict[str, list[str]]:
+        return value or {}
 
 
 class AdvancedAnalysisResponse(BaseModel):

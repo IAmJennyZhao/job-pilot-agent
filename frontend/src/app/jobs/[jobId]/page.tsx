@@ -396,21 +396,23 @@ function MergedJobDetail({
     sentiment: companyResearch.sentiment,
     summary: companyResearch.summary,
     themes: companyResearch.themes,
+    highlight_phrases: companyResearch.highlight_phrases,
     source_links: companyResearch.source_links,
     confidence: companyResearch.confidence,
     coverage_note: companyResearch.coverage_note
   } : null);
+  const highlightPhrases = analysis?.highlight_phrases ?? {};
   const skillKeys = new Set<string>();
   const insightKeys = new Set<string>();
   const roleSignals = compactItems([...(insights?.role_focus ?? []), insights?.seniority_signal], { limit: 4, usedKeys: insightKeys, textLimit: 56 });
-  const responsibilities = compactItems(insights?.responsibilities?.length ? insights.responsibilities : job.responsibilities, { limit: 7, usedKeys: insightKeys, textLimit: 200 });
-  const mustHaveTech = compactItems([...(job.required_skills ?? []), ...(insights?.must_have_skills ?? [])], { limit: 10, techOnly: true, usedKeys: skillKeys, textLimit: 80 });
-  const niceToHaveTech = compactItems(insights?.nice_to_have_skills ?? [], { limit: 7, techOnly: true, usedKeys: skillKeys, textLimit: 80 });
+  const responsibilities = compactItems(insights?.responsibilities?.length ? insights.responsibilities : job.responsibilities, { limit: 7, usedKeys: insightKeys, textLimit: 1000 });
+  const mustHaveTech = compactItems([...(job.required_skills ?? []), ...(insights?.must_have_skills ?? [])], { limit: 10, techOnly: true, usedKeys: skillKeys, textLimit: 1000 });
+  const niceToHaveTech = compactItems(insights?.nice_to_have_skills ?? [], { limit: 7, techOnly: true, usedKeys: skillKeys, textLimit: 1000 });
   const benefits = compactItems(job.benefits, { limit: 5, textLimit: 48 });
-  const companySignals = compactItems([sentiment?.summary, ...(sentiment?.themes ?? [])], { limit: 7, textLimit: 100 });
-  const fitSignals = compactItems(analysis?.top_company_fit ?? [], { limit: 5, textLimit: 100 });
+  const companySignals = compactItems([sentiment?.summary, ...(sentiment?.themes ?? [])], { limit: 7, textLimit: 1000 });
+  const fitSignals = compactItems(analysis?.top_company_fit ?? [], { limit: 5, textLimit: 1000 });
   const resumeKeywords = compactItems(analysis?.resume_keywords ?? [], { limit: 8, techOnly: true, textLimit: 38 });
-  const risksGaps = compactItems(analysis?.risks_gaps ?? [], { limit: 5, textLimit: 100 });
+  const risksGaps = compactItems(analysis?.risks_gaps ?? [], { limit: 5, textLimit: 1000 });
   const sourceLinks = analysis?.source_links.length ? analysis.source_links : sentiment?.source_links ?? [];
   return (
     <div className="grid gap-4">
@@ -438,7 +440,7 @@ function MergedJobDetail({
             <List items={roleSignals.length ? roleSignals : [job.category]} />
           </Section>
           <Section title="Responsibilities">
-            <BulletList items={responsibilities} />
+            <BulletList items={responsibilities} highlights={highlightPhrases.responsibilities} />
           </Section>
           <div className="grid gap-5 md:grid-cols-2">
             <Section title="Skills">
@@ -472,12 +474,12 @@ function MergedJobDetail({
             <div className="grid gap-5 md:grid-cols-3">
               <div>
                 <h3 className="mb-2 text-sm font-medium text-green-700">Fit</h3>
-                <BulletList items={fitSignals} />
+                <BulletList items={fitSignals} highlights={highlightPhrases.fit} />
               </div>
               <List title="Keywords" items={resumeKeywords} />
               <div>
                 <h3 className="mb-2 text-sm font-medium text-amber-700">Gaps</h3>
-                <BulletList items={risksGaps} />
+                <BulletList items={risksGaps} highlights={highlightPhrases.gaps} />
               </div>
             </div>
           </Panel>
@@ -490,7 +492,7 @@ function MergedJobDetail({
                   {typeof sentiment.confidence === "number" ? <Badge tone={sentiment.confidence >= 70 ? "good" : "warn"}>{sentiment.confidence}% coverage</Badge> : null}
                 </div>
               </div>
-              <BulletList items={companySignals} />
+              <BulletList items={companySignals} highlights={sentiment.highlight_phrases} />
               {sentiment.coverage_note ? <p className="mt-4 text-sm text-muted-foreground">{compactText(sentiment.coverage_note, 180)}</p> : null}
               <SourceLinks links={sourceLinks} />
             </Panel>
@@ -1047,14 +1049,51 @@ function QuestionList({ questions }: { questions: Array<{ question: string; type
   );
 }
 
-function BulletList({ items }: { items: string[] }) {
+function selectSparseHighlights(items: string[], highlights: string[] = []) {
+  const normalizedHighlights = highlights
+    .map((highlight) => highlight.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  const maxHighlightedItems = Math.max(1, Math.ceil(items.length / 2));
+  const usedHighlights = new Set<string>();
+  let highlightedItems = 0;
+
+  return items.map((item) => {
+    if (highlightedItems >= maxHighlightedItems) return null;
+    const itemKey = item.toLowerCase();
+    const highlight = normalizedHighlights.find((candidate) => {
+      const candidateKey = candidate.toLowerCase();
+      return !usedHighlights.has(candidateKey) && itemKey.includes(candidateKey);
+    });
+    if (!highlight) return null;
+    usedHighlights.add(highlight.toLowerCase());
+    highlightedItems += 1;
+    return highlight;
+  });
+}
+
+function HighlightedText({ text, highlight }: { text: string; highlight: string | null }) {
+  if (!highlight) return <>{text}</>;
+  const start = text.toLowerCase().indexOf(highlight.toLowerCase());
+  if (start < 0) return <>{text}</>;
+  const end = start + highlight.length;
+  return (
+    <>
+      {text.slice(0, start)}
+      <strong className="font-semibold text-foreground">{text.slice(start, end)}</strong>
+      {text.slice(end)}
+    </>
+  );
+}
+
+function BulletList({ items, highlights = [] }: { items: string[]; highlights?: string[] }) {
   if (!items.length) return <p className="text-sm text-muted-foreground">None captured.</p>;
+  const selectedHighlights = selectSparseHighlights(items, highlights);
   return (
     <ul className="grid gap-1.5 text-sm">
-      {items.map((item) => (
-        <li key={item} className="flex gap-2">
+      {items.map((item, i) => (
+        <li key={i} className="flex gap-2">
           <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/50" />
-          <span>{item}</span>
+          <span><HighlightedText text={item} highlight={selectedHighlights[i]} /></span>
         </li>
       ))}
     </ul>

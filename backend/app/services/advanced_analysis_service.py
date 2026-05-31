@@ -56,9 +56,22 @@ def _company_payload(snapshot: models.CompanyResearchSnapshot) -> dict:
         "sentiment": snapshot.sentiment,
         "summary": snapshot.summary,
         "themes": snapshot.themes,
+        "highlight_phrases": snapshot.highlight_phrases or [],
         "source_links": snapshot.source_links,
         "confidence": snapshot.confidence,
         "coverage_note": snapshot.coverage_note,
+    }
+
+
+def _analysis_highlight_payload(
+    responsibilities: list[str] | None = None,
+    fit: list[str] | None = None,
+    gaps: list[str] | None = None,
+) -> dict[str, list[str]]:
+    return {
+        "responsibilities": responsibilities or [],
+        "fit": fit or [],
+        "gaps": gaps or [],
     }
 
 
@@ -77,6 +90,7 @@ def _save_company_research(
     snapshot.sentiment = output.sentiment
     snapshot.summary = output.summary
     snapshot.themes = output.themes
+    snapshot.highlight_phrases = output.highlight_phrases
     snapshot.source_links = [link.model_dump() for link in output.source_links]
     snapshot.confidence = output.confidence
     snapshot.coverage_note = output.coverage_note
@@ -173,13 +187,17 @@ def run_advanced_analysis(
     job_source = _job_source_text(job)
     errors: list[str] = []
     job_insights: dict | None = None
+    responsibility_highlights: list[str] = []
     company_research = None if refresh_company else get_company_research(db, job.company)
     resume_fit: schemas.ResumeFitOutput | None = None
+    fit_highlights: list[str] = []
+    gap_highlights: list[str] = []
     interview_prep: schemas.AdvancedInterviewPrepOutput | None = None
 
     try:
         posting_output = PostingAnalysisAgent.run(job, job_source)
-        job_insights = posting_output.model_dump()
+        responsibility_highlights = posting_output.responsibility_highlights
+        job_insights = posting_output.model_dump(exclude={"responsibility_highlights"})
     except Exception as exc:
         errors.append(f"Posting analysis failed: {_error_message(exc)}")
 
@@ -192,6 +210,8 @@ def run_advanced_analysis(
     if profile:
         try:
             resume_fit = ResumeFitAgent.run(job, job_source, profile)
+            fit_highlights = resume_fit.fit_highlights
+            gap_highlights = resume_fit.gap_highlights
         except Exception as exc:
             errors.append(f"Resume fit failed: {_error_message(exc)}")
     else:
@@ -211,6 +231,11 @@ def run_advanced_analysis(
     analysis.top_company_fit = resume_fit.top_company_fit if resume_fit else []
     analysis.resume_keywords = resume_fit.resume_keywords if resume_fit else []
     analysis.risks_gaps = resume_fit.risks_gaps if resume_fit else []
+    analysis.highlight_phrases = _analysis_highlight_payload(
+        responsibilities=responsibility_highlights,
+        fit=fit_highlights,
+        gaps=gap_highlights,
+    )
     analysis.expected_questions = [
         question.model_dump() for question in interview_prep.expected_questions
     ] if interview_prep else []

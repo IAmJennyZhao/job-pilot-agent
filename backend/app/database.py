@@ -1,6 +1,6 @@
 from collections.abc import Generator
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
@@ -51,4 +51,26 @@ def init_db() -> None:
     from app import models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+    _ensure_added_columns()
+
+
+def _ensure_added_columns() -> None:
+    patches = [
+        (
+            "company_research_snapshots",
+            "highlight_phrases",
+            "ALTER TABLE company_research_snapshots ADD COLUMN highlight_phrases JSON NOT NULL DEFAULT '[]'",
+        ),
+        (
+            "advanced_job_analyses",
+            "highlight_phrases",
+            "ALTER TABLE advanced_job_analyses ADD COLUMN highlight_phrases JSON NOT NULL DEFAULT '{}'",
+        ),
+    ]
+    with engine.begin() as connection:
+        inspector = inspect(connection)
+        for table_name, column_name, ddl in patches:
+            columns = {column["name"] for column in inspector.get_columns(table_name)}
+            if column_name not in columns:
+                connection.execute(text(ddl))
 

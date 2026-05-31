@@ -42,6 +42,7 @@ Use one controlled category only:
 Extract only information supported by the posting. If a field is unclear, use "Unknown" or add a warning.
 Keep every user-facing field terse: summary is one short sentence; lists are 3-5 short phrases.
 Responsibilities must be actions/outcomes, not tools. Start them with verbs when possible.
+Do not end summaries or list items with ellipses; write the complete phrase or sentence.
 Required skills must be technical only: languages, frameworks, tools, platforms, technical domains.
 Do not put collaboration, communication, stakeholder management, ownership, or teamwork in required skills.
 Avoid repeating the same concept across summary, responsibilities, skills, and benefits.
@@ -65,10 +66,12 @@ Hard rules:
 - summary: one short phrase or sentence.
 - role_focus: 2-3 short phrases about the role's real emphasis.
 - responsibilities: 3-5 actions/outcomes only; no tool lists.
+- responsibility_highlights: 1-3 word exact phrases copied from responsibilities, about one phrase per two responsibility bullets, max one per bullet.
 - must_have_skills and nice_to_have_skills: technical tools, languages, frameworks, platforms, or technical domains only.
 - Put collaboration, communication, stakeholder work, and ownership signals in role_focus only if they are central.
 - Do not repeat the same concept across role_focus, responsibilities, must-have skills, and nice-to-have skills.
 - Omit generic filler.
+- Do not use markdown or trailing ellipses in any text field.
 Keep it grounded in the posting. Do not invent company facts.
 """.strip()
 
@@ -94,6 +97,8 @@ Retrieval warnings:
 Use only the retrieved snippets and the provided warnings. Include source links for snippets used.
 Keep summary to one short sentence. Put the useful takeaways in themes as 3-5 compact bullets.
 Themes should be scan-friendly employee/company signals, not paragraphs.
+highlight_phrases should contain 1-3 word exact phrases copied from summary or themes, about one phrase per two company signal bullets, max one per bullet.
+Do not use markdown or trailing ellipses in any text field.
 If public employee review data is thin, unavailable, or retrieval failed, say that clearly in the coverage note and use "unknown" sentiment when needed.
 Do not invent reviews, ratings, or employee claims.
 """.strip()
@@ -126,7 +131,10 @@ Resume text:
 {resume_text}
 
 Return practical fit signals, resume keywords, and honest risks/gaps. Keep every item short.
+fit_highlights should contain 1-3 word exact phrases copied from top_company_fit, about one phrase per two fit bullets, max one per bullet.
+gap_highlights should contain 1-3 word exact phrases copied from risks_gaps, about one phrase per two gap bullets, max one per bullet.
 Resume keywords should be technical keywords or role-specific keywords, not soft-skill phrases.
+Do not use markdown or trailing ellipses in any text field.
 Do not repeat items already covered by obvious responsibilities unless they matter for resume targeting.
 Do not invent experience.
 """.strip()

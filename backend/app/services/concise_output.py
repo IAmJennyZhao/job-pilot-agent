@@ -37,6 +37,10 @@ def compact_text(value: str | None, limit: int = 150) -> str:
     return f"{trimmed}..."
 
 
+def clean_text(value: str | None) -> str:
+    return " ".join((value or "").split())
+
+
 def _key(value: str) -> str:
     normalized = re.sub(r"[^a-z0-9+#.]+", " ", value.casefold())
     tokens = [token for token in normalized.split() if token not in STOP_WORDS]
@@ -65,12 +69,12 @@ def compact_items(
     limit: int = 5,
     used_keys: set[str] | None = None,
     tech_only: bool = False,
-    text_limit: int = 70,
+    text_limit: int | None = 70,
 ) -> list[str]:
     used = used_keys if used_keys is not None else set()
     result: list[str] = []
     for item in items:
-        text = compact_text(item, text_limit)
+        text = clean_text(item) if text_limit is None else compact_text(item, text_limit)
         if not text:
             continue
         if tech_only and SOFT_SKILL_RE.search(text):
@@ -85,9 +89,42 @@ def compact_items(
     return result
 
 
+def normalize_highlight_phrases(highlights: Iterable[str], source_items: Iterable[str]) -> list[str]:
+    items = [clean_text(item) for item in source_items if clean_text(item)]
+    if not items:
+        return []
+    max_highlights = max(1, (len(items) + 1) // 2)
+    result: list[str] = []
+    used_phrases: set[str] = set()
+    used_item_indexes: set[int] = set()
+    for highlight in highlights:
+        phrase = clean_text(highlight).strip(".,;:*_`\"'")
+        if not phrase or len(phrase.split()) > 3:
+            continue
+        phrase_key = phrase.casefold()
+        if phrase_key in used_phrases:
+            continue
+        matched_index = next(
+            (
+                index
+                for index, item in enumerate(items)
+                if index not in used_item_indexes and phrase_key in item.casefold()
+            ),
+            None,
+        )
+        if matched_index is None:
+            continue
+        used_phrases.add(phrase_key)
+        used_item_indexes.add(matched_index)
+        result.append(phrase)
+        if len(result) >= max_highlights:
+            break
+    return result
+
+
 def normalize_extraction_output(output: schemas.JobExtractionOutput) -> schemas.JobExtractionOutput:
     output.summary = compact_text(output.summary, 140)
-    output.responsibilities = compact_items(output.responsibilities, limit=5, text_limit=58)
+    output.responsibilities = compact_items(output.responsibilities, limit=5, text_limit=None)
     output.required_skills = compact_items(output.required_skills, limit=6, tech_only=True, text_limit=42)
     output.benefits = compact_items(output.benefits, limit=5, text_limit=48)
     output.warnings = compact_items(output.warnings, limit=4, text_limit=90)
@@ -98,7 +135,11 @@ def normalize_job_insights(output: schemas.JobInsightsOutput) -> schemas.JobInsi
     output.summary = compact_text(output.summary, 120)
     used: set[str] = set()
     output.role_focus = compact_items(output.role_focus, limit=3, used_keys=used, text_limit=52)
-    output.responsibilities = compact_items(output.responsibilities, limit=5, used_keys=used, text_limit=58)
+    output.responsibilities = compact_items(output.responsibilities, limit=5, used_keys=used, text_limit=None)
+    output.responsibility_highlights = normalize_highlight_phrases(
+        output.responsibility_highlights,
+        output.responsibilities,
+    )
     output.must_have_skills = compact_items(output.must_have_skills, limit=5, used_keys=used, tech_only=True, text_limit=42)
     output.nice_to_have_skills = compact_items(output.nice_to_have_skills, limit=5, used_keys=used, tech_only=True, text_limit=42)
     output.seniority_signal = compact_text(output.seniority_signal, 80) if output.seniority_signal else None
@@ -107,16 +148,22 @@ def normalize_job_insights(output: schemas.JobInsightsOutput) -> schemas.JobInsi
 
 
 def normalize_company_research_output(output: schemas.CompanyResearchOutput) -> schemas.CompanyResearchOutput:
-    output.summary = compact_text(output.summary, 100)
-    output.themes = compact_items(output.themes, limit=5, text_limit=58)
-    output.coverage_note = compact_text(output.coverage_note, 110)
+    output.summary = clean_text(output.summary)
+    output.themes = compact_items(output.themes, limit=5, text_limit=None)
+    output.highlight_phrases = normalize_highlight_phrases(
+        output.highlight_phrases,
+        [output.summary, *output.themes],
+    )
+    output.coverage_note = clean_text(output.coverage_note)
     return output
 
 
 def normalize_resume_fit_output(output: schemas.ResumeFitOutput) -> schemas.ResumeFitOutput:
-    output.top_company_fit = compact_items(output.top_company_fit, limit=4, text_limit=58)
+    output.top_company_fit = compact_items(output.top_company_fit, limit=4, text_limit=None)
+    output.fit_highlights = normalize_highlight_phrases(output.fit_highlights, output.top_company_fit)
     output.resume_keywords = compact_items(output.resume_keywords, limit=8, tech_only=True, text_limit=38)
-    output.risks_gaps = compact_items(output.risks_gaps, limit=4, text_limit=58)
+    output.risks_gaps = compact_items(output.risks_gaps, limit=4, text_limit=None)
+    output.gap_highlights = normalize_highlight_phrases(output.gap_highlights, output.risks_gaps)
     return output
 
 

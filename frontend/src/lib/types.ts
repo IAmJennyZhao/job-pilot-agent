@@ -139,6 +139,7 @@ export type CompanyResearch = {
   sentiment: string;
   summary: string;
   themes: string[];
+  highlight_phrases: string[];
   source_links: Array<{ title: string; url: string }>;
   confidence: number | null;
   coverage_note: string | null;
@@ -164,6 +165,7 @@ export type AdvancedJobAnalysis = {
     sentiment?: string;
     summary?: string;
     themes?: string[];
+    highlight_phrases?: string[];
     source_links?: Array<{ title: string; url: string }>;
     confidence?: number | null;
     coverage_note?: string | null;
@@ -171,6 +173,11 @@ export type AdvancedJobAnalysis = {
   top_company_fit: string[];
   resume_keywords: string[];
   risks_gaps: string[];
+  highlight_phrases: {
+    responsibilities?: string[];
+    fit?: string[];
+    gaps?: string[];
+  };
   expected_questions: Array<{ question: string; type: string; why_it_matters: string }>;
   source_links: Array<{ title: string; url: string }>;
   errors: string[];

@@ -92,6 +92,7 @@ def fake_job_insights_output():
         summary="Applied AI role with product engineering expectations.",
         role_focus=["LLM product features", "API delivery"],
         responsibilities=["Build AI features", "Own backend services"],
+        responsibility_highlights=["AI features"],
         must_have_skills=["Python", "FastAPI", "React"],
         nice_to_have_skills=["Evaluation", "Vector search"],
         seniority_signal="Mid-level to senior ownership language.",
@@ -104,6 +105,7 @@ def fake_company_research_output():
         sentiment="mixed",
         summary="Employees highlight strong technical work with some execution pressure.",
         themes=["Strong engineering culture", "Fast pace"],
+        highlight_phrases=["technical work"],
         source_links=[schemas.SourceLink(title="Employee reviews", url="https://example.com/reviews")],
         confidence=74,
         coverage_note="Public review coverage is limited.",
@@ -113,8 +115,10 @@ def fake_company_research_output():
 def fake_resume_fit_output():
     return schemas.ResumeFitOutput(
         top_company_fit=["AI product engineering", "FastAPI services"],
+        fit_highlights=["AI product"],
         resume_keywords=["LLM features", "evaluation", "React"],
         risks_gaps=["Cloud deployment depth"],
+        gap_highlights=["Cloud deployment"],
     )
 
 
@@ -618,7 +622,14 @@ def test_run_advanced_analysis_persists_sections_and_company_research(client, mo
     assert result["company_research"]["normalized_company_name"] == "acme ai"
     assert result["analysis"]["job_insights"]["must_have_skills"] == ["Python", "FastAPI", "React"]
     assert result["analysis"]["company_sentiment"]["sentiment"] == "mixed"
+    assert result["analysis"]["company_sentiment"]["highlight_phrases"] == ["technical work"]
     assert result["analysis"]["top_company_fit"] == ["AI product engineering", "FastAPI services"]
+    assert result["analysis"]["highlight_phrases"] == {
+        "responsibilities": ["AI features"],
+        "fit": ["AI product"],
+        "gaps": ["Cloud deployment"],
+    }
+    assert result["company_research"]["highlight_phrases"] == ["technical work"]
     assert result["analysis"]["expected_questions"][0]["type"] == "technical"
 
     detail = client.get(f"/api/jobs/{job['id']}").json()
@@ -638,7 +649,12 @@ def test_advanced_analysis_compacts_duplicate_and_soft_skill_output(client, monk
                     "LLM product ownership",
                     "Cross-functional collaboration with stakeholders",
                 ],
-                responsibilities=["Build AI features", "Build AI features", "Own backend services"],
+                responsibilities=[
+                    "Build and deploy applied AI solutions for enterprise use cases across product workflows",
+                    "Build and deploy applied AI solutions for enterprise use cases across product workflows",
+                    "Own backend services that support real-time user-facing automation",
+                ],
+                responsibility_highlights=["applied AI solutions", "backend services"],
                 must_have_skills=[
                     "Python",
                     "Strong collaboration and communication skills",
@@ -651,9 +667,17 @@ def test_advanced_analysis_compacts_duplicate_and_soft_skill_output(client, monk
             )
         if output_model is schemas.ResumeFitOutput:
             return schemas.ResumeFitOutput(
-                top_company_fit=["AI product engineering", "AI product engineering"],
+                top_company_fit=[
+                    "AI product engineering for support automation teams",
+                    "AI product engineering for support automation teams",
+                ],
+                fit_highlights=["AI product engineering"],
                 resume_keywords=["LLM features", "LLM features", "React"],
-                risks_gaps=["Cloud deployment depth", "Cloud deployment depth"],
+                risks_gaps=[
+                    "Cloud deployment depth for production AI services",
+                    "Cloud deployment depth for production AI services",
+                ],
+                gap_highlights=["Cloud deployment"],
             )
         if output_model is schemas.AdvancedInterviewPrepOutput:
             return fake_advanced_interview_output()
@@ -662,6 +686,7 @@ def test_advanced_analysis_compacts_duplicate_and_soft_skill_output(client, monk
                 sentiment="mixed",
                 summary="Employees mention strong technical work and fast execution pressure across teams.",
                 themes=["Fast pace", "Fast pace", "Strong engineering culture"],
+                highlight_phrases=["technical work", "engineering culture"],
                 source_links=[],
                 confidence=74,
                 coverage_note="Public review coverage is limited but usable for directional signals.",
@@ -681,12 +706,31 @@ def test_advanced_analysis_compacts_duplicate_and_soft_skill_output(client, monk
     assert response.status_code == 200
     result = response.json()
     insights = result["analysis"]["job_insights"]
-    assert insights["responsibilities"] == ["Build AI features", "Own backend services"]
+    assert insights["responsibilities"] == [
+        "Build and deploy applied AI solutions for enterprise use cases across product workflows",
+        "Own backend services that support real-time user-facing automation",
+    ]
     assert insights["must_have_skills"] == ["Python", "FastAPI"]
     assert insights["nice_to_have_skills"] == ["Vector search"]
     assert insights["concerns"] == ["Broad AI platform scope"]
+    assert result["analysis"]["highlight_phrases"] == {
+        "responsibilities": ["applied AI solutions"],
+        "fit": ["AI product engineering"],
+        "gaps": ["Cloud deployment"],
+    }
+    assert result["analysis"]["top_company_fit"] == ["AI product engineering for support automation teams"]
+    assert result["analysis"]["risks_gaps"] == ["Cloud deployment depth for production AI services"]
     assert result["analysis"]["resume_keywords"] == ["LLM features", "React"]
     assert result["company_research"]["themes"] == ["Fast pace", "Strong engineering culture"]
+    assert result["company_research"]["highlight_phrases"] == ["technical work", "engineering culture"]
+    narrative_items = [
+        *insights["responsibilities"],
+        *result["analysis"]["top_company_fit"],
+        *result["analysis"]["risks_gaps"],
+        result["company_research"]["summary"],
+        *result["company_research"]["themes"],
+    ]
+    assert all("..." not in item for item in narrative_items)
 
 
 def test_advanced_analysis_reuses_company_research_for_same_company(client, monkeypatch):
@@ -718,9 +762,12 @@ def test_advanced_analysis_reuses_company_research_for_same_company(client, monk
     monkeypatch.setattr("app.services.ai_service.get_structured_output", fake_structured_output)
     monkeypatch.setattr("app.services.advanced_analysis_service.CompanyResearchRetrievalAgent.run", fake_retrieval)
 
-    assert client.post(f"/api/ai/run-advanced-analysis/{first['id']}").status_code == 200
-    assert client.post(f"/api/ai/run-advanced-analysis/{second['id']}").status_code == 200
+    first_response = client.post(f"/api/ai/run-advanced-analysis/{first['id']}")
+    assert first_response.status_code == 200
+    second_response = client.post(f"/api/ai/run-advanced-analysis/{second['id']}")
+    assert second_response.status_code == 200
     assert retrieval_calls == 1
+    assert second_response.json()["analysis"]["company_sentiment"]["highlight_phrases"] == ["technical work"]
 
     assert client.post(f"/api/ai/run-advanced-analysis/{second['id']}?refresh_company=true").status_code == 200
     assert retrieval_calls == 2

@@ -64,12 +64,14 @@ export const api = {
     search?: string;
     status?: JobStatus | "";
     category?: JobCategory | "";
+    healthFilter?: "stale" | "missing_data" | "";
   }) => {
     const query = new URLSearchParams();
     if (params?.includeArchived) query.set("include_archived", "true");
     if (params?.search) query.set("search", params.search);
     if (params?.status) query.set("status_filter", params.status);
     if (params?.category) query.set("category", params.category);
+    if (params?.healthFilter) query.set("health_filter", params.healthFilter);
     const suffix = query.toString() ? `?${query}` : "";
     return request<JobListItem[]>(`/api/jobs${suffix}`);
   },

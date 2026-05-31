@@ -31,6 +31,8 @@ type ReviewState = JobCreatePayload & {
   duplicateCount: number;
 };
 
+type HealthFilter = "" | "stale" | "missing-data";
+
 const linkKindLabels: Record<JobLinkInput["kind"], string> = {
   source: "Job Posting",
   company_portal: "Company Careers",
@@ -61,25 +63,53 @@ const extractionSteps = [
   "Preparing editable review fields"
 ];
 
+function statusFromUrl(value: string | null): JobStatus | "" {
+  if (!value) return "";
+  return (jobStatuses as readonly string[]).includes(value) ? (value as JobStatus) : "";
+}
+
+function healthFromUrl(value: string | null): HealthFilter {
+  if (value === "stale" || value === "missing-data") return value;
+  return "";
+}
+
+function toApiHealthFilter(value: HealthFilter): "stale" | "missing_data" | "" {
+  return value === "missing-data" ? "missing_data" : value;
+}
+
+function isHiddenStatus(status: JobStatus | "") {
+  return status === "Archived" || status === "Ghosted";
+}
+
 export default function JobsPage() {
   const queryClient = useQueryClient();
   const [showArchived, setShowArchived] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<JobStatus | "">("");
+  const [healthFilter, setHealthFilter] = useState<HealthFilter>("");
   const [categoryFilter, setCategoryFilter] = useState<JobCategory | "">("");
   const [selectedJob, setSelectedJob] = useState<JobListItem | null>(null);
   const [intake, setIntake] = useState<IntakeState>({ source_url: "", source_content: "" });
   const [preview, setPreview] = useState<JobExtractPreview | null>(null);
   const [review, setReview] = useState<ReviewState | null>(null);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const nextStatus = statusFromUrl(params.get("status"));
+    setStatusFilter(nextStatus);
+    setHealthFilter(healthFromUrl(params.get("health")));
+    if (isHiddenStatus(nextStatus)) setShowArchived(true);
+  }, []);
+
   const { data: jobs = [], isLoading, error } = useQuery({
-    queryKey: ["jobs", showArchived, search, statusFilter, categoryFilter],
+    queryKey: ["jobs", showArchived, search, statusFilter, healthFilter, categoryFilter],
     queryFn: () =>
       api.jobs({
-        includeArchived: showArchived || statusFilter === "Archived" || statusFilter === "Ghosted",
+        includeArchived: showArchived || isHiddenStatus(statusFilter),
         search: search.trim() || undefined,
         status: statusFilter,
-        category: categoryFilter
+        category: categoryFilter,
+        healthFilter: toApiHealthFilter(healthFilter)
       })
   });
 
@@ -215,7 +245,7 @@ export default function JobsPage() {
                 Show hidden
               </label>
             </div>
-            <div className="grid gap-2 lg:grid-cols-[1fr_190px_220px]">
+            <div className="grid gap-2 lg:grid-cols-[1fr_180px_190px_220px]">
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -232,6 +262,11 @@ export default function JobsPage() {
                     {status}
                   </option>
                 ))}
+              </Select>
+              <Select value={healthFilter} onChange={(event) => setHealthFilter(event.target.value as HealthFilter)}>
+                <option value="">All health</option>
+                <option value="stale">Stale</option>
+                <option value="missing-data">Missing data</option>
               </Select>
               <Select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value as JobCategory | "")}>
                 <option value="">All categories</option>

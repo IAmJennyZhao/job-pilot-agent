@@ -557,12 +557,14 @@ class DashboardHealth(BaseModel):
     missing_fit: int
     missing_pay: int
     low_confidence: int
+    missing_data: int
     ghosted_jobs: int
     archived_jobs: int
 
 
 class DashboardSearchHealth(BaseModel):
     stale_jobs: list[DashboardJobInsight] = Field(default_factory=list)
+    missing_data: list[DashboardJobInsight] = Field(default_factory=list)
     needs_analysis: list[DashboardJobInsight] = Field(default_factory=list)
 
 

@@ -1,13 +1,33 @@
+from datetime import datetime, timezone
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import models, schemas
 
 MAX_TOP_GAPS = 3
+LOW_CONFIDENCE_THRESHOLD = 80
+FUNNEL_STATUSES = (
+    models.JobStatus.saved,
+    models.JobStatus.applied,
+    models.JobStatus.recruiter_screen,
+    models.JobStatus.tech_screen,
+    models.JobStatus.final_interview,
+    models.JobStatus.offer,
+)
+STAGE_RANK = {status: index for index, status in enumerate(FUNNEL_STATUSES)}
+OPEN_OPPORTUNITY_STATUSES = set(FUNNEL_STATUSES)
 HIDDEN_STATUSES = (
     models.JobStatus.archived,
     models.JobStatus.ghosted,
 )
+STALE_DAYS = {
+    models.JobStatus.saved: 7,
+    models.JobStatus.applied: 14,
+    models.JobStatus.recruiter_screen: 7,
+    models.JobStatus.tech_screen: 7,
+    models.JobStatus.final_interview: 7,
+}
 
 PAY_MULTIPLIERS = {
     "hour": 40 * 52,
@@ -75,6 +95,81 @@ def annualize_pay(
         pay_max * multiplier if pay_max is not None else None,
         note,
     )
+
+
+def as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def latest_movement_at(job: models.Job) -> datetime:
+    if job.status_events:
+        return max(as_utc(event.changed_at) for event in job.status_events)
+    return as_utc(job.updated_at or job.created_at)
+
+
+def days_since(value: datetime) -> int:
+    return max(0, (as_utc(datetime.now(timezone.utc)) - as_utc(value)).days)
+
+
+def is_open_opportunity(job: models.Job) -> bool:
+    return job.status in OPEN_OPPORTUNITY_STATUSES
+
+
+def has_pay(job: models.Job) -> bool:
+    return any(
+        value is not None
+        for value in [job.pay_min, job.pay_max, job.pay_annual_min, job.pay_annual_max]
+    ) or bool((job.pay_raw or "").strip())
+
+
+def is_stale(job: models.Job) -> bool:
+    stale_threshold = STALE_DAYS.get(job.status)
+    if stale_threshold is None:
+        return False
+    return days_since(latest_movement_at(job)) >= stale_threshold
+
+
+def is_missing_core_data(job: models.Job) -> bool:
+    return is_open_opportunity(job) and (
+        not has_pay(job)
+        or job.fit_score is None
+        or job.analysis is None
+        or job.extraction_confidence is None
+        or job.extraction_confidence < LOW_CONFIDENCE_THRESHOLD
+    )
+
+
+def needs_analysis(job: models.Job) -> bool:
+    return is_open_opportunity(job) and (job.fit_score is None or job.analysis is None)
+
+
+def current_stage_rank(job: models.Job) -> int:
+    return STAGE_RANK.get(job.status, -1)
+
+
+def furthest_stage_rank(job: models.Job) -> int:
+    rank = STAGE_RANK.get(job.status, 0)
+    for event in job.status_events:
+        event_rank = STAGE_RANK.get(event.to_status)
+        if event_rank is not None:
+            rank = max(rank, event_rank)
+    return rank
+
+
+def health_filtered_jobs(
+    jobs: list[models.Job],
+    health_filter: str | None,
+) -> list[models.Job]:
+    if not health_filter:
+        return jobs
+    normalized = health_filter.strip().replace("-", "_").casefold()
+    if normalized == "stale":
+        return [job for job in jobs if is_stale(job)]
+    if normalized == "missing_data":
+        return [job for job in jobs if is_missing_core_data(job)]
+    raise ValueError("Unsupported health filter")
 
 
 def _apply_pay_annualization(job: models.Job) -> None:
@@ -180,6 +275,7 @@ def list_jobs(
     search: str | None = None,
     status: models.JobStatus | None = None,
     category: models.JobCategory | None = None,
+    health_filter: str | None = None,
 ) -> list[models.Job]:
     statement = select(models.Job).order_by(models.Job.updated_at.desc())
     if not include_archived:
@@ -191,6 +287,7 @@ def list_jobs(
     jobs = list(db.scalars(statement).all())
     if search:
         jobs = [job for job in jobs if _matches_search(job, search)]
+    jobs = health_filtered_jobs(jobs, health_filter)
     return jobs
 
 
@@ -228,6 +325,7 @@ def list_job_items(
     search: str | None = None,
     status: models.JobStatus | None = None,
     category: models.JobCategory | None = None,
+    health_filter: str | None = None,
 ) -> list[schemas.JobListItem]:
     return [
         to_job_list_item(db, job)
@@ -237,6 +335,7 @@ def list_job_items(
             search=search,
             status=status,
             category=category,
+            health_filter=health_filter,
         )
     ]
 

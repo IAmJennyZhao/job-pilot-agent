@@ -2,10 +2,8 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Activity,
   AlertTriangle,
   BarChart3,
-  Brain,
   BriefcaseBusiness,
   DollarSign,
   ExternalLink,
@@ -35,6 +33,19 @@ const stageColors: Record<string, string> = {
   Ghosted: "#64748b"
 };
 
+function jobsStatusHref(status: string) {
+  return `/jobs?status=${encodeURIComponent(status)}`;
+}
+
+function uniqueInsightItems(items: DashboardJobInsight[]) {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    if (seen.has(item.id)) return false;
+    seen.add(item.id);
+    return true;
+  });
+}
+
 export default function DashboardPage() {
   const queryClient = useQueryClient();
   const { data, isLoading, error, refetch, isFetching } = useQuery({
@@ -63,6 +74,19 @@ export default function DashboardPage() {
     }
   });
 
+  const missingPayItems = data?.coverage_risk?.missing_pay ?? [];
+  const missingFitItems = data?.coverage_risk?.missing_fit ?? [];
+  const lowConfidenceItems = data?.coverage_risk?.low_confidence ?? [];
+  const staleItems = data?.search_health?.stale_jobs ?? [];
+  const missingDataItems = data?.search_health?.missing_data ?? uniqueInsightItems([...missingPayItems, ...missingFitItems, ...lowConfidenceItems]);
+  const needsAnalysisItems = (data?.search_health?.needs_analysis ?? []).slice(0, 3);
+  const recurringRisks = data?.coverage_risk?.recurring_risks ?? [];
+  const activeJobs = data?.health?.active_jobs ?? data?.total_jobs ?? 0;
+  const staleJobs = data?.health?.stale_jobs ?? staleItems.length;
+  const missingDataCount = data?.health?.missing_data ?? missingDataItems.length;
+  const archivedJobs = data?.archived_jobs ?? data?.health?.archived_jobs ?? 0;
+  const ghostedJobs = data?.health?.ghosted_jobs ?? data?.ghosted_jobs ?? 0;
+
   return (
     <div className="grid gap-6">
       <PageHeader
@@ -83,12 +107,10 @@ export default function DashboardPage() {
 
       {data ? (
         <>
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-            <Metric title="Active Jobs" value={data.health.active_jobs} detail={`${data.archived_jobs} archived`} icon={<BriefcaseBusiness className="h-4 w-4" />} />
-            <Metric title="Stale" value={data.health.stale_jobs} detail="Needs review" icon={<TimerReset className="h-4 w-4" />} tone="warn" />
-            <Metric title="Missing Match" value={data.health.missing_fit} detail="No fit score" icon={<Brain className="h-4 w-4" />} />
-            <Metric title="Coverage Gaps" value={data.health.missing_pay + data.health.low_confidence} detail="Pay or extraction" icon={<AlertTriangle className="h-4 w-4" />} tone="warn" />
-            <Metric title="Ghosted" value={data.health.ghosted_jobs} detail="Hidden terminal" icon={<Activity className="h-4 w-4" />} />
+          <div className="grid gap-4 md:grid-cols-3">
+            <Metric href="/jobs" title="Active" value={activeJobs} detail={`${archivedJobs} archived, ${ghostedJobs} ghosted`} icon={<BriefcaseBusiness className="h-4 w-4" />} />
+            <Metric href="/jobs?health=stale" title="Stale" value={staleJobs} detail="Needs review" icon={<TimerReset className="h-4 w-4" />} tone="warn" />
+            <Metric href="/jobs?health=missing-data" title="Missing Data" value={missingDataCount} detail="Core coverage gaps" icon={<AlertTriangle className="h-4 w-4" />} tone="warn" />
           </div>
 
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,0.65fr)]">
@@ -113,12 +135,12 @@ export default function DashboardPage() {
                   <h2 className="text-base font-semibold">Search Health</h2>
                   <p className="mt-1 text-sm text-muted-foreground">{data.next_recommended_action}</p>
                 </div>
-                <Badge tone={data.health.stale_jobs ? "warn" : "good"}>{data.health.stale_jobs ? "Review" : "Clean"}</Badge>
+                <Badge tone={staleJobs ? "warn" : "good"}>{staleJobs ? "Review" : "Clean"}</Badge>
               </div>
               <div className="mt-5 grid gap-5">
                 <InsightList
                   title="Stale Jobs"
-                  items={data.search_health.stale_jobs}
+                  items={staleItems}
                   empty="No stage-based stale jobs."
                   action={(item) => (
                     <Button
@@ -133,7 +155,7 @@ export default function DashboardPage() {
                 />
                 <InsightList
                   title="Needs Analysis"
-                  items={data.search_health.needs_analysis}
+                  items={needsAnalysisItems}
                   empty="Every active opportunity has fit/job analysis."
                   action={(item) => (
                     <Button
@@ -158,25 +180,25 @@ export default function DashboardPage() {
                   <h2 className="text-base font-semibold">Opportunity Coverage And Risk</h2>
                   <p className="mt-1 text-sm text-muted-foreground">Data quality and recurring risk signals across open opportunities.</p>
                 </div>
-                <Badge>{data.health.missing_pay + data.health.missing_fit + data.health.low_confidence} issues</Badge>
+                <Badge>{missingDataCount} jobs</Badge>
               </div>
               <div className="grid gap-5">
                 <CoverageBlock
                   title="Missing Pay"
                   icon={<DollarSign className="h-4 w-4" />}
-                  items={data.coverage_risk.missing_pay}
+                  items={missingPayItems}
                   empty="Pay coverage is complete."
                 />
                 <CoverageBlock
                   title="Missing Fit"
                   icon={<FileSearch className="h-4 w-4" />}
-                  items={data.coverage_risk.missing_fit}
+                  items={missingFitItems}
                   empty="Fit scores are complete."
                 />
                 <CoverageBlock
                   title="Low Confidence"
                   icon={<AlertTriangle className="h-4 w-4" />}
-                  items={data.coverage_risk.low_confidence}
+                  items={lowConfidenceItems}
                   empty="Extraction confidence looks healthy."
                 />
                 <div>
@@ -184,9 +206,9 @@ export default function DashboardPage() {
                     <BarChart3 className="h-4 w-4 text-primary" />
                     Recurring Risks
                   </div>
-                  {data.coverage_risk.recurring_risks.length ? (
+                  {recurringRisks.length ? (
                     <div className="flex flex-wrap gap-2">
-                      {data.coverage_risk.recurring_risks.map((risk) => (
+                      {recurringRisks.map((risk) => (
                         <Badge key={risk.label} tone={risk.count >= 2 ? "warn" : "neutral"}>
                           {risk.label} ({risk.count})
                         </Badge>
@@ -209,7 +231,7 @@ export default function DashboardPage() {
                   Open skills
                 </Link>
               </div>
-              <SkillGapList gaps={data.top_skill_gaps} />
+              <SkillGapList gaps={data.top_skill_gaps ?? []} />
             </Panel>
           </div>
         </>
@@ -219,20 +241,22 @@ export default function DashboardPage() {
 }
 
 function Metric({
+  href,
   title,
   value,
   detail,
   icon,
   tone = "neutral"
 }: {
+  href: string;
   title: string;
   value: number;
   detail: string;
   icon: React.ReactNode;
   tone?: "neutral" | "warn";
 }) {
-  return (
-    <Panel>
+  const content = (
+    <Panel className="h-full transition hover:border-primary/50 hover:shadow-md">
       <div className="flex items-center justify-between gap-3">
         <div className="text-sm font-medium text-muted-foreground">{title}</div>
         <div className={cn("grid h-8 w-8 place-items-center rounded-md", tone === "warn" ? "bg-amber-50 text-amber-700" : "bg-accent text-accent-foreground")}>
@@ -243,11 +267,18 @@ function Metric({
       <div className="mt-1 text-xs text-muted-foreground">{detail}</div>
     </Panel>
   );
+  return (
+    <Link href={href} className="block focus:outline-none focus:ring-2 focus:ring-primary/40">
+      {content}
+    </Link>
+  );
 }
 
-function SankeyChart({ sankey }: { sankey: DashboardSankey }) {
-  const nodesById = new Map(sankey.nodes.map((node) => [node.id, node]));
-  const maxCount = Math.max(1, ...sankey.nodes.map((node) => node.count), ...sankey.links.map((link) => link.value));
+function SankeyChart({ sankey }: { sankey?: DashboardSankey }) {
+  const nodes = sankey?.nodes ?? [];
+  const links = sankey?.links ?? [];
+  const nodesById = new Map(nodes.map((node) => [node.id, node]));
+  const maxCount = Math.max(1, ...nodes.map((node) => node.count), ...links.map((link) => link.value));
   const total = nodesById.get("Saved")?.count ?? 0;
   const width = 920;
   const height = 330;
@@ -276,7 +307,7 @@ function SankeyChart({ sankey }: { sankey: DashboardSankey }) {
             <feDropShadow dx="0" dy="2" stdDeviation="2" floodOpacity="0.12" />
           </filter>
         </defs>
-        {sankey.links.map((link) => {
+        {links.map((link) => {
           const source = positions.get(link.source);
           const target = positions.get(link.target);
           if (!source || !target) return null;
@@ -284,16 +315,20 @@ function SankeyChart({ sankey }: { sankey: DashboardSankey }) {
           const color = stageColors[link.target] ?? stageColors[link.source] ?? "#0f766e";
           const path = `M ${source.x + 28} ${source.y} C ${source.x + 86} ${source.y}, ${target.x - 86} ${target.y}, ${target.x - 28} ${target.y}`;
           return (
-            <g key={`${link.source}-${link.target}`}>
+            <a key={`${link.source}-${link.target}`} href={jobsStatusHref(link.target)} aria-label={`Open ${link.target} jobs`} className="cursor-pointer">
               <path d={path} fill="none" stroke={color} strokeOpacity="0.2" strokeWidth={strokeWidth + 8} strokeLinecap="round" />
               <path d={path} fill="none" stroke={color} strokeOpacity="0.55" strokeWidth={strokeWidth} strokeLinecap="round" />
-            </g>
+            </a>
           );
         })}
-        {sankey.nodes.map((node) => {
+        {nodes.map((node) => {
           const position = positions.get(node.id);
           if (!position) return null;
-          return <SankeyNode key={node.id} node={node} x={position.x} y={position.y} maxCount={maxCount} />;
+          return (
+            <a key={node.id} href={jobsStatusHref(node.id)} aria-label={`Open ${node.label} jobs`} className="cursor-pointer">
+              <SankeyNode node={node} x={position.x} y={position.y} maxCount={maxCount} />
+            </a>
+          );
         })}
       </svg>
     </div>
@@ -334,20 +369,21 @@ function InsightList({
   action
 }: {
   title: string;
-  items: DashboardJobInsight[];
+  items?: DashboardJobInsight[];
   empty: string;
-  action: (item: DashboardJobInsight) => React.ReactNode;
+  action?: (item: DashboardJobInsight) => React.ReactNode;
 }) {
+  const safeItems = items ?? [];
   return (
     <div>
       <div className="mb-3 text-sm font-semibold">{title}</div>
-      {items.length ? (
+      {safeItems.length ? (
         <div className="grid gap-3">
-          {items.map((item) => (
+          {safeItems.map((item) => (
             <div key={`${title}-${item.id}`} className="border-b border-border pb-3 last:border-0 last:pb-0">
               <InsightHeader item={item} />
               <div className="mt-3 flex flex-wrap gap-2">
-                {action(item)}
+                {action ? action(item) : null}
                 <Link href={`/jobs/${item.id}`}>
                   <Button size="sm" variant="ghost">
                     <ExternalLink className="h-4 w-4" />
@@ -373,18 +409,19 @@ function CoverageBlock({
 }: {
   title: string;
   icon: React.ReactNode;
-  items: DashboardJobInsight[];
+  items?: DashboardJobInsight[];
   empty: string;
 }) {
+  const safeItems = items ?? [];
   return (
     <div>
       <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
         <span className="text-primary">{icon}</span>
         {title}
       </div>
-      {items.length ? (
+      {safeItems.length ? (
         <div className="grid gap-3">
-          {items.slice(0, 4).map((item) => (
+          {safeItems.slice(0, 4).map((item) => (
             <div key={`${title}-${item.id}`} className="flex items-start justify-between gap-3 border-b border-border pb-3 last:border-0 last:pb-0">
               <InsightHeader item={item} compact />
               <Link href={`/jobs/${item.id}`} className="shrink-0 text-sm font-medium text-primary">
@@ -417,13 +454,14 @@ function InsightHeader({ item, compact = false }: { item: DashboardJobInsight; c
   );
 }
 
-function SkillGapList({ gaps }: { gaps: DashboardSkillGap[] }) {
-  if (!gaps.length) {
+function SkillGapList({ gaps }: { gaps?: DashboardSkillGap[] }) {
+  const safeGaps = gaps ?? [];
+  if (!safeGaps.length) {
     return <p className="text-sm text-muted-foreground">Run analysis or resume matching to populate active skill gaps.</p>;
   }
   return (
     <div className="grid gap-4">
-      {gaps.map((gap) => (
+      {safeGaps.map((gap) => (
         <div key={gap.skill_name} className="border-b border-border pb-4 last:border-0 last:pb-0">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>

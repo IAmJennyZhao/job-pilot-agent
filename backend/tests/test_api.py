@@ -364,6 +364,7 @@ def test_profile_dashboard_and_skill_gap(client):
     assert dashboard["by_status"]["Withdrawn"] == 0
     assert dashboard["by_status"]["Ghosted"] == 0
     assert dashboard["health"]["active_jobs"] == 1
+    assert dashboard["health"]["missing_data"] == 1
     assert dashboard["sankey"]["nodes"]
     assert set(dashboard["by_status"]) == {
         "Saved",
@@ -443,6 +444,93 @@ def test_dashboard_stage_based_stale_thresholds(client):
     stale_ids = {item["id"] for item in response.json()["search_health"]["stale_jobs"]}
     assert stale_saved["id"] in stale_ids
     assert fresh_applied["id"] not in stale_ids
+
+    response = client.get("/api/jobs?health_filter=stale")
+    assert response.status_code == 200
+    stale_filter_ids = {item["id"] for item in response.json()}
+    assert stale_saved["id"] in stale_filter_ids
+    assert fresh_applied["id"] not in stale_filter_ids
+
+
+def test_dashboard_health_counts_are_not_limited_to_visible_insights(client):
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    for index in range(7):
+        job = create_job(client, company=f"Stale Missing {index}", role_title="AI Engineer")
+        response = client.patch(
+            f"/api/jobs/{job['id']}/status-events/{job['status_events'][0]['id']}",
+            json={"changed_at": (now - timedelta(days=8)).isoformat()},
+        )
+        assert response.status_code == 200
+
+    response = client.get("/api/dashboard/summary")
+    assert response.status_code == 200
+    dashboard = response.json()
+    assert dashboard["health"]["stale_jobs"] == 7
+    assert dashboard["health"]["missing_data"] == 7
+    assert len(dashboard["search_health"]["stale_jobs"]) == 6
+    assert len(dashboard["search_health"]["missing_data"]) == 6
+
+
+def test_jobs_missing_data_filter_and_dashboard_count_unique_jobs(client, monkeypatch):
+    create_profile(client)
+    complete = create_job(client, company="Complete Co", role_title="Analyzed Engineer")
+    missing = create_job(
+        client,
+        company="Missing Co",
+        role_title="Incomplete Engineer",
+        pay_min=None,
+        pay_max=None,
+        pay_raw=None,
+        extraction_confidence=45,
+    )
+    ghosted = create_job(
+        client,
+        company="Hidden Missing Co",
+        role_title="Silent Engineer",
+        pay_min=None,
+        pay_max=None,
+        pay_raw=None,
+        extraction_confidence=20,
+        status="Ghosted",
+    )
+
+    def fake_structured_output(output_model, _system_prompt, _user_prompt):
+        if output_model is schemas.JobAnalysisOutput:
+            return fake_analysis_output()
+        if output_model is schemas.ResumeSuggestionOutput:
+            return fake_resume_suggestion_output()
+        raise AssertionError("Unexpected model")
+
+    monkeypatch.setattr("app.services.ai_service.get_structured_output", fake_structured_output)
+
+    response = client.post(f"/api/ai/run-job-intelligence/{complete['id']}")
+    assert response.status_code == 200
+
+    response = client.get("/api/jobs?health_filter=missing_data")
+    assert response.status_code == 200
+    missing_ids = {item["id"] for item in response.json()}
+    assert missing["id"] in missing_ids
+    assert complete["id"] not in missing_ids
+    assert ghosted["id"] not in missing_ids
+
+    response = client.get("/api/dashboard/summary")
+    assert response.status_code == 200
+    dashboard = response.json()
+    assert dashboard["health"]["missing_data"] == 1
+    assert [item["id"] for item in dashboard["search_health"]["missing_data"]] == [missing["id"]]
+
+
+def test_dashboard_needs_analysis_is_limited_and_progression_prioritized(client):
+    saved = create_job(client, company="Saved Co", role_title="Saved Engineer", status="Saved")
+    applied = create_job(client, company="Applied Co", role_title="Applied Engineer", status="Applied")
+    recruiter = create_job(client, company="Recruiter Co", role_title="Recruiter Engineer", status="Recruiter Screen")
+    tech = create_job(client, company="Tech Co", role_title="Tech Engineer", status="Tech Screen")
+
+    response = client.get("/api/dashboard/summary")
+    assert response.status_code == 200
+    needs_analysis_ids = [item["id"] for item in response.json()["search_health"]["needs_analysis"]]
+    assert needs_analysis_ids == [tech["id"], recruiter["id"], applied["id"]]
+    assert saved["id"] not in needs_analysis_ids
 
 
 def test_dashboard_skill_gaps_are_active_opportunity_weighted(client, monkeypatch):

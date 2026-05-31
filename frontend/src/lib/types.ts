@@ -346,12 +346,14 @@ export type DashboardHealth = {
   missing_fit: number;
   missing_pay: number;
   low_confidence: number;
+  missing_data: number;
   ghosted_jobs: number;
   archived_jobs: number;
 };
 
 export type DashboardSearchHealth = {
   stale_jobs: DashboardJobInsight[];
+  missing_data: DashboardJobInsight[];
   needs_analysis: DashboardJobInsight[];
 };
 

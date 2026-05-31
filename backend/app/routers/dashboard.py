@@ -1,5 +1,4 @@
 from collections import Counter, defaultdict
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
@@ -11,65 +10,27 @@ from app.services import job_service
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
-FUNNEL_STAGES = [
-    models.JobStatus.saved,
-    models.JobStatus.applied,
-    models.JobStatus.recruiter_screen,
-    models.JobStatus.tech_screen,
-    models.JobStatus.final_interview,
-    models.JobStatus.offer,
-]
-STAGE_RANK = {status: index for index, status in enumerate(FUNNEL_STAGES)}
 TERMINAL_STATUSES = {
     models.JobStatus.rejected,
     models.JobStatus.withdrawn,
     models.JobStatus.ghosted,
 }
-HIDDEN_STATUSES = {
-    models.JobStatus.archived,
-    models.JobStatus.ghosted,
-}
-OPEN_OPPORTUNITY_STATUSES = set(FUNNEL_STAGES)
-STALE_DAYS = {
-    models.JobStatus.saved: 7,
-    models.JobStatus.applied: 14,
-    models.JobStatus.recruiter_screen: 7,
-    models.JobStatus.tech_screen: 7,
-    models.JobStatus.final_interview: 7,
-}
-LOW_CONFIDENCE_THRESHOLD = 80
 MAX_INSIGHTS = 6
+MAX_NEEDS_ANALYSIS = 3
 MAX_TOP_GAPS = 5
-
-
-def _as_utc(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
-
-
-def _latest_movement_at(job: models.Job) -> datetime:
-    if job.status_events:
-        return max(_as_utc(event.changed_at) for event in job.status_events)
-    return _as_utc(job.updated_at or job.created_at)
-
-
-def _days_since(value: datetime) -> int:
-    return max(0, (_as_utc(datetime.now(timezone.utc)) - _as_utc(value)).days)
 
 
 def _job_insight(
     job: models.Job,
     issue_label: str,
     recommended_action: str,
-    last_movement_at: datetime | None = None,
 ) -> schemas.DashboardJobInsight:
     return schemas.DashboardJobInsight(
         id=job.id,
         company=job.company,
         role_title=job.role_title,
         status=job.status,
-        last_movement_at=last_movement_at or _latest_movement_at(job),
+        last_movement_at=job_service.latest_movement_at(job),
         issue_label=issue_label,
         recommended_action=recommended_action,
     )
@@ -87,15 +48,6 @@ def _unique_nonempty(values: list[str]) -> list[str]:
     return output
 
 
-def _furthest_stage_rank(job: models.Job) -> int:
-    rank = STAGE_RANK.get(job.status, 0)
-    for event in job.status_events:
-        event_rank = STAGE_RANK.get(event.to_status)
-        if event_rank is not None:
-            rank = max(rank, event_rank)
-    return rank
-
-
 def _build_sankey(jobs: list[models.Job]) -> schemas.DashboardSankey:
     node_counts: Counter[str] = Counter()
     link_counts: Counter[tuple[str, str]] = Counter()
@@ -104,8 +56,8 @@ def _build_sankey(jobs: list[models.Job]) -> schemas.DashboardSankey:
         if job.status == models.JobStatus.archived:
             continue
 
-        rank = _furthest_stage_rank(job)
-        reached = FUNNEL_STAGES[: rank + 1]
+        rank = job_service.furthest_stage_rank(job)
+        reached = job_service.FUNNEL_STATUSES[: rank + 1]
         for status in reached:
             node_counts[status.value] += 1
         for source, target in zip(reached, reached[1:]):
@@ -114,7 +66,7 @@ def _build_sankey(jobs: list[models.Job]) -> schemas.DashboardSankey:
         if job.status in TERMINAL_STATUSES:
             terminal_id = job.status.value
             node_counts[terminal_id] += 1
-            link_counts[(FUNNEL_STAGES[rank].value, terminal_id)] += 1
+            link_counts[(job_service.FUNNEL_STATUSES[rank].value, terminal_id)] += 1
 
     nodes = [
         schemas.DashboardSankeyNode(
@@ -123,7 +75,7 @@ def _build_sankey(jobs: list[models.Job]) -> schemas.DashboardSankey:
             count=node_counts.get(status.value, 0),
             kind="stage",
         )
-        for status in FUNNEL_STAGES
+        for status in job_service.FUNNEL_STATUSES
     ]
     nodes.extend(
         schemas.DashboardSankeyNode(
@@ -145,12 +97,12 @@ def _build_sankey(jobs: list[models.Job]) -> schemas.DashboardSankey:
 def _build_search_health(open_jobs: list[models.Job]) -> schemas.DashboardSearchHealth:
     stale_jobs: list[tuple[int, schemas.DashboardJobInsight]] = []
     needs_analysis: list[schemas.DashboardJobInsight] = []
+    missing_data: list[schemas.DashboardJobInsight] = []
 
     for job in open_jobs:
-        last_movement = _latest_movement_at(job)
-        days = _days_since(last_movement)
-        stale_threshold = STALE_DAYS.get(job.status)
-        if stale_threshold is not None and days >= stale_threshold:
+        last_movement = job_service.latest_movement_at(job)
+        days = job_service.days_since(last_movement)
+        if job_service.is_stale(job):
             stale_jobs.append(
                 (
                     days,
@@ -158,11 +110,14 @@ def _build_search_health(open_jobs: list[models.Job]) -> schemas.DashboardSearch
                         job,
                         f"No movement for {days}d",
                         "Review or mark ghosted.",
-                        last_movement,
                     ),
                 )
             )
-        if job.fit_score is None or job.analysis is None:
+        if job_service.is_missing_core_data(job):
+            missing_data.append(
+                _job_insight(job, "Missing core coverage", "Review missing data.")
+            )
+        if job_service.needs_analysis(job):
             needs_analysis.append(
                 _job_insight(
                     job,
@@ -171,17 +126,25 @@ def _build_search_health(open_jobs: list[models.Job]) -> schemas.DashboardSearch
                 )
             )
 
+    needs_analysis.sort(
+        key=lambda item: _needs_analysis_sort_key(
+            next(job for job in open_jobs if job.id == item.id)
+        )
+    )
+
     return schemas.DashboardSearchHealth(
         stale_jobs=[item for _, item in sorted(stale_jobs, key=lambda pair: pair[0], reverse=True)[:MAX_INSIGHTS]],
-        needs_analysis=needs_analysis[:MAX_INSIGHTS],
+        missing_data=missing_data[:MAX_INSIGHTS],
+        needs_analysis=needs_analysis[:MAX_NEEDS_ANALYSIS],
     )
 
 
-def _has_pay(job: models.Job) -> bool:
-    return any(
-        value is not None
-        for value in [job.pay_min, job.pay_max, job.pay_annual_min, job.pay_annual_max]
-    ) or bool((job.pay_raw or "").strip())
+def _needs_analysis_sort_key(job: models.Job) -> tuple[int, int, float]:
+    return (
+        -job_service.current_stage_rank(job),
+        -(job.fit_score if job.fit_score is not None else -1),
+        -job_service.as_utc(job.updated_at or job.created_at).timestamp(),
+    )
 
 
 def _latest_advanced_analysis(job: models.Job) -> models.AdvancedJobAnalysis | None:
@@ -196,11 +159,11 @@ def _build_coverage_risk(open_jobs: list[models.Job]) -> schemas.DashboardCovera
     risk_labels: dict[str, str] = {}
 
     for job in open_jobs:
-        if not _has_pay(job):
+        if not job_service.has_pay(job):
             missing_pay.append(_job_insight(job, "Missing pay", "Review posting or add pay."))
         if job.fit_score is None:
             missing_fit.append(_job_insight(job, "Missing fit score", "Run job intelligence."))
-        if job.extraction_confidence is None or job.extraction_confidence < LOW_CONFIDENCE_THRESHOLD:
+        if job.extraction_confidence is None or job.extraction_confidence < job_service.LOW_CONFIDENCE_THRESHOLD:
             label = "No extraction confidence" if job.extraction_confidence is None else f"Confidence {job.extraction_confidence}"
             low_confidence.append(_job_insight(job, label, "Review extracted details."))
 
@@ -288,8 +251,8 @@ def _build_top_skill_gaps(
 @router.get("/summary", response_model=schemas.DashboardSummary)
 def get_dashboard_summary(db: Session = Depends(get_db)):
     jobs = list(db.scalars(select(models.Job)).all())
-    active_jobs = [job for job in jobs if job.status not in HIDDEN_STATUSES]
-    open_jobs = [job for job in jobs if job.status in OPEN_OPPORTUNITY_STATUSES]
+    active_jobs = [job for job in jobs if job.status not in job_service.HIDDEN_STATUSES]
+    open_jobs = [job for job in jobs if job_service.is_open_opportunity(job)]
     archived_jobs = sum(1 for job in jobs if job.status == models.JobStatus.archived)
     ghosted_jobs = sum(1 for job in jobs if job.status == models.JobStatus.ghosted)
     status_counts = Counter(job.status.value for job in jobs)
@@ -318,14 +281,15 @@ def get_dashboard_summary(db: Session = Depends(get_db)):
     )
     health = schemas.DashboardHealth(
         active_jobs=len(active_jobs),
-        stale_jobs=len(search_health.stale_jobs),
+        stale_jobs=sum(1 for job in open_jobs if job_service.is_stale(job)),
         missing_fit=sum(1 for job in open_jobs if job.fit_score is None),
-        missing_pay=sum(1 for job in open_jobs if not _has_pay(job)),
+        missing_pay=sum(1 for job in open_jobs if not job_service.has_pay(job)),
         low_confidence=sum(
             1
             for job in open_jobs
-            if job.extraction_confidence is None or job.extraction_confidence < LOW_CONFIDENCE_THRESHOLD
+            if job.extraction_confidence is None or job.extraction_confidence < job_service.LOW_CONFIDENCE_THRESHOLD
         ),
+        missing_data=sum(1 for job in open_jobs if job_service.is_missing_core_data(job)),
         ghosted_jobs=ghosted_jobs,
         archived_jobs=archived_jobs,
     )

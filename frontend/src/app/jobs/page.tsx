@@ -76,7 +76,7 @@ export default function JobsPage() {
     queryKey: ["jobs", showArchived, search, statusFilter, categoryFilter],
     queryFn: () =>
       api.jobs({
-        includeArchived: showArchived || statusFilter === "Archived",
+        includeArchived: showArchived || statusFilter === "Archived" || statusFilter === "Ghosted",
         search: search.trim() || undefined,
         status: statusFilter,
         category: categoryFilter
@@ -212,7 +212,7 @@ export default function JobsPage() {
                   checked={showArchived}
                   onChange={(event) => setShowArchived(event.target.checked)}
                 />
-                Show archived
+                Show hidden
               </label>
             </div>
             <div className="grid gap-2 lg:grid-cols-[1fr_190px_220px]">
@@ -595,7 +595,7 @@ function JobRow({
           <Button variant="secondary" size="sm" onClick={onSelect}>
             Details
           </Button>
-          {job.status !== "Archived" ? (
+          {job.status !== "Archived" && job.status !== "Ghosted" ? (
             <Button variant="secondary" size="icon" onClick={onArchive} title="Archive job">
               <Archive className="h-4 w-4" />
             </Button>

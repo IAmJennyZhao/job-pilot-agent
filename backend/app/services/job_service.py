@@ -4,6 +4,10 @@ from sqlalchemy.orm import Session
 from app import models, schemas
 
 MAX_TOP_GAPS = 3
+HIDDEN_STATUSES = (
+    models.JobStatus.archived,
+    models.JobStatus.ghosted,
+)
 
 PAY_MULTIPLIERS = {
     "hour": 40 * 52,
@@ -179,7 +183,7 @@ def list_jobs(
 ) -> list[models.Job]:
     statement = select(models.Job).order_by(models.Job.updated_at.desc())
     if not include_archived:
-        statement = statement.where(models.Job.status != models.JobStatus.archived)
+        statement = statement.where(models.Job.status.notin_(HIDDEN_STATUSES))
     if status:
         statement = statement.where(models.Job.status == status)
     if category:

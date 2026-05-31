@@ -333,12 +333,21 @@ def test_job_status_history_search_filter_and_archive(client):
 
     response = client.patch(f"/api/jobs/{other['id']}", json={"status": "Archived"})
     assert response.status_code == 200
+    ghosted = create_job(
+        client,
+        company="Silent Co",
+        role_title="Frontend Engineer",
+        category="Frontend Engineer",
+        status="Ghosted",
+    )
 
     response = client.get("/api/jobs")
-    assert all(item["status"] != "Archived" for item in response.json())
+    assert all(item["status"] not in {"Archived", "Ghosted"} for item in response.json())
 
     response = client.get("/api/jobs?include_archived=true")
-    assert any(item["status"] == "Archived" for item in response.json())
+    statuses = {item["id"]: item["status"] for item in response.json()}
+    assert statuses[other["id"]] == "Archived"
+    assert statuses[ghosted["id"]] == "Ghosted"
 
 
 def test_profile_dashboard_and_skill_gap(client):
@@ -350,8 +359,12 @@ def test_profile_dashboard_and_skill_gap(client):
     dashboard = response.json()
     assert dashboard["total_jobs"] == 1
     assert dashboard["archived_jobs"] == 0
+    assert dashboard["ghosted_jobs"] == 0
     assert dashboard["by_status"]["Saved"] == 1
     assert dashboard["by_status"]["Withdrawn"] == 0
+    assert dashboard["by_status"]["Ghosted"] == 0
+    assert dashboard["health"]["active_jobs"] == 1
+    assert dashboard["sankey"]["nodes"]
     assert set(dashboard["by_status"]) == {
         "Saved",
         "Applied",
@@ -361,6 +374,7 @@ def test_profile_dashboard_and_skill_gap(client):
         "Offer",
         "Rejected",
         "Withdrawn",
+        "Ghosted",
         "Archived",
     }
 
@@ -371,6 +385,102 @@ def test_profile_dashboard_and_skill_gap(client):
     response = client.patch(f"/api/profile/{profile['id']}", json={"skills": ["Python", "SQL"]})
     assert response.status_code == 200
     assert response.json()["skills"] == ["Python", "SQL"]
+
+
+def test_dashboard_implied_sankey_collapses_regressions_and_branches_terminal(client):
+    regressed = create_job(client, company="Loop Co", role_title="Platform Engineer")
+    base_time = datetime.now(timezone.utc).replace(microsecond=0)
+
+    response = client.post(
+        f"/api/jobs/{regressed['id']}/status-events",
+        json={"to_status": "Tech Screen", "changed_at": (base_time + timedelta(days=1)).isoformat()},
+    )
+    assert response.status_code == 200
+    response = client.post(
+        f"/api/jobs/{regressed['id']}/status-events",
+        json={"to_status": "Applied", "changed_at": (base_time + timedelta(days=2)).isoformat()},
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "Applied"
+
+    ghosted = create_job(client, company="Silent Co", role_title="Backend Engineer", status="Ghosted")
+
+    response = client.get("/api/dashboard/summary")
+    assert response.status_code == 200
+    dashboard = response.json()
+    links = {(link["source"], link["target"]): link["value"] for link in dashboard["sankey"]["links"]}
+    assert links[("Saved", "Applied")] >= 1
+    assert links[("Applied", "Recruiter Screen")] >= 1
+    assert links[("Recruiter Screen", "Tech Screen")] >= 1
+    assert ("Tech Screen", "Applied") not in links
+    assert links[("Saved", "Ghosted")] >= 1
+    assert dashboard["ghosted_jobs"] == 1
+    assert dashboard["by_status"]["Ghosted"] == 1
+
+    response = client.get("/api/jobs")
+    assert all(item["id"] != ghosted["id"] for item in response.json())
+
+
+def test_dashboard_stage_based_stale_thresholds(client):
+    stale_saved = create_job(client, company="Old Saved", role_title="AI Engineer")
+    fresh_applied = create_job(client, company="Fresh Applied", role_title="AI Engineer")
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+
+    response = client.patch(
+        f"/api/jobs/{stale_saved['id']}/status-events/{stale_saved['status_events'][0]['id']}",
+        json={"changed_at": (now - timedelta(days=8)).isoformat()},
+    )
+    assert response.status_code == 200
+
+    response = client.post(
+        f"/api/jobs/{fresh_applied['id']}/status-events",
+        json={"to_status": "Applied", "changed_at": (now - timedelta(days=13)).isoformat()},
+    )
+    assert response.status_code == 200
+
+    response = client.get("/api/dashboard/summary")
+    assert response.status_code == 200
+    stale_ids = {item["id"] for item in response.json()["search_health"]["stale_jobs"]}
+    assert stale_saved["id"] in stale_ids
+    assert fresh_applied["id"] not in stale_ids
+
+
+def test_dashboard_skill_gaps_are_active_opportunity_weighted(client, monkeypatch):
+    create_profile(client)
+    matched = create_job(client, company="Matched Co", role_title="AI Engineer")
+    fallback = create_job(
+        client,
+        company="Fallback Co",
+        role_title="AI Platform Engineer",
+        required_skills=["LangChain", "FastAPI"],
+    )
+    ghosted = create_job(
+        client,
+        company="Ghosted Co",
+        role_title="ML Engineer",
+        required_skills=["Kubernetes"],
+        status="Ghosted",
+    )
+
+    def fake_suggestion(output_model, _system_prompt, _user_prompt):
+        if output_model is schemas.ResumeSuggestionOutput:
+            return fake_resume_suggestion_output()
+        raise AssertionError("Unexpected model")
+
+    monkeypatch.setattr("app.services.ai_service.get_structured_output", fake_suggestion)
+
+    response = client.post(f"/api/ai/suggest-resume/{matched['id']}")
+    assert response.status_code == 200
+
+    response = client.get("/api/dashboard/summary")
+    assert response.status_code == 200
+    gaps = response.json()["top_skill_gaps"]
+    assert gaps[0]["skill_name"] == "LangChain"
+    assert gaps[0]["count"] == 2
+    assert gaps[0]["source"] == "resume_match"
+    assert all(gap["skill_name"] != "Kubernetes" for gap in gaps)
+    assert response.json()["ghosted_jobs"] == 1
+    assert all(job["status"] != "Ghosted" for gap in gaps for job in gap["affected_jobs"])
 
 
 def test_job_list_top_gaps_sources(client, monkeypatch):

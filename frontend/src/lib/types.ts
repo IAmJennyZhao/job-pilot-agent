@@ -7,6 +7,7 @@ export const jobStatuses = [
   "Offer",
   "Rejected",
   "Withdrawn",
+  "Ghosted",
   "Archived"
 ] as const;
 
@@ -298,12 +299,81 @@ export type InterviewSession = {
 export type DashboardSummary = {
   total_jobs: number;
   archived_jobs: number;
+  ghosted_jobs: number;
   by_status: Record<string, number>;
   needs_resume_tailoring: number;
   interviewing: number;
-  top_skill_gaps: SkillGap[];
+  top_skill_gaps: DashboardSkillGap[];
   recent_interviews: InterviewSession[];
   next_recommended_action: string;
+  sankey: DashboardSankey;
+  health: DashboardHealth;
+  search_health: DashboardSearchHealth;
+  coverage_risk: DashboardCoverageRisk;
+};
+
+export type DashboardJobInsight = {
+  id: string;
+  company: string;
+  role_title: string;
+  status: JobStatus;
+  last_movement_at: string;
+  issue_label: string;
+  recommended_action: string;
+};
+
+export type DashboardSankeyNode = {
+  id: string;
+  label: string;
+  count: number;
+  kind: "stage" | "terminal";
+};
+
+export type DashboardSankeyLink = {
+  source: string;
+  target: string;
+  value: number;
+};
+
+export type DashboardSankey = {
+  nodes: DashboardSankeyNode[];
+  links: DashboardSankeyLink[];
+};
+
+export type DashboardHealth = {
+  active_jobs: number;
+  stale_jobs: number;
+  missing_fit: number;
+  missing_pay: number;
+  low_confidence: number;
+  ghosted_jobs: number;
+  archived_jobs: number;
+};
+
+export type DashboardSearchHealth = {
+  stale_jobs: DashboardJobInsight[];
+  needs_analysis: DashboardJobInsight[];
+};
+
+export type DashboardRiskSignal = {
+  label: string;
+  count: number;
+  job_ids: string[];
+};
+
+export type DashboardCoverageRisk = {
+  missing_pay: DashboardJobInsight[];
+  missing_fit: DashboardJobInsight[];
+  low_confidence: DashboardJobInsight[];
+  recurring_risks: DashboardRiskSignal[];
+};
+
+export type DashboardSkillGap = {
+  skill_name: string;
+  count: number;
+  source: "resume_match" | "analysis";
+  affected_jobs: DashboardJobInsight[];
+  suggested_action: string;
 };
 
 export type InterviewQuestion = {

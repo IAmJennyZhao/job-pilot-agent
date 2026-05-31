@@ -523,12 +523,81 @@ class JobIntelligenceResponse(BaseModel):
     errors: list[str] = Field(default_factory=list)
 
 
+class DashboardJobInsight(BaseModel):
+    id: str
+    company: str
+    role_title: str
+    status: JobStatus
+    last_movement_at: datetime
+    issue_label: str
+    recommended_action: str
+
+
+class DashboardSankeyNode(BaseModel):
+    id: str
+    label: str
+    count: int
+    kind: Literal["stage", "terminal"]
+
+
+class DashboardSankeyLink(BaseModel):
+    source: str
+    target: str
+    value: int
+
+
+class DashboardSankey(BaseModel):
+    nodes: list[DashboardSankeyNode] = Field(default_factory=list)
+    links: list[DashboardSankeyLink] = Field(default_factory=list)
+
+
+class DashboardHealth(BaseModel):
+    active_jobs: int
+    stale_jobs: int
+    missing_fit: int
+    missing_pay: int
+    low_confidence: int
+    ghosted_jobs: int
+    archived_jobs: int
+
+
+class DashboardSearchHealth(BaseModel):
+    stale_jobs: list[DashboardJobInsight] = Field(default_factory=list)
+    needs_analysis: list[DashboardJobInsight] = Field(default_factory=list)
+
+
+class DashboardRiskSignal(BaseModel):
+    label: str
+    count: int
+    job_ids: list[str] = Field(default_factory=list)
+
+
+class DashboardCoverageRisk(BaseModel):
+    missing_pay: list[DashboardJobInsight] = Field(default_factory=list)
+    missing_fit: list[DashboardJobInsight] = Field(default_factory=list)
+    low_confidence: list[DashboardJobInsight] = Field(default_factory=list)
+    recurring_risks: list[DashboardRiskSignal] = Field(default_factory=list)
+
+
+class DashboardSkillGap(BaseModel):
+    skill_name: str
+    count: int
+    source: Literal["resume_match", "analysis"]
+    affected_jobs: list[DashboardJobInsight] = Field(default_factory=list)
+    suggested_action: str
+
+
 class DashboardSummary(BaseModel):
     total_jobs: int
     archived_jobs: int
+    ghosted_jobs: int
     by_status: dict[str, int]
     needs_resume_tailoring: int
     interviewing: int
-    top_skill_gaps: list[SkillGapRead]
+    top_skill_gaps: list[DashboardSkillGap]
     recent_interviews: list[InterviewSessionRead]
     next_recommended_action: str
+    sankey: DashboardSankey
+    health: DashboardHealth
+    search_health: DashboardSearchHealth
+    coverage_risk: DashboardCoverageRisk

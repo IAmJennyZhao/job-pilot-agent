@@ -35,6 +35,7 @@ class JobStatus(str, enum.Enum):
     offer = "Offer"
     rejected = "Rejected"
     withdrawn = "Withdrawn"
+    ghosted = "Ghosted"
     archived = "Archived"
 
 

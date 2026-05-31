@@ -6,7 +6,6 @@ import {
   BarChart3,
   BriefcaseBusiness,
   DollarSign,
-  ExternalLink,
   FileSearch,
   RefreshCw,
   Sparkles,
@@ -380,18 +379,7 @@ function InsightList({
       {safeItems.length ? (
         <div className="grid gap-3">
           {safeItems.map((item) => (
-            <div key={`${title}-${item.id}`} className="border-b border-border pb-3 last:border-0 last:pb-0">
-              <InsightHeader item={item} />
-              <div className="mt-3 flex flex-wrap gap-2">
-                {action ? action(item) : null}
-                <Link href={`/jobs/${item.id}`}>
-                  <Button size="sm" variant="ghost">
-                    <ExternalLink className="h-4 w-4" />
-                    Open
-                  </Button>
-                </Link>
-              </div>
-            </div>
+            <DashboardJobTile key={`${title}-${item.id}`} item={item} action={action} />
           ))}
         </div>
       ) : (
@@ -422,12 +410,7 @@ function CoverageBlock({
       {safeItems.length ? (
         <div className="grid gap-3">
           {safeItems.slice(0, 4).map((item) => (
-            <div key={`${title}-${item.id}`} className="flex items-start justify-between gap-3 border-b border-border pb-3 last:border-0 last:pb-0">
-              <InsightHeader item={item} compact />
-              <Link href={`/jobs/${item.id}`} className="shrink-0 text-sm font-medium text-primary">
-                Open
-              </Link>
-            </div>
+            <DashboardJobTile key={`${title}-${item.id}`} item={item} />
           ))}
         </div>
       ) : (
@@ -437,13 +420,33 @@ function CoverageBlock({
   );
 }
 
-function InsightHeader({ item, compact = false }: { item: DashboardJobInsight; compact?: boolean }) {
+function DashboardJobTile({
+  item,
+  action
+}: {
+  item: DashboardJobInsight;
+  action?: (item: DashboardJobInsight) => React.ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        "grid gap-3 rounded-md border border-border bg-white p-3 transition hover:border-primary/40 hover:bg-muted/30",
+        action ? "sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center" : ""
+      )}
+    >
+      <Link href={`/jobs/${item.id}`} className="block min-w-0 rounded-sm focus:outline-none focus:ring-2 focus:ring-primary/40">
+        <InsightHeader item={item} />
+      </Link>
+      {action ? <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">{action(item)}</div> : null}
+    </div>
+  );
+}
+
+function InsightHeader({ item }: { item: DashboardJobInsight }) {
   return (
     <div className="min-w-0">
       <div className="flex flex-wrap items-center gap-2">
-        <span className={cn("font-medium", compact ? "text-sm" : "text-base")}>
-          {item.company}
-        </span>
+        <span className="font-medium">{item.company}</span>
         <Badge tone={statusTone(item.status)}>{item.status}</Badge>
       </div>
       <div className="mt-1 text-sm text-muted-foreground">{item.role_title}</div>

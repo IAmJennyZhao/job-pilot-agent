@@ -695,6 +695,47 @@ def test_ai_config_requires_key_and_model(monkeypatch):
     assert "OPENAI_MODEL" in missing_model.value.detail
 
 
+def test_openai_client_ignores_inherited_proxy_env(monkeypatch):
+    clients = []
+
+    class FakeHttpClient:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+            clients.append(self)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, _exc_type, _exc, _traceback):
+            return None
+
+    class FakeResponses:
+        def parse(self, **kwargs):
+            assert kwargs["model"] == "gpt-test"
+            assert kwargs["text_format"] is schemas.JobAnalysisOutput
+            return SimpleNamespace(output_parsed=fake_analysis_output())
+
+    class FakeOpenAI:
+        def __init__(self, api_key, http_client):
+            assert api_key == "sk-test"
+            assert http_client is clients[0]
+            self.responses = FakeResponses()
+
+    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:9")
+    monkeypatch.setattr(
+        "app.services.ai_service.get_settings",
+        lambda: SimpleNamespace(openai_api_key="sk-test", openai_model="gpt-test", tavily_api_key=None),
+    )
+    monkeypatch.setattr(ai_service.httpx, "Client", FakeHttpClient)
+    monkeypatch.setattr(ai_service, "OpenAI", FakeOpenAI)
+
+    output = ai_service.get_structured_output(schemas.JobAnalysisOutput, "system", "user")
+
+    assert output.summary == "AI platform role."
+    assert clients[0].kwargs["trust_env"] is False
+    assert clients[0].kwargs["timeout"] == ai_service.OPENAI_TIMEOUT_SECONDS
+
+
 def test_ai_readiness_reports_missing_requirements(client, monkeypatch):
     job = create_job(client)
     response = client.post(

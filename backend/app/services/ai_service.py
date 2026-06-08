@@ -1,6 +1,7 @@
 from typing import TypeVar
 
 from fastapi import HTTPException, status
+import httpx
 from openai import OpenAI
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -11,6 +12,7 @@ from app.config import get_settings
 from app.services import profile_service, skill_gap_service
 
 T = TypeVar("T", bound=BaseModel)
+OPENAI_TIMEOUT_SECONDS = 60.0
 
 
 def get_structured_output(
@@ -32,14 +34,15 @@ def get_structured_output(
             detail="OPENAI_MODEL is not configured. Add it to .env to use AI actions.",
         )
 
-    client = OpenAI(api_key=api_key)
     try:
-        response = client.responses.parse(
-            model=model,
-            instructions=system_prompt,
-            input=user_prompt,
-            text_format=output_model,
-        )
+        with httpx.Client(trust_env=False, timeout=OPENAI_TIMEOUT_SECONDS) as http_client:
+            client = OpenAI(api_key=api_key, http_client=http_client)
+            response = client.responses.parse(
+                model=model,
+                instructions=system_prompt,
+                input=user_prompt,
+                text_format=output_model,
+            )
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,

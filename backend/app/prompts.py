@@ -192,6 +192,54 @@ Do not invent experience. If a skill is missing, recommend project or study work
 """.strip()
 
 
+def resume_parse_prompt(resume_text: str) -> str:
+    return f"""
+Parse this resume into editable job-application profile sections.
+
+Resume text:
+{resume_text}
+
+Return only information supported by the resume.
+Rules:
+- Preserve factual claims and do not invent experience, employers, dates, schools, or skills.
+- experience bullets should be concise achievement/responsibility bullets.
+- skills should be a flat deduplicated list.
+- skill_groups should group skills into practical categories such as Languages, Frameworks, Tools, AI/ML, Cloud, Data, or Domain.
+- target_keywords should be concise role-relevant keywords found or strongly implied by the resume text.
+- If a section is not present, return an empty list or null.
+""".strip()
+
+
+def asset_ranking_prompt(
+    company: str,
+    role_title: str,
+    job_description: str,
+    resume_options: list[dict],
+    cover_letter_templates: list[dict],
+) -> str:
+    return f"""
+Rank existing application assets for this job. Do not generate new resume or cover letter content.
+
+Company: {company}
+Role: {role_title}
+
+Job description:
+{job_description}
+
+Resume options:
+{resume_options}
+
+Cover letter templates:
+{cover_letter_templates}
+
+Rules:
+- Only rank assets that are provided.
+- Base recommendations on target roles, target keywords, skills, summaries, and template text.
+- Do not invent candidate experience.
+- Keep reasons short and practical.
+""".strip()
+
+
 def interview_questions_prompt(
     company: str,
     role_title: str,

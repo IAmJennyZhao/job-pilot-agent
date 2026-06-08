@@ -163,6 +163,213 @@ def fake_resume_suggestion_output():
     )
 
 
+def fake_resume_parse_output():
+    return schemas.ResumeParseOutput(
+        name="Resume User",
+        target_roles=["Applied AI Engineer"],
+        target_keywords=["FastAPI", "LLM APIs"],
+        summary="Applied AI engineer with backend experience.",
+        skills=["Python", "FastAPI", "OpenAI API"],
+        skill_groups=[schemas.SkillGroup(category="Backend", skills=["Python", "FastAPI"])],
+        projects=[
+            schemas.ProjectItem(
+                name="CareerPilot",
+                description="AI job search workspace.",
+                technologies=["FastAPI", "React"],
+                bullets=["Built resume matching flows."],
+            )
+        ],
+        experience=[
+            schemas.ExperienceItem(
+                company="Acme",
+                role_title="Software Engineer",
+                bullets=["Built FastAPI services."],
+            )
+        ],
+        education=[schemas.EducationItem(school="State University", degree="BS")],
+        certifications=["OpenAI API project"],
+    )
+
+
+def test_resume_pdf_import_confirm_merge_and_template_crud(client, monkeypatch):
+    monkeypatch.setattr(
+        "app.services.profile_asset_service.extract_pdf_text",
+        lambda _path: "Python FastAPI OpenAI API resume text.",
+    )
+    monkeypatch.setattr(
+        "app.services.profile_asset_service.parse_resume_text",
+        lambda _text: fake_resume_parse_output(),
+    )
+
+    response = client.post(
+        "/api/profile/resume-options/import",
+        files={"file": ("applied-ai.pdf", b"%PDF-1.4 fake", "application/pdf")},
+    )
+    assert response.status_code == 201
+    option = response.json()
+    assert option["title"] == "applied-ai"
+    assert option["status"] == "draft"
+    assert option["candidate_name"] == "Resume User"
+    assert option["skill_groups"] == [{"category": "Backend", "skills": ["Python", "FastAPI"]}]
+
+    response = client.get(f"/api/profile/resume-options/{option['id']}/download")
+    assert response.status_code == 200
+
+    response = client.post(
+        f"/api/profile/resume-options/{option['id']}/confirm",
+        json={"merge_into_profile": True},
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "ready"
+
+    profile = client.get("/api/profile").json()
+    assert profile["name"] == "Resume User"
+    assert profile["skills"] == ["Python", "FastAPI", "OpenAI API"]
+    assert profile["experience"][0]["company"] == "Acme"
+
+    response = client.post(
+        "/api/profile/cover-letter-templates",
+        json={
+            "title": "Applied AI Template",
+            "target_roles": ["Applied AI Engineer"],
+            "target_keywords": ["FastAPI"],
+            "body": "I build applied AI products.",
+        },
+    )
+    assert response.status_code == 201
+    template = response.json()
+
+    response = client.patch(
+        f"/api/profile/cover-letter-templates/{template['id']}",
+        json={"target_keywords": ["FastAPI", "OpenAI API"], "notes": "Primary AI template"},
+    )
+    assert response.status_code == 200
+    assert response.json()["target_keywords"] == ["FastAPI", "OpenAI API"]
+
+    response = client.get("/api/profile/cover-letter-templates")
+    assert response.status_code == 200
+    assert [item["id"] for item in response.json()] == [template["id"]]
+
+    assert client.delete(f"/api/profile/cover-letter-templates/{template['id']}").status_code == 204
+    assert client.delete(f"/api/profile/resume-options/{option['id']}").status_code == 204
+
+
+def test_job_intelligence_ranks_assets_and_saves_selection(client, monkeypatch):
+    profile = create_profile(client)
+    job = create_job(client, required_skills=["LangChain", "FastAPI"], source_content="Need LangChain and FastAPI.")
+
+    response = client.post(
+        "/api/profile/resume-options",
+        json={
+            "title": "AI Platform Resume",
+            "status": "ready",
+            "parsed_text": "LangChain resume option text with FastAPI services.",
+            "summary": "AI platform engineer.",
+            "target_roles": ["AI Platform Engineer"],
+            "target_keywords": ["LangChain", "FastAPI"],
+            "skills": ["LangChain", "FastAPI"],
+            "skill_groups": [{"category": "AI", "skills": ["LangChain"]}],
+            "projects": [],
+            "experience": [],
+            "education": [],
+            "certifications": [],
+        },
+    )
+    assert response.status_code == 201
+    resume_option = response.json()
+
+    response = client.post(
+        "/api/profile/cover-letter-templates",
+        json={
+            "title": "AI Platform Cover",
+            "target_roles": ["AI Platform Engineer"],
+            "target_keywords": ["LangChain", "FastAPI"],
+            "body": "I connect LangChain systems with FastAPI services.",
+        },
+    )
+    assert response.status_code == 201
+    template = response.json()
+
+    def fake_structured_output(output_model, _system_prompt, user_prompt):
+        if output_model is schemas.JobAnalysisOutput:
+            return schemas.JobAnalysisOutput(
+                summary="AI platform role.",
+                responsibilities=["Build AI services"],
+                required_skills=["LangChain", "FastAPI"],
+                preferred_skills=[],
+                technologies=["LangChain"],
+                resume_keywords=["LangChain", "FastAPI"],
+                interview_topics=["AI services"],
+            )
+        if output_model is schemas.ResumeSuggestionOutput:
+            assert "LangChain resume option text" in user_prompt
+            return fake_resume_suggestion_output()
+        if output_model is schemas.AIAssetRankingOutput:
+            return schemas.AIAssetRankingOutput(
+                resume_rankings=[
+                    schemas.AssetRanking(
+                        asset_id=resume_option["id"],
+                        title="AI Platform Resume",
+                        score=91,
+                        matched_keywords=["LangChain"],
+                        reasons=["Best AI platform match"],
+                    )
+                ],
+                cover_letter_rankings=[
+                    schemas.AssetRanking(
+                        asset_id=template["id"],
+                        title="AI Platform Cover",
+                        score=88,
+                        matched_keywords=["FastAPI"],
+                        reasons=["Best template match"],
+                    )
+                ],
+            )
+        raise AssertionError("Unexpected model")
+
+    monkeypatch.setattr("app.services.ai_service.get_structured_output", fake_structured_output)
+
+    response = client.post(f"/api/ai/run-job-intelligence/{job['id']}")
+    assert response.status_code == 200
+    result = response.json()
+    assert result["asset_recommendation"]["resume_rankings"][0]["asset_id"] == resume_option["id"]
+    assert result["asset_recommendation"]["cover_letter_rankings"][0]["asset_id"] == template["id"]
+    assert result["resume_suggestion"]["fit_score"] == 72
+
+    response = client.patch(
+        f"/api/jobs/{job['id']}",
+        json={
+            "selected_resume_option_id": resume_option["id"],
+            "selected_cover_letter_template_id": template["id"],
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["selected_resume_option_id"] == resume_option["id"]
+
+    detail = client.get(f"/api/jobs/{job['id']}").json()
+    assert detail["selected_cover_letter_template_id"] == template["id"]
+    assert detail["latest_asset_recommendation"]["source"] == "keyword"
+
+    response = client.post(f"/api/ai/rank-assets/{job['id']}")
+    assert response.status_code == 200
+    assert response.json()["source"] == "ai"
+    assert response.json()["resume_rankings"][0]["score"] == 91
+
+    devops = create_job(
+        client,
+        company="Infra Co",
+        role_title="DevOps Engineer",
+        category="DevOps/Infrastructure",
+        required_skills=["Kubernetes"],
+        source_content="Run Kubernetes infrastructure.",
+    )
+    response = client.get(f"/api/jobs/{devops['id']}")
+    assert response.status_code == 200
+    response = client.post("/api/profile/coverage-gaps")
+    assert response.status_code == 200
+    gaps = response.json()["gaps"]
+    assert any(gap["title"] == "DevOps/Infrastructure resume option" for gap in gaps)
+
 def test_extract_preview_from_pasted_content(client, monkeypatch):
     def fake_structured_output(output_model, _system_prompt, _user_prompt):
         assert output_model is schemas.JobExtractionOutput

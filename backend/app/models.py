@@ -88,6 +88,16 @@ class UserLevel(str, enum.Enum):
     unknown = "unknown"
 
 
+class ResumeOptionStatus(str, enum.Enum):
+    draft = "draft"
+    ready = "ready"
+
+
+class RecommendationSource(str, enum.Enum):
+    keyword = "keyword"
+    ai = "ai"
+
+
 class TimestampMixin:
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -149,6 +159,14 @@ class Job(TimestampMixin, Base):
     fit_score: Mapped[int | None] = mapped_column(Integer)
     extraction_confidence: Mapped[int | None] = mapped_column(Integer)
     extraction_warnings: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    selected_resume_option_id: Mapped[str | None] = mapped_column(
+        ForeignKey("resume_options.id", ondelete="SET NULL"),
+        index=True,
+    )
+    selected_cover_letter_template_id: Mapped[str | None] = mapped_column(
+        ForeignKey("cover_letter_templates.id", ondelete="SET NULL"),
+        index=True,
+    )
 
     analysis: Mapped["JobAnalysis | None"] = relationship(
         back_populates="job",
@@ -177,6 +195,11 @@ class Job(TimestampMixin, Base):
         back_populates="job",
         cascade="all, delete-orphan",
         order_by="AdvancedJobAnalysis.created_at",
+    )
+    asset_recommendation_snapshots: Mapped[list["AssetRecommendationSnapshot"]] = relationship(
+        back_populates="job",
+        cascade="all, delete-orphan",
+        order_by="AssetRecommendationSnapshot.created_at",
     )
 
     @property
@@ -334,11 +357,22 @@ class ResumeProfile(TimestampMixin, Base):
     resume_text: Mapped[str] = mapped_column(Text, default="", nullable=False)
     summary: Mapped[str | None] = mapped_column(Text)
     skills: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    skill_groups: Mapped[list[dict]] = mapped_column(JSON, default=list, nullable=False)
     projects: Mapped[list[dict]] = mapped_column(JSON, default=list, nullable=False)
     experience: Mapped[list[dict]] = mapped_column(JSON, default=list, nullable=False)
     education: Mapped[list[dict]] = mapped_column(JSON, default=list, nullable=False)
     certifications: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
 
+    resume_options: Mapped[list["ResumeOption"]] = relationship(
+        back_populates="resume_profile",
+        cascade="all, delete-orphan",
+        order_by="ResumeOption.updated_at.desc()",
+    )
+    cover_letter_templates: Mapped[list["CoverLetterTemplate"]] = relationship(
+        back_populates="resume_profile",
+        cascade="all, delete-orphan",
+        order_by="CoverLetterTemplate.updated_at.desc()",
+    )
     resume_suggestions: Mapped[list["ResumeSuggestion"]] = relationship(
         back_populates="resume_profile",
         cascade="all, delete-orphan",
@@ -350,6 +384,64 @@ class ResumeProfile(TimestampMixin, Base):
     interview_sessions: Mapped[list["InterviewSession"]] = relationship(
         back_populates="resume_profile",
     )
+
+
+class ResumeOption(TimestampMixin, Base):
+    __tablename__ = "resume_options"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    resume_profile_id: Mapped[str] = mapped_column(
+        ForeignKey("resume_profiles.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    candidate_name: Mapped[str | None] = mapped_column(String(255))
+    status: Mapped[ResumeOptionStatus] = mapped_column(
+        Enum(
+            ResumeOptionStatus,
+            values_callable=enum_values,
+            native_enum=False,
+            validate_strings=True,
+        ),
+        default=ResumeOptionStatus.draft,
+        nullable=False,
+        index=True,
+    )
+    source_filename: Mapped[str | None] = mapped_column(String(255))
+    file_path: Mapped[str | None] = mapped_column(String(1024))
+    content_type: Mapped[str | None] = mapped_column(String(128))
+    file_size: Mapped[int | None] = mapped_column(Integer)
+    parsed_text: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    summary: Mapped[str | None] = mapped_column(Text)
+    target_roles: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    target_keywords: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    skills: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    skill_groups: Mapped[list[dict]] = mapped_column(JSON, default=list, nullable=False)
+    projects: Mapped[list[dict]] = mapped_column(JSON, default=list, nullable=False)
+    experience: Mapped[list[dict]] = mapped_column(JSON, default=list, nullable=False)
+    education: Mapped[list[dict]] = mapped_column(JSON, default=list, nullable=False)
+    certifications: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+
+    resume_profile: Mapped[ResumeProfile] = relationship(back_populates="resume_options")
+
+
+class CoverLetterTemplate(TimestampMixin, Base):
+    __tablename__ = "cover_letter_templates"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    resume_profile_id: Mapped[str] = mapped_column(
+        ForeignKey("resume_profiles.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    target_roles: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    target_keywords: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    body: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text)
+
+    resume_profile: Mapped[ResumeProfile] = relationship(back_populates="cover_letter_templates")
 
 
 class ResumeSuggestion(Base):
@@ -380,6 +472,38 @@ class ResumeSuggestion(Base):
 
     job: Mapped[Job] = relationship(back_populates="resume_suggestions")
     resume_profile: Mapped[ResumeProfile] = relationship(back_populates="resume_suggestions")
+
+
+class AssetRecommendationSnapshot(Base):
+    __tablename__ = "asset_recommendation_snapshots"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    job_id: Mapped[str] = mapped_column(
+        ForeignKey("jobs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    source: Mapped[RecommendationSource] = mapped_column(
+        Enum(
+            RecommendationSource,
+            values_callable=enum_values,
+            native_enum=False,
+            validate_strings=True,
+        ),
+        default=RecommendationSource.keyword,
+        nullable=False,
+        index=True,
+    )
+    resume_rankings: Mapped[list[dict]] = mapped_column(JSON, default=list, nullable=False)
+    cover_letter_rankings: Mapped[list[dict]] = mapped_column(JSON, default=list, nullable=False)
+    errors: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    job: Mapped[Job] = relationship(back_populates="asset_recommendation_snapshots")
 
 
 class InterviewSession(TimestampMixin, Base):

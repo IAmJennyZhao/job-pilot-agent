@@ -66,6 +66,21 @@ def _ensure_added_columns() -> None:
             "highlight_phrases",
             "ALTER TABLE advanced_job_analyses ADD COLUMN highlight_phrases JSON NOT NULL DEFAULT '{}'",
         ),
+        (
+            "resume_profiles",
+            "skill_groups",
+            "ALTER TABLE resume_profiles ADD COLUMN skill_groups JSON NOT NULL DEFAULT '[]'",
+        ),
+        (
+            "jobs",
+            "selected_resume_option_id",
+            "ALTER TABLE jobs ADD COLUMN selected_resume_option_id VARCHAR(36)",
+        ),
+        (
+            "jobs",
+            "selected_cover_letter_template_id",
+            "ALTER TABLE jobs ADD COLUMN selected_cover_letter_template_id VARCHAR(36)",
+        ),
     ]
     with engine.begin() as connection:
         inspector = inspect(connection)

@@ -1,6 +1,9 @@
 import type {
   AIReadiness,
   AdvancedAnalysisResponse,
+  AssetRecommendation,
+  CoverLetterTemplate,
+  CoverageGapResponse,
   DashboardSummary,
   InterviewFeedback,
   InterviewQuestionResponse,
@@ -15,6 +18,7 @@ import type {
   JobStatusEventPayload,
   JobStatus,
   ResumeProfile,
+  ResumeOption,
   ResumeSuggestion,
   SkillGap,
   StudyPlan
@@ -57,6 +61,26 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+async function requestForm<T>(path: string, formData: FormData): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: "POST",
+    body: formData
+  });
+
+  if (!response.ok) {
+    let message = `Request failed with ${response.status}`;
+    try {
+      const body = await response.json();
+      message = typeof body.detail === "string" ? body.detail : message;
+    } catch {
+      // The status code is still useful if the backend returned plain text.
+    }
+    throw new ApiError(message, response.status);
+  }
+
+  return response.json() as Promise<T>;
+}
+
 export const api = {
   dashboard: () => request<DashboardSummary>("/api/dashboard/summary"),
   jobs: (params?: {
@@ -86,7 +110,15 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload)
     }),
-  updateJob: (id: string, payload: Partial<JobCreatePayload> & { status?: JobStatus; fit_score?: number | null }) =>
+  updateJob: (
+    id: string,
+    payload: Partial<JobCreatePayload> & {
+      status?: JobStatus;
+      fit_score?: number | null;
+      selected_resume_option_id?: string | null;
+      selected_cover_letter_template_id?: string | null;
+    }
+  ) =>
     request<Job>(`/api/jobs/${id}`, {
       method: "PATCH",
       body: JSON.stringify(payload)
@@ -115,6 +147,43 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(payload)
     }),
+  resumeOptions: () => request<ResumeOption[]>("/api/profile/resume-options"),
+  createResumeOption: (payload: Partial<ResumeOption> & { title: string }) =>
+    request<ResumeOption>("/api/profile/resume-options", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+  importResumeOption: (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return requestForm<ResumeOption>("/api/profile/resume-options/import", formData);
+  },
+  updateResumeOption: (id: string, payload: Partial<ResumeOption>) =>
+    request<ResumeOption>(`/api/profile/resume-options/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload)
+    }),
+  confirmResumeOption: (id: string, mergeIntoProfile: boolean) =>
+    request<ResumeOption>(`/api/profile/resume-options/${id}/confirm`, {
+      method: "POST",
+      body: JSON.stringify({ merge_into_profile: mergeIntoProfile })
+    }),
+  deleteResumeOption: (id: string) => request<void>(`/api/profile/resume-options/${id}`, { method: "DELETE" }),
+  resumeOptionDownloadUrl: (id: string) => `${API_BASE_URL}/api/profile/resume-options/${id}/download`,
+  coverLetterTemplates: () => request<CoverLetterTemplate[]>("/api/profile/cover-letter-templates"),
+  createCoverLetterTemplate: (payload: Partial<CoverLetterTemplate> & { title: string }) =>
+    request<CoverLetterTemplate>("/api/profile/cover-letter-templates", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+  updateCoverLetterTemplate: (id: string, payload: Partial<CoverLetterTemplate>) =>
+    request<CoverLetterTemplate>(`/api/profile/cover-letter-templates/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload)
+    }),
+  deleteCoverLetterTemplate: (id: string) =>
+    request<void>(`/api/profile/cover-letter-templates/${id}`, { method: "DELETE" }),
+  generateCoverageGaps: () => request<CoverageGapResponse>("/api/profile/coverage-gaps", { method: "POST" }),
   skillGaps: () => request<SkillGap[]>("/api/skill-gaps"),
   updateSkillGap: (id: string, payload: Partial<SkillGap>) =>
     request<SkillGap>(`/api/skill-gaps/${id}`, {
@@ -129,6 +198,8 @@ export const api = {
   aiReadiness: (jobId: string) => request<AIReadiness>(`/api/ai/readiness/${jobId}`),
   runJobIntelligence: (jobId: string) =>
     request<JobIntelligenceResponse>(`/api/ai/run-job-intelligence/${jobId}`, { method: "POST" }),
+  rankAssets: (jobId: string) =>
+    request<AssetRecommendation>(`/api/ai/rank-assets/${jobId}`, { method: "POST" }),
   advancedAnalysis: (jobId: string) =>
     request<AdvancedAnalysisResponse>(`/api/ai/advanced-analysis/${jobId}`),
   runAdvancedAnalysis: (jobId: string, refreshCompany = false) =>

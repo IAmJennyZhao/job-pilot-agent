@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
     openai_model: str | None = Field(default=None, alias="OPENAI_MODEL")
     tavily_api_key: str | None = Field(default=None, alias="TAVILY_API_KEY")
+    asset_storage_dir: str = Field(default="storage", alias="ASSET_STORAGE_DIR")
     backend_cors_origins: str = Field(
         default="http://localhost:3000,http://127.0.0.1:3000",
         alias="BACKEND_CORS_ORIGINS",

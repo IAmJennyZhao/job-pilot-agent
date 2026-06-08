@@ -348,6 +348,16 @@ def update_job(db: Session, job: models.Job, payload: schemas.JobUpdate) -> mode
     values = payload.model_dump(exclude_unset=True)
     links = values.pop("links", None)
     status_note = values.pop("status_note", None)
+    if values.get("selected_resume_option_id") is not None and not db.get(
+        models.ResumeOption,
+        values["selected_resume_option_id"],
+    ):
+        raise ValueError("Resume option not found")
+    if values.get("selected_cover_letter_template_id") is not None and not db.get(
+        models.CoverLetterTemplate,
+        values["selected_cover_letter_template_id"],
+    ):
+        raise ValueError("Cover letter template not found")
     old_status = job.status
     pay_keys = {"pay_min", "pay_max", "pay_currency", "pay_period", "pay_raw"}
     for key, value in values.items():
@@ -462,6 +472,18 @@ def latest_advanced_analysis(
         select(models.AdvancedJobAnalysis)
         .where(models.AdvancedJobAnalysis.job_id == job_id)
         .order_by(models.AdvancedJobAnalysis.created_at.desc())
+        .limit(1)
+    ).first()
+
+
+def latest_asset_recommendation(
+    db: Session,
+    job_id: str,
+) -> models.AssetRecommendationSnapshot | None:
+    return db.scalars(
+        select(models.AssetRecommendationSnapshot)
+        .where(models.AssetRecommendationSnapshot.job_id == job_id)
+        .order_by(models.AssetRecommendationSnapshot.created_at.desc())
         .limit(1)
     ).first()
 

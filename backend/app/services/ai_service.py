@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app import models, prompts, schemas
 from app.config import get_settings
-from app.services import profile_service, skill_gap_service
+from app.services import profile_asset_service, profile_service, skill_gap_service
 
 T = TypeVar("T", bound=BaseModel)
 OPENAI_TIMEOUT_SECONDS = 60.0
@@ -127,7 +127,11 @@ def suggest_resume_changes(
     db: Session,
     job: models.Job,
     profile: models.ResumeProfile,
+    resume_option: models.ResumeOption | None = None,
 ) -> models.ResumeSuggestion:
+    resume_text = resume_option.parsed_text if resume_option else profile.resume_text
+    profile_summary = (resume_option.summary if resume_option else None) or profile.summary
+    skills = resume_option.skills if resume_option and resume_option.skills else profile.skills
     output = get_structured_output(
         schemas.ResumeSuggestionOutput,
         prompts.SYSTEM_PROMPT,
@@ -135,9 +139,9 @@ def suggest_resume_changes(
             job.company,
             job.role_title,
             _job_source_text(job),
-            profile.resume_text,
-            profile.summary,
-            profile.skills,
+            resume_text,
+            profile_summary,
+            skills,
         ),
     )
     suggestion = models.ResumeSuggestion(
@@ -172,21 +176,31 @@ def _error_message(exc: HTTPException) -> str:
 def run_job_intelligence(db: Session, job: models.Job) -> schemas.JobIntelligenceResponse:
     analysis = analyze_job_description(db, job)
     profile = profile_service.get_active_profile(db)
+    asset_recommendation: models.AssetRecommendationSnapshot | None = None
+    if profile:
+        asset_recommendation = profile_asset_service.create_keyword_recommendation_snapshot(db, job)
     if not profile:
         return schemas.JobIntelligenceResponse(
             status="partial",
             analysis=schemas.JobAnalysisRead.model_validate(analysis),
             resume_suggestion=None,
+            asset_recommendation=None,
             errors=["Resume profile not found. Create an active profile before running resume match."],
         )
 
+    resume_option = profile_asset_service.best_resume_option_for_job(db, job)
     try:
-        suggestion = suggest_resume_changes(db, job, profile)
+        suggestion = suggest_resume_changes(db, job, profile, resume_option=resume_option)
     except HTTPException as exc:
         return schemas.JobIntelligenceResponse(
             status="partial",
             analysis=schemas.JobAnalysisRead.model_validate(analysis),
             resume_suggestion=None,
+            asset_recommendation=(
+                schemas.AssetRecommendationRead.model_validate(asset_recommendation)
+                if asset_recommendation
+                else None
+            ),
             errors=[_error_message(exc)],
         )
 
@@ -194,6 +208,11 @@ def run_job_intelligence(db: Session, job: models.Job) -> schemas.JobIntelligenc
         status="complete",
         analysis=schemas.JobAnalysisRead.model_validate(analysis),
         resume_suggestion=schemas.ResumeSuggestionRead.model_validate(suggestion),
+        asset_recommendation=(
+            schemas.AssetRecommendationRead.model_validate(asset_recommendation)
+            if asset_recommendation
+            else None
+        ),
         errors=[],
     )
 

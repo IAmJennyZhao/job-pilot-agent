@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import datetime
 from typing import Any, Literal
 
@@ -10,6 +12,8 @@ from app.models import (
     JobStatus,
     MessageRole,
     Priority,
+    RecommendationSource,
+    ResumeOptionStatus,
     SkillGapSource,
     UserLevel,
 )
@@ -155,6 +159,8 @@ class JobUpdate(BaseModel):
     fit_score: int | None = Field(default=None, ge=0, le=100)
     extraction_confidence: int | None = Field(default=None, ge=0, le=100)
     extraction_warnings: list[str] | None = None
+    selected_resume_option_id: str | None = None
+    selected_cover_letter_template_id: str | None = None
 
 
 class JobRead(CareerPilotModel):
@@ -181,6 +187,8 @@ class JobRead(CareerPilotModel):
     fit_score: int | None
     extraction_confidence: int | None
     extraction_warnings: list[str]
+    selected_resume_option_id: str | None
+    selected_cover_letter_template_id: str | None
     links: list[JobLinkRead] = Field(default_factory=list)
     source_url: str | None = None
     created_at: datetime
@@ -319,12 +327,57 @@ class ResumeSuggestionRead(CareerPilotModel):
     created_at: datetime
 
 
+class SkillGroup(AIModel):
+    category: str
+    skills: list[str] = Field(default_factory=list)
+
+
+class ExperienceItem(AIModel):
+    company: str | None = None
+    role_title: str | None = None
+    location: str | None = None
+    start_date: str | None = None
+    end_date: str | None = None
+    bullets: list[str] = Field(default_factory=list)
+
+
+class ProjectItem(AIModel):
+    name: str | None = None
+    description: str | None = None
+    technologies: list[str] = Field(default_factory=list)
+    bullets: list[str] = Field(default_factory=list)
+    url: str | None = None
+
+
+class EducationItem(AIModel):
+    school: str | None = None
+    degree: str | None = None
+    field: str | None = None
+    start_date: str | None = None
+    end_date: str | None = None
+    details: list[str] = Field(default_factory=list)
+
+
+class ResumeParseOutput(AIModel):
+    name: str | None = None
+    target_roles: list[str] = Field(default_factory=list)
+    target_keywords: list[str] = Field(default_factory=list)
+    summary: str | None = None
+    skills: list[str] = Field(default_factory=list)
+    skill_groups: list[SkillGroup] = Field(default_factory=list)
+    projects: list[ProjectItem] = Field(default_factory=list)
+    experience: list[ExperienceItem] = Field(default_factory=list)
+    education: list[EducationItem] = Field(default_factory=list)
+    certifications: list[str] = Field(default_factory=list)
+
+
 class JobDetail(JobRead):
     source_content: str
     status_events: list[JobStatusEventRead] = Field(default_factory=list)
     analysis: JobAnalysisRead | None = None
     latest_advanced_analysis: AdvancedJobAnalysisRead | None = None
     latest_resume_suggestion: ResumeSuggestionRead | None = None
+    latest_asset_recommendation: AssetRecommendationRead | None = None
 
 
 class ResumeProfileCreate(BaseModel):
@@ -333,6 +386,7 @@ class ResumeProfileCreate(BaseModel):
     resume_text: str = ""
     summary: str | None = None
     skills: list[str] = Field(default_factory=list)
+    skill_groups: list[dict[str, Any]] = Field(default_factory=list)
     projects: list[dict[str, Any]] = Field(default_factory=list)
     experience: list[dict[str, Any]] = Field(default_factory=list)
     education: list[dict[str, Any]] = Field(default_factory=list)
@@ -345,6 +399,7 @@ class ResumeProfileUpdate(BaseModel):
     resume_text: str | None = None
     summary: str | None = None
     skills: list[str] | None = None
+    skill_groups: list[dict[str, Any]] | None = None
     projects: list[dict[str, Any]] | None = None
     experience: list[dict[str, Any]] | None = None
     education: list[dict[str, Any]] | None = None
@@ -359,12 +414,145 @@ class ResumeProfileRead(CareerPilotModel):
     resume_text: str
     summary: str | None
     skills: list[str]
+    skill_groups: list[dict[str, Any]]
     projects: list[dict[str, Any]]
     experience: list[dict[str, Any]]
     education: list[dict[str, Any]]
     certifications: list[str]
     created_at: datetime
     updated_at: datetime
+
+
+class ResumeOptionBase(BaseModel):
+    title: str = Field(min_length=1, max_length=255)
+    candidate_name: str | None = None
+    status: ResumeOptionStatus = ResumeOptionStatus.draft
+    summary: str | None = None
+    target_roles: list[str] = Field(default_factory=list)
+    target_keywords: list[str] = Field(default_factory=list)
+    skills: list[str] = Field(default_factory=list)
+    skill_groups: list[dict[str, Any]] = Field(default_factory=list)
+    projects: list[dict[str, Any]] = Field(default_factory=list)
+    experience: list[dict[str, Any]] = Field(default_factory=list)
+    education: list[dict[str, Any]] = Field(default_factory=list)
+    certifications: list[str] = Field(default_factory=list)
+
+
+class ResumeOptionCreate(ResumeOptionBase):
+    parsed_text: str = ""
+    source_filename: str | None = None
+    file_path: str | None = None
+    content_type: str | None = None
+    file_size: int | None = Field(default=None, ge=0)
+
+
+class ResumeOptionUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    candidate_name: str | None = None
+    status: ResumeOptionStatus | None = None
+    parsed_text: str | None = None
+    summary: str | None = None
+    target_roles: list[str] | None = None
+    target_keywords: list[str] | None = None
+    skills: list[str] | None = None
+    skill_groups: list[dict[str, Any]] | None = None
+    projects: list[dict[str, Any]] | None = None
+    experience: list[dict[str, Any]] | None = None
+    education: list[dict[str, Any]] | None = None
+    certifications: list[str] | None = None
+
+
+class ResumeOptionRead(CareerPilotModel):
+    id: str
+    resume_profile_id: str
+    title: str
+    candidate_name: str | None
+    status: ResumeOptionStatus
+    source_filename: str | None
+    content_type: str | None
+    file_size: int | None
+    parsed_text: str
+    summary: str | None
+    target_roles: list[str]
+    target_keywords: list[str]
+    skills: list[str]
+    skill_groups: list[dict[str, Any]]
+    projects: list[dict[str, Any]]
+    experience: list[dict[str, Any]]
+    education: list[dict[str, Any]]
+    certifications: list[str]
+    created_at: datetime
+    updated_at: datetime
+
+
+class ResumeOptionConfirmRequest(BaseModel):
+    merge_into_profile: bool = False
+
+
+class CoverLetterTemplateCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=255)
+    target_roles: list[str] = Field(default_factory=list)
+    target_keywords: list[str] = Field(default_factory=list)
+    body: str = ""
+    notes: str | None = None
+
+
+class CoverLetterTemplateUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    target_roles: list[str] | None = None
+    target_keywords: list[str] | None = None
+    body: str | None = None
+    notes: str | None = None
+
+
+class CoverLetterTemplateRead(CareerPilotModel):
+    id: str
+    resume_profile_id: str
+    title: str
+    target_roles: list[str]
+    target_keywords: list[str]
+    body: str
+    notes: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class AssetRanking(AIModel):
+    asset_id: str
+    title: str
+    score: int = Field(ge=0, le=100)
+    matched_keywords: list[str] = Field(default_factory=list)
+    missing_keywords: list[str] = Field(default_factory=list)
+    reasons: list[str] = Field(default_factory=list)
+
+
+class AssetRecommendationRead(CareerPilotModel):
+    id: str
+    job_id: str
+    source: RecommendationSource
+    resume_rankings: list[dict[str, Any]]
+    cover_letter_rankings: list[dict[str, Any]]
+    errors: list[str]
+    created_at: datetime
+
+
+class AIAssetRankingOutput(AIModel):
+    resume_rankings: list[AssetRanking] = Field(default_factory=list)
+    cover_letter_rankings: list[AssetRanking] = Field(default_factory=list)
+
+
+class CoverageGap(AIModel):
+    asset_type: Literal["resume", "cover_letter"]
+    title: str
+    rationale: str
+    affected_job_ids: list[str] = Field(default_factory=list)
+    target_keywords: list[str] = Field(default_factory=list)
+
+
+class CoverageGapResponse(BaseModel):
+    generated_at: datetime
+    jobs_considered: int
+    gaps: list[CoverageGap] = Field(default_factory=list)
 
 
 class SkillGapUpdate(BaseModel):
@@ -520,6 +708,7 @@ class JobIntelligenceResponse(BaseModel):
     status: Literal["complete", "partial"]
     analysis: JobAnalysisRead | None = None
     resume_suggestion: ResumeSuggestionRead | None = None
+    asset_recommendation: AssetRecommendationRead | None = None
     errors: list[str] = Field(default_factory=list)
 
 

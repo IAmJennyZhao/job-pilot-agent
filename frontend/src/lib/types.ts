@@ -84,6 +84,8 @@ export type Job = {
   fit_score: number | null;
   extraction_confidence: number | null;
   extraction_warnings: string[];
+  selected_resume_option_id: string | null;
+  selected_cover_letter_template_id: string | null;
   links: JobLink[];
   source_url: string | null;
   created_at: string;
@@ -206,12 +208,32 @@ export type ResumeSuggestion = {
   created_at: string;
 };
 
+export type AssetRanking = {
+  asset_id: string;
+  title: string;
+  score: number;
+  matched_keywords: string[];
+  missing_keywords: string[];
+  reasons: string[];
+};
+
+export type AssetRecommendation = {
+  id: string;
+  job_id: string;
+  source: "keyword" | "ai";
+  resume_rankings: AssetRanking[];
+  cover_letter_rankings: AssetRanking[];
+  errors: string[];
+  created_at: string;
+};
+
 export type JobDetail = Job & {
   source_content: string;
   status_events: JobStatusEvent[];
   analysis: JobAnalysis | null;
   latest_advanced_analysis: AdvancedJobAnalysis | null;
   latest_resume_suggestion: ResumeSuggestion | null;
+  latest_asset_recommendation: AssetRecommendation | null;
 };
 
 export type JobDuplicateCandidate = {
@@ -253,12 +275,64 @@ export type ResumeProfile = {
   resume_text: string;
   summary: string | null;
   skills: string[];
+  skill_groups: Array<{ category: string; skills: string[] }>;
   projects: Record<string, unknown>[];
   experience: Record<string, unknown>[];
   education: Record<string, unknown>[];
   certifications: string[];
   created_at: string;
   updated_at: string;
+};
+
+export type ResumeOptionStatus = "draft" | "ready";
+
+export type ResumeOption = {
+  id: string;
+  resume_profile_id: string;
+  title: string;
+  candidate_name: string | null;
+  status: ResumeOptionStatus;
+  source_filename: string | null;
+  content_type: string | null;
+  file_size: number | null;
+  parsed_text: string;
+  summary: string | null;
+  target_roles: string[];
+  target_keywords: string[];
+  skills: string[];
+  skill_groups: Array<{ category: string; skills: string[] }>;
+  projects: Record<string, unknown>[];
+  experience: Record<string, unknown>[];
+  education: Record<string, unknown>[];
+  certifications: string[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type CoverLetterTemplate = {
+  id: string;
+  resume_profile_id: string;
+  title: string;
+  target_roles: string[];
+  target_keywords: string[];
+  body: string;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CoverageGap = {
+  asset_type: "resume" | "cover_letter";
+  title: string;
+  rationale: string;
+  affected_job_ids: string[];
+  target_keywords: string[];
+};
+
+export type CoverageGapResponse = {
+  generated_at: string;
+  jobs_considered: number;
+  gaps: CoverageGap[];
 };
 
 export type SkillGap = {
@@ -424,5 +498,6 @@ export type JobIntelligenceResponse = {
   status: "complete" | "partial";
   analysis: JobAnalysis | null;
   resume_suggestion: ResumeSuggestion | null;
+  asset_recommendation: AssetRecommendation | null;
   errors: string[];
 };

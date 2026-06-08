@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.database import get_db
-from app.services import advanced_analysis_service, ai_service, profile_service
+from app.services import advanced_analysis_service, ai_service, profile_asset_service, profile_service
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
@@ -67,7 +67,21 @@ def suggest_resume(job_id: str, db: Session = Depends(get_db)):
     profile = profile_service.get_active_profile(db)
     if not profile:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resume profile not found")
-    return ai_service.suggest_resume_changes(db, _get_job_or_404(db, job_id), profile)
+    job = _get_job_or_404(db, job_id)
+    return ai_service.suggest_resume_changes(
+        db,
+        job,
+        profile,
+        resume_option=profile_asset_service.best_resume_option_for_job(db, job),
+    )
+
+
+@router.post("/rank-assets/{job_id}", response_model=schemas.AssetRecommendationRead)
+def rank_assets(job_id: str, db: Session = Depends(get_db)):
+    profile = profile_service.get_active_profile(db)
+    if not profile:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resume profile not found")
+    return profile_asset_service.create_ai_recommendation_snapshot(db, _get_job_or_404(db, job_id))
 
 
 @router.post(

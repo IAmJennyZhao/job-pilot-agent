@@ -49,6 +49,7 @@ def get_job(job_id: str, db: Session = Depends(get_db)):
         update={
             "latest_resume_suggestion": job_service.latest_resume_suggestion(db, job_id),
             "latest_advanced_analysis": job_service.latest_advanced_analysis(db, job_id),
+            "latest_asset_recommendation": job_service.latest_asset_recommendation(db, job_id),
         }
     )
 
@@ -58,7 +59,10 @@ def update_job(job_id: str, payload: schemas.JobUpdate, db: Session = Depends(ge
     job = job_service.get_job(db, job_id)
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
-    return job_service.update_job(db, job, payload)
+    try:
+        return job_service.update_job(db, job, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.post("/{job_id}/status-events", response_model=schemas.JobDetail)

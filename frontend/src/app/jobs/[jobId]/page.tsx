@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, CheckCircle2, ChevronDown, ExternalLink, Pencil, RefreshCw, Save, Sparkles, X } from "lucide-react";
+import { AlertCircle, CheckCircle2, ChevronDown, ExternalLink, FileText, Mail, Pencil, RefreshCw, Save, Sparkles, X } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -15,7 +15,9 @@ import {
   remoteTypes,
   type AIReadiness,
   type AdvancedJobAnalysis,
+  type AssetRecommendation,
   type CompanyResearch,
+  type CoverLetterTemplate,
   type JobCategory,
   type JobCreatePayload,
   type JobDetail,
@@ -23,7 +25,8 @@ import {
   type JobStatus,
   type JobStatusEvent,
   type JobStatusEventPayload,
-  type RemoteType
+  type RemoteType,
+  type ResumeOption
 } from "@/lib/types";
 import { cn, csvToList, formatDate, listToCsv } from "@/lib/utils";
 
@@ -136,6 +139,14 @@ export default function JobDetailPage() {
     queryFn: () => api.advancedAnalysis(jobId),
     enabled: Boolean(jobId)
   });
+  const { data: resumeOptions = [] } = useQuery({
+    queryKey: ["resume-options"],
+    queryFn: api.resumeOptions
+  });
+  const { data: coverLetterTemplates = [] } = useQuery({
+    queryKey: ["cover-letter-templates"],
+    queryFn: api.coverLetterTemplates
+  });
 
   useEffect(() => {
     if (job) setForm(formFromJob(job));
@@ -166,6 +177,19 @@ export default function JobDetailPage() {
     mutationFn: (refreshCompany: boolean) => api.runAdvancedAnalysis(jobId, refreshCompany),
     onSuccess: invalidateJob
   });
+  const reviewMutation = useMutation({
+    mutationFn: () => api.runJobIntelligence(jobId),
+    onSuccess: invalidateJob
+  });
+  const aiAssetRankMutation = useMutation({
+    mutationFn: () => api.rankAssets(jobId),
+    onSuccess: invalidateJob
+  });
+  const assetSelectionMutation = useMutation({
+    mutationFn: (payload: { selected_resume_option_id?: string | null; selected_cover_letter_template_id?: string | null }) =>
+      api.updateJob(jobId, payload),
+    onSuccess: invalidateJob
+  });
 
   const cancelEdit = () => {
     if (job) setForm(formFromJob(job));
@@ -178,6 +202,8 @@ export default function JobDetailPage() {
   );
   const companyResearch = advancedMutation.data?.company_research ?? advancedResponse?.company_research ?? null;
   const advancedErrors = advancedMutation.data?.errors ?? advancedResponse?.errors ?? advancedAnalysis?.errors ?? [];
+  const assetRecommendation =
+    aiAssetRankMutation.data ?? reviewMutation.data?.asset_recommendation ?? job?.latest_asset_recommendation ?? null;
 
   return (
     <div className="grid gap-6">
@@ -249,6 +275,22 @@ export default function JobDetailPage() {
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
               <MergedJobDetail job={job} analysis={advancedAnalysis} companyResearch={companyResearch} errors={advancedErrors} />
               <div className="grid content-start gap-4">
+                <Panel>
+                  <ApplicationAssetsPanel
+                    job={job}
+                    recommendation={assetRecommendation}
+                    resumeOptions={resumeOptions}
+                    coverLetterTemplates={coverLetterTemplates}
+                    isReviewing={reviewMutation.isPending}
+                    isRankingAi={aiAssetRankMutation.isPending}
+                    isSaving={assetSelectionMutation.isPending}
+                    onRunReview={() => reviewMutation.mutate()}
+                    onRankAi={() => aiAssetRankMutation.mutate()}
+                    onSelectResume={(id) => assetSelectionMutation.mutate({ selected_resume_option_id: id })}
+                    onSelectCoverLetter={(id) => assetSelectionMutation.mutate({ selected_cover_letter_template_id: id })}
+                    error={(reviewMutation.error || aiAssetRankMutation.error || assetSelectionMutation.error) as Error | null}
+                  />
+                </Panel>
                 <Panel>
                   <JobLinks links={job.links} />
                 </Panel>
@@ -508,6 +550,155 @@ function MergedJobDetail({
           <p className="mt-2 text-sm text-muted-foreground">Run Advanced Detailed Analysis to add fit, company, and interview prep signals.</p>
         </Panel>
       )}
+    </div>
+  );
+}
+
+function ApplicationAssetsPanel({
+  job,
+  recommendation,
+  resumeOptions,
+  coverLetterTemplates,
+  isReviewing,
+  isRankingAi,
+  isSaving,
+  onRunReview,
+  onRankAi,
+  onSelectResume,
+  onSelectCoverLetter,
+  error
+}: {
+  job: JobDetail;
+  recommendation: AssetRecommendation | null;
+  resumeOptions: ResumeOption[];
+  coverLetterTemplates: CoverLetterTemplate[];
+  isReviewing: boolean;
+  isRankingAi: boolean;
+  isSaving: boolean;
+  onRunReview: () => void;
+  onRankAi: () => void;
+  onSelectResume: (id: string | null) => void;
+  onSelectCoverLetter: (id: string | null) => void;
+  error: Error | null;
+}) {
+  const readyResumes = resumeOptions.filter((option) => option.status === "ready");
+  const latestSource = recommendation?.source === "ai" ? "AI ranking" : recommendation ? "Keyword score" : "No ranking";
+  return (
+    <div>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold">Application Assets</h2>
+          <p className="mt-1 text-xs text-muted-foreground">{latestSource}</p>
+        </div>
+        {recommendation ? <Badge tone={recommendation.source === "ai" ? "good" : "neutral"}>{recommendation.source}</Badge> : null}
+      </div>
+      <div className="grid gap-3">
+        <Field label="Selected resume">
+          <Select
+            value={job.selected_resume_option_id ?? ""}
+            onChange={(event) => onSelectResume(event.target.value || null)}
+            disabled={isSaving}
+          >
+            <option value="">Not selected</option>
+            {readyResumes.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.title}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Selected cover letter">
+          <Select
+            value={job.selected_cover_letter_template_id ?? ""}
+            onChange={(event) => onSelectCoverLetter(event.target.value || null)}
+            disabled={isSaving}
+          >
+            <option value="">Not selected</option>
+            {coverLetterTemplates.map((template) => (
+              <option key={template.id} value={template.id}>
+                {template.title}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" onClick={onRunReview} disabled={isReviewing}>
+            <Sparkles className="h-4 w-4" />
+            {isReviewing ? "Reviewing..." : "Initial review"}
+          </Button>
+          <Button variant="secondary" size="sm" onClick={onRankAi} disabled={isRankingAi}>
+            <RefreshCw className="h-4 w-4" />
+            {isRankingAi ? "Ranking..." : "AI rank"}
+          </Button>
+        </div>
+        {error ? <p className="text-sm text-destructive">{error.message}</p> : null}
+      </div>
+      {recommendation ? (
+        <div className="mt-5 grid gap-4">
+          <AssetRankingList
+            title="Resume ranking"
+            icon={FileText}
+            rankings={recommendation.resume_rankings}
+            selectedId={job.selected_resume_option_id}
+            onSelect={onSelectResume}
+          />
+          <AssetRankingList
+            title="Cover letter ranking"
+            icon={Mail}
+            rankings={recommendation.cover_letter_rankings}
+            selectedId={job.selected_cover_letter_template_id}
+            onSelect={onSelectCoverLetter}
+          />
+        </div>
+      ) : (
+        <p className="mt-4 text-sm text-muted-foreground">Run initial review to rank saved assets for this job.</p>
+      )}
+    </div>
+  );
+}
+
+function AssetRankingList({
+  title,
+  icon: Icon,
+  rankings,
+  selectedId,
+  onSelect
+}: {
+  title: string;
+  icon: React.ElementType;
+  rankings: AssetRecommendation["resume_rankings"];
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <div>
+      <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
+        <Icon className="h-4 w-4 text-primary" />
+        {title}
+      </div>
+      <div className="grid gap-2">
+        {rankings.length ? (
+          rankings.slice(0, 3).map((ranking) => (
+            <button
+              key={ranking.asset_id}
+              type="button"
+              onClick={() => onSelect(ranking.asset_id)}
+              className={cn(
+                "rounded-md border p-3 text-left text-sm transition",
+                selectedId === ranking.asset_id ? "border-primary bg-primary/5" : "border-border hover:bg-muted"
+              )}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <span className="font-medium">{ranking.title}</span>
+                <Badge tone={ranking.score >= 60 ? "good" : ranking.score >= 30 ? "warn" : "neutral"}>{ranking.score}</Badge>
+              </div>
+              {ranking.reasons[0] ? <p className="mt-1 text-xs text-muted-foreground">{ranking.reasons[0]}</p> : null}
+            </button>
+          ))
+        ) : (
+          <p className="text-sm text-muted-foreground">No assets to rank.</p>
+        )}
+      </div>
     </div>
   );
 }

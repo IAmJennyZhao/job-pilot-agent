@@ -1269,3 +1269,186 @@ def test_interview_session_and_message(client):
     )
     assert response.status_code == 201
     assert response.json()["role"] == "ai"
+
+
+def test_standalone_role_practice_set_creates_session_without_job(client, monkeypatch):
+    create_profile(client)
+
+    def fake_structured_output(output_model, _system_prompt, user_prompt):
+        assert output_model is schemas.InterviewQuestionsOutput
+        assert "Backend Engineer" in user_prompt
+        assert "API Platform Engineer" in user_prompt
+        assert "tech_screen" in user_prompt
+        return schemas.InterviewQuestionsOutput(
+            questions=[
+                schemas.InterviewQuestion(
+                    question="How would you design a resilient API integration?",
+                    type="system_design",
+                    why_it_matters="Tests backend design judgment.",
+                    strong_answer_should_include=["Retries", "Idempotency", "Observability"],
+                )
+            ]
+        )
+
+    monkeypatch.setattr("app.services.ai_service.get_structured_output", fake_structured_output)
+
+    response = client.post(
+        "/api/interview/practice-sets",
+        json={
+            "target_category": "Backend Engineer",
+            "target_role": "API Platform Engineer",
+            "stage": "tech_screen",
+            "question_type": "system_design",
+            "count": 1,
+        },
+    )
+
+    assert response.status_code == 201
+    practice_set = response.json()
+    assert practice_set["job_id"] is None
+    assert practice_set["target_category"] == "Backend Engineer"
+    assert practice_set["target_role"] == "API Platform Engineer"
+    assert practice_set["generated_count"] == 1
+    assert practice_set["questions"][0]["source"] == "generated"
+
+    sessions = client.get("/api/interview/sessions").json()
+    assert sessions[0]["job_id"] is None
+    assert sessions[0]["target_category"] == "Backend Engineer"
+    assert sessions[0]["stage"] == "tech_screen"
+
+
+def test_practice_set_reuses_advanced_questions_then_generates_remainder(client, monkeypatch):
+    job = create_job(client)
+    create_profile(client)
+
+    def fake_advanced_output(output_model, _system_prompt, _user_prompt):
+        if output_model is schemas.JobInsightsOutput:
+            return fake_job_insights_output()
+        if output_model is schemas.ResumeFitOutput:
+            return fake_resume_fit_output()
+        if output_model is schemas.AdvancedInterviewPrepOutput:
+            return fake_advanced_interview_output()
+        if output_model is schemas.CompanyResearchOutput:
+            return fake_company_research_output()
+        raise AssertionError("Unexpected model")
+
+    monkeypatch.setattr("app.services.ai_service.get_structured_output", fake_advanced_output)
+    monkeypatch.setattr(
+        "app.services.advanced_analysis_service.CompanyResearchRetrievalAgent.run",
+        lambda _self, _company, _role_title: SimpleNamespace(
+            prompt_text=lambda: "Review source text.",
+            warnings=[],
+        ),
+    )
+    assert client.post(f"/api/ai/run-advanced-analysis/{job['id']}").status_code == 200
+
+    def fake_practice_output(output_model, _system_prompt, user_prompt):
+        assert output_model is schemas.InterviewQuestionsOutput
+        assert "Already-used questions" in user_prompt
+        return schemas.InterviewQuestionsOutput(
+            questions=[
+                schemas.InterviewQuestion(
+                    question="How would you monitor model quality after launch?",
+                    type="technical",
+                    why_it_matters="Tests production ownership.",
+                    strong_answer_should_include=["Metrics", "Feedback loops"],
+                ),
+                schemas.InterviewQuestion(
+                    question="Tell me about a time you changed direction based on evaluation data.",
+                    type="behavioral",
+                    why_it_matters="Tests evidence-driven iteration.",
+                    strong_answer_should_include=["Situation", "Data", "Outcome"],
+                ),
+            ]
+        )
+
+    monkeypatch.setattr("app.services.ai_service.get_structured_output", fake_practice_output)
+
+    response = client.post(
+        "/api/interview/practice-sets",
+        json={
+            "job_id": job["id"],
+            "stage": "mixed",
+            "question_type": "mixed",
+            "count": 3,
+        },
+    )
+
+    assert response.status_code == 201
+    practice_set = response.json()
+    assert practice_set["reused_count"] == 1
+    assert practice_set["generated_count"] == 2
+    assert practice_set["questions"][0]["source"] == "advanced_analysis"
+    assert practice_set["questions"][0]["content"] == "How would you evaluate an LLM feature before launch?"
+
+
+def test_practice_answer_feedback_follow_up_insights_and_skill_gaps(client, monkeypatch):
+    create_profile(client)
+
+    def fake_question_output(output_model, _system_prompt, _user_prompt):
+        assert output_model is schemas.InterviewQuestionsOutput
+        return schemas.InterviewQuestionsOutput(
+            questions=[
+                schemas.InterviewQuestion(
+                    question="How do you approach production incident debugging?",
+                    type="technical",
+                    why_it_matters="Tests operational judgment.",
+                    strong_answer_should_include=["Triage", "Instrumentation", "Prevention"],
+                )
+            ]
+        )
+
+    monkeypatch.setattr("app.services.ai_service.get_structured_output", fake_question_output)
+    response = client.post(
+        "/api/interview/practice-sets",
+        json={
+            "target_category": "DevOps/Infrastructure",
+            "target_role": "Platform Engineer",
+            "stage": "tech_screen",
+            "question_type": "technical",
+            "count": 1,
+        },
+    )
+    assert response.status_code == 201
+    practice_set = response.json()
+    question_id = practice_set["questions"][0]["id"]
+
+    def fake_feedback_output(output_model, _system_prompt, user_prompt):
+        assert output_model is schemas.InterviewAnswerFeedbackOutput
+        assert "Platform Engineer" in user_prompt
+        return schemas.InterviewAnswerFeedbackOutput(
+            score=62,
+            what_went_well=["Clear first step"],
+            what_was_missing=["Needs stronger incident structure"],
+            suggested_better_answer="I would start by scoping impact, then inspect telemetry and rollback options.",
+            coaching_notes=["Use a tighter STAR structure."],
+            evidence_to_add=["Mention a concrete monitoring or rollback example."],
+            weak_point_tags=["answer_structure", "missing_skill"],
+            missing_skill_names=["Incident response"],
+            follow_up_question="Walk through a real incident and the metric that confirmed recovery.",
+        )
+
+    monkeypatch.setattr("app.services.ai_service.get_structured_output", fake_feedback_output)
+    response = client.post(
+        "/api/interview/answers/evaluate",
+        json={
+            "session_id": practice_set["session_id"],
+            "question_id": question_id,
+            "answer": "I would check logs and fix the issue.",
+        },
+    )
+
+    assert response.status_code == 200
+    feedback = response.json()
+    assert feedback["score"] == 62
+    assert feedback["follow_up_question_id"]
+    assert feedback["follow_up"]["source"] == "follow_up"
+    assert feedback["weak_point_tags"] == ["answer_structure", "missing_skill"]
+
+    insights = client.get("/api/interview/insights").json()
+    assert insights["average_score"] == 62
+    assert [item["tag"] for item in insights["weak_points"]] == ["answer_structure", "missing_skill"]
+    assert insights["coaching_themes"] == ["Use a tighter STAR structure."]
+
+    skill_gaps = client.get("/api/skill-gaps").json()
+    assert [gap["skill_name"] for gap in skill_gaps] == ["Incident response"]

@@ -1,87 +1,230 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ClipboardList, MessageSquareText, Play } from "lucide-react";
+import { ClipboardList, MessageSquareText, Play, RotateCcw, Sparkles, Target } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import * as React from "react";
 import { Button } from "@/components/ui/button";
-import { Field, Select, Textarea } from "@/components/ui/field";
+import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { Badge, PageHeader, Panel } from "@/components/ui/panel";
 import { api } from "@/lib/api";
-import type { InterviewFeedback, InterviewQuestionResponse } from "@/lib/types";
-import { formatDate } from "@/lib/utils";
+import {
+  jobCategories,
+  type InterviewInsights,
+  type InterviewPracticeFeedback,
+  type InterviewPracticeQuestion,
+  type InterviewPracticeSet,
+  type InterviewQuestionType,
+  type InterviewStage,
+  type JobCategory
+} from "@/lib/types";
+import { cn, formatDate } from "@/lib/utils";
+
+const stages: Array<{ value: InterviewStage; label: string }> = [
+  { value: "mixed", label: "Mixed" },
+  { value: "recruiter_screen", label: "Recruiter screen" },
+  { value: "tech_screen", label: "Tech screen" },
+  { value: "final_interview", label: "Final interview" }
+];
+
+const questionTypes: Array<{ value: InterviewQuestionType; label: string }> = [
+  { value: "mixed", label: "Mixed" },
+  { value: "technical", label: "Technical" },
+  { value: "behavioral", label: "Behavioral" },
+  { value: "company", label: "Company" },
+  { value: "resume", label: "Resume" },
+  { value: "role_specific", label: "Role specific" },
+  { value: "system_design", label: "System design" }
+];
+
+const weakPointLabels: Record<string, string> = {
+  technical_depth: "Technical depth",
+  answer_structure: "Answer structure",
+  specific_evidence: "Specific evidence",
+  role_alignment: "Role alignment",
+  concision: "Concision",
+  communication_clarity: "Clarity",
+  missing_skill: "Missing skill",
+  company_context: "Company context",
+  resume_positioning: "Resume positioning"
+};
 
 export default function InterviewPage() {
+  return (
+    <React.Suspense fallback={<InterviewPageFallback />}>
+      <InterviewPageContent />
+    </React.Suspense>
+  );
+}
+
+function InterviewPageFallback() {
+  return (
+    <div className="grid gap-6">
+      <PageHeader title="Interview Practice" description="Focused answer reps for saved jobs and role targets." />
+      <Panel>Loading interview workspace...</Panel>
+    </div>
+  );
+}
+
+function InterviewPageContent() {
   const queryClient = useQueryClient();
+  const searchParams = useSearchParams();
+  const requestedJobId = searchParams.get("jobId") ?? "";
   const { data: jobs = [] } = useQuery({ queryKey: ["jobs"], queryFn: () => api.jobs() });
   const { data: sessions = [] } = useQuery({ queryKey: ["interview-sessions"], queryFn: api.interviewSessions });
-  const [jobId, setJobId] = React.useState("");
-  const [questionType, setQuestionType] = React.useState("mixed");
+  const { data: insights } = useQuery({ queryKey: ["interview-insights"], queryFn: api.interviewInsights });
+
+  const [targetMode, setTargetMode] = React.useState<"job" | "role">(requestedJobId ? "job" : "role");
+  const [jobId, setJobId] = React.useState(requestedJobId);
+  const [targetCategory, setTargetCategory] = React.useState<JobCategory>("AI/ML Engineer");
+  const [targetRole, setTargetRole] = React.useState("");
+  const [stage, setStage] = React.useState<InterviewStage>("mixed");
+  const [questionType, setQuestionType] = React.useState<InterviewQuestionType>("mixed");
   const [count, setCount] = React.useState(6);
-  const [generated, setGenerated] = React.useState<InterviewQuestionResponse | null>(null);
-  const [question, setQuestion] = React.useState("");
+  const [practiceSet, setPracticeSet] = React.useState<InterviewPracticeSet | null>(null);
+  const [queue, setQueue] = React.useState<InterviewPracticeQuestion[]>([]);
+  const [activeQuestionId, setActiveQuestionId] = React.useState("");
   const [answer, setAnswer] = React.useState("");
-  const [feedback, setFeedback] = React.useState<InterviewFeedback | null>(null);
+  const [feedback, setFeedback] = React.useState<InterviewPracticeFeedback | null>(null);
+
+  const jobsById = React.useMemo(() => new Map(jobs.map((job) => [job.id, job])), [jobs]);
+  const activeQuestion = queue.find((question) => question.id === activeQuestionId) ?? queue[0] ?? null;
 
   React.useEffect(() => {
-    if (!jobId && jobs[0]) setJobId(jobs[0].id);
-  }, [jobId, jobs]);
-
-  const questionMutation = useMutation({
-    mutationFn: () => api.generateInterviewQuestions(jobId, { question_type: questionType, count }),
-    onSuccess: (data) => {
-      setGenerated(data);
-      setQuestion(data.questions[0]?.question ?? "");
-      queryClient.invalidateQueries({ queryKey: ["interview-sessions"] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    if (requestedJobId) {
+      setTargetMode("job");
+      setJobId(requestedJobId);
     }
-  });
+  }, [requestedJobId]);
 
-  const feedbackMutation = useMutation({
+  React.useEffect(() => {
+    if (targetMode === "job" && !jobId && jobs[0]) {
+      setJobId(jobs[0].id);
+    }
+  }, [jobId, jobs, targetMode]);
+
+  const createPracticeSet = useMutation({
     mutationFn: () =>
-      api.evaluateInterviewAnswer({
-        job_id: jobId,
-        question,
-        answer,
-        session_id: generated?.session_id ?? null
+      api.createPracticeSet({
+        job_id: targetMode === "job" ? jobId : null,
+        target_category: targetMode === "role" ? targetCategory : null,
+        target_role: targetMode === "role" ? targetRole || null : null,
+        stage,
+        question_type: questionType,
+        count
       }),
     onSuccess: (data) => {
-      setFeedback(data);
+      setPracticeSet(data);
+      setQueue(data.questions);
+      setActiveQuestionId(data.questions[0]?.id ?? "");
+      setAnswer("");
+      setFeedback(null);
       queryClient.invalidateQueries({ queryKey: ["interview-sessions"] });
+      queryClient.invalidateQueries({ queryKey: ["interview-insights"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-      queryClient.invalidateQueries({ queryKey: ["skill-gaps"] });
     }
   });
+
+  const evaluateAnswer = useMutation({
+    mutationFn: () => {
+      if (!practiceSet || !activeQuestion) throw new Error("Start a practice set first.");
+      return api.evaluatePracticeAnswer({
+        session_id: practiceSet.session_id,
+        question_id: activeQuestion.id,
+        answer
+      });
+    },
+    onSuccess: (data) => {
+      setFeedback(data);
+      setAnswer("");
+      if (data.follow_up) {
+        const followUp = data.follow_up;
+        setQueue((current) => {
+          if (current.some((question) => question.id === followUp.id)) return current;
+          return [...current, followUp];
+        });
+        setActiveQuestionId(followUp.id);
+      }
+      queryClient.invalidateQueries({ queryKey: ["interview-sessions"] });
+      queryClient.invalidateQueries({ queryKey: ["interview-insights"] });
+      queryClient.invalidateQueries({ queryKey: ["skill-gaps"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    }
+  });
+
+  const canStart = targetMode === "job" ? Boolean(jobId) : Boolean(targetCategory || targetRole.trim());
 
   return (
     <div className="grid gap-6">
-      <PageHeader
-        title="Interview Practice"
-        description="Generate job-specific questions, answer one, and store scored feedback for later review."
-      />
+      <PageHeader title="Interview Practice" description="Focused answer reps for saved jobs and role targets." />
 
       <div className="grid gap-4 xl:grid-cols-[420px_1fr]">
         <Panel>
           <div className="mb-4 flex items-center gap-2">
-            <ClipboardList className="h-4 w-4 text-primary" />
-            <h2 className="text-base font-semibold">Question Generator</h2>
+            <Target className="h-4 w-4 text-primary" />
+            <h2 className="text-base font-semibold">Practice Target</h2>
           </div>
           <div className="grid gap-4">
-            <Field label="Saved job">
-              <Select value={jobId} onChange={(event) => setJobId(event.target.value)}>
-                {jobs.map((job) => (
-                  <option key={job.id} value={job.id}>
-                    {job.company} · {job.role_title}
+            <div className="grid grid-cols-2 gap-2 rounded-md border border-border bg-muted p-1">
+              <button
+                className={cn("rounded px-3 py-2 text-sm font-medium", targetMode === "job" ? "bg-white shadow-sm" : "text-muted-foreground")}
+                onClick={() => setTargetMode("job")}
+                type="button"
+              >
+                Saved job
+              </button>
+              <button
+                className={cn("rounded px-3 py-2 text-sm font-medium", targetMode === "role" ? "bg-white shadow-sm" : "text-muted-foreground")}
+                onClick={() => setTargetMode("role")}
+                type="button"
+              >
+                General role
+              </button>
+            </div>
+
+            {targetMode === "job" ? (
+              <Field label="Saved job">
+                <Select value={jobId} onChange={(event) => setJobId(event.target.value)}>
+                  {jobs.map((job) => (
+                    <option key={job.id} value={job.id}>
+                      {job.company} - {job.role_title}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            ) : (
+              <div className="grid gap-4">
+                <Field label="Category">
+                  <Select value={targetCategory} onChange={(event) => setTargetCategory(event.target.value as JobCategory)}>
+                    {jobCategories.map((category) => (
+                      <option key={category} value={category}>
+                        {category}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field label="Role or focus">
+                  <Input value={targetRole} onChange={(event) => setTargetRole(event.target.value)} placeholder="AI Platform Engineer" />
+                </Field>
+              </div>
+            )}
+
+            <Field label="Stage">
+              <Select value={stage} onChange={(event) => setStage(event.target.value as InterviewStage)}>
+                {stages.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
                   </option>
                 ))}
               </Select>
             </Field>
             <Field label="Question type">
-              <Select value={questionType} onChange={(event) => setQuestionType(event.target.value)}>
-                <option value="mixed">Mixed</option>
-                <option value="technical">Technical</option>
-                <option value="behavioral">Behavioral</option>
-                <option value="company">Company</option>
-                <option value="resume">Resume</option>
+              <Select value={questionType} onChange={(event) => setQuestionType(event.target.value as InterviewQuestionType)}>
+                {questionTypes.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
               </Select>
             </Field>
             <Field label="Count">
@@ -93,10 +236,10 @@ export default function InterviewPage() {
                 ))}
               </Select>
             </Field>
-            {questionMutation.error ? <p className="text-sm text-destructive">{(questionMutation.error as Error).message}</p> : null}
-            <Button onClick={() => questionMutation.mutate()} disabled={!jobId || questionMutation.isPending}>
+            {createPracticeSet.error ? <p className="text-sm text-destructive">{(createPracticeSet.error as Error).message}</p> : null}
+            <Button onClick={() => createPracticeSet.mutate()} disabled={!canStart || createPracticeSet.isPending}>
               <Play className="h-4 w-4" />
-              {questionMutation.isPending ? "Generating..." : "Generate questions"}
+              {createPracticeSet.isPending ? "Starting..." : "Start practice"}
             </Button>
           </div>
         </Panel>
@@ -104,89 +247,208 @@ export default function InterviewPage() {
         <Panel>
           <div className="mb-4 flex items-center gap-2">
             <MessageSquareText className="h-4 w-4 text-primary" />
-            <h2 className="text-base font-semibold">Answer Practice</h2>
+            <h2 className="text-base font-semibold">Answer Workspace</h2>
           </div>
-          {generated ? (
+          {practiceSet && activeQuestion ? (
             <div className="grid gap-4">
-              <div className="grid gap-3">
-                {generated.questions.map((item) => (
-                  <button
-                    key={item.question}
-                    className="rounded-md border border-border bg-white p-3 text-left text-sm transition hover:bg-muted"
-                    onClick={() => setQuestion(item.question)}
-                  >
-                    <div className="mb-2 flex items-center gap-2">
-                      <Badge>{item.type}</Badge>
-                      <span className="text-xs text-muted-foreground">{item.why_it_matters}</span>
-                    </div>
-                    {item.question}
-                  </button>
-                ))}
+              <PracticeSetStats practiceSet={practiceSet} />
+              <QuestionQueue questions={queue} activeQuestionId={activeQuestion.id} onSelect={setActiveQuestionId} />
+              <div className="rounded-md border border-border bg-muted/30 p-4">
+                <div className="mb-3 flex flex-wrap items-center gap-2">
+                  <Badge>{activeQuestion.question_type.replace("_", " ")}</Badge>
+                  <Badge>{activeQuestion.source.replace("_", " ")}</Badge>
+                  {activeQuestion.why_it_matters ? <span className="text-xs text-muted-foreground">{activeQuestion.why_it_matters}</span> : null}
+                </div>
+                <p className="text-base font-medium leading-7">{activeQuestion.content}</p>
               </div>
-              <Field label="Selected question">
-                <Textarea value={question} onChange={(event) => setQuestion(event.target.value)} />
-              </Field>
               <Field label="Your answer">
-                <Textarea value={answer} onChange={(event) => setAnswer(event.target.value)} className="min-h-40" />
+                <Textarea value={answer} onChange={(event) => setAnswer(event.target.value)} className="min-h-44" />
               </Field>
-              {feedbackMutation.error ? <p className="text-sm text-destructive">{(feedbackMutation.error as Error).message}</p> : null}
-              <Button onClick={() => feedbackMutation.mutate()} disabled={!jobId || !question || !answer || feedbackMutation.isPending}>
-                {feedbackMutation.isPending ? "Evaluating..." : "Evaluate answer"}
-              </Button>
+              {evaluateAnswer.error ? <p className="text-sm text-destructive">{(evaluateAnswer.error as Error).message}</p> : null}
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={() => evaluateAnswer.mutate()} disabled={!answer.trim() || evaluateAnswer.isPending}>
+                  <Sparkles className="h-4 w-4" />
+                  {evaluateAnswer.isPending ? "Evaluating..." : "Evaluate answer"}
+                </Button>
+                <Button variant="secondary" onClick={() => setAnswer("")} disabled={!answer.trim()}>
+                  <RotateCcw className="h-4 w-4" />
+                  Clear
+                </Button>
+              </div>
               {feedback ? <FeedbackPanel feedback={feedback} /> : null}
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">Generate questions to open the answer workspace.</p>
+            <p className="text-sm text-muted-foreground">Start a practice set to open the answer workspace.</p>
           )}
         </Panel>
       </div>
 
-      <Panel>
-        <h2 className="text-base font-semibold">Session History</h2>
-        <div className="mt-4 grid gap-3">
-          {sessions.length ? (
-            sessions.map((session) => (
-              <div key={session.id} className="rounded-md border border-border bg-muted/40 p-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="font-medium">{session.title ?? "Interview session"}</div>
-                  <Badge>{session.mode.replace("_", " ")}</Badge>
+      <div className="grid gap-4 xl:grid-cols-[1fr_420px]">
+        <InsightsPanel insights={insights} />
+        <Panel>
+          <div className="mb-4 flex items-center gap-2">
+            <ClipboardList className="h-4 w-4 text-primary" />
+            <h2 className="text-base font-semibold">Session History</h2>
+          </div>
+          <div className="grid gap-3">
+            {sessions.length ? (
+              sessions.map((session) => (
+                <div key={session.id} className="rounded-md border border-border bg-muted/40 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="min-w-0 font-medium">{session.title ?? sessionTarget(session, jobsById)}</div>
+                    <Badge>{session.mode.replace("_", " ")}</Badge>
+                  </div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    {formatDate(session.updated_at)} - {session.messages.length} messages
+                  </div>
                 </div>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  {formatDate(session.updated_at)} · {session.messages.length} messages
-                </div>
-              </div>
-            ))
-          ) : (
-            <p className="text-sm text-muted-foreground">No interview sessions yet.</p>
-          )}
-        </div>
-      </Panel>
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground">No interview sessions yet.</p>
+            )}
+          </div>
+        </Panel>
+      </div>
     </div>
   );
 }
 
-function FeedbackPanel({ feedback }: { feedback: InterviewFeedback }) {
+function PracticeSetStats({ practiceSet }: { practiceSet: InterviewPracticeSet }) {
+  return (
+    <div className="flex flex-wrap gap-2 text-xs">
+      <Badge>{practiceSet.reused_count} reused</Badge>
+      <Badge>{practiceSet.generated_count} new</Badge>
+      <Badge>{practiceSet.stage.replace("_", " ")}</Badge>
+      <Badge>{practiceSet.question_type.replace("_", " ")}</Badge>
+    </div>
+  );
+}
+
+function QuestionQueue({
+  questions,
+  activeQuestionId,
+  onSelect
+}: {
+  questions: InterviewPracticeQuestion[];
+  activeQuestionId: string;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <div className="grid gap-2">
+      {questions.map((question, index) => (
+        <button
+          key={question.id}
+          className={cn(
+            "rounded-md border p-3 text-left text-sm transition",
+            question.id === activeQuestionId ? "border-primary bg-primary/5" : "border-border bg-white hover:bg-muted"
+          )}
+          onClick={() => onSelect(question.id)}
+          type="button"
+        >
+          <div className="mb-1 flex flex-wrap items-center gap-2">
+            <span className="text-xs font-semibold text-muted-foreground">Q{index + 1}</span>
+            <Badge>{question.source.replace("_", " ")}</Badge>
+            {question.weak_point_tags.map((tag) => (
+              <Badge key={tag} tone="warn">
+                {weakPointLabels[tag] ?? tag.replace("_", " ")}
+              </Badge>
+            ))}
+          </div>
+          <div className="line-clamp-2 leading-6">{question.content}</div>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function FeedbackPanel({ feedback }: { feedback: InterviewPracticeFeedback }) {
   return (
     <div className="rounded-md border border-border bg-muted/40 p-4 text-sm">
       <div className="mb-3 flex items-center justify-between gap-3">
         <h3 className="font-semibold">Feedback</h3>
         <Badge tone={feedback.score >= 75 ? "good" : feedback.score >= 50 ? "warn" : "bad"}>Score {feedback.score}</Badge>
       </div>
-      <List title="What went well" items={feedback.what_went_well} />
+      <List title="What worked" items={feedback.what_went_well} />
       <List title="What was missing" items={feedback.what_was_missing} />
+      <List title="Coaching notes" items={feedback.coaching_notes} />
+      <List title="Evidence to add" items={feedback.evidence_to_add} />
+      {feedback.weak_point_tags.length ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {feedback.weak_point_tags.map((tag) => (
+            <Badge key={tag} tone="warn">
+              {weakPointLabels[tag] ?? tag.replace("_", " ")}
+            </Badge>
+          ))}
+        </div>
+      ) : null}
       <div className="mt-3">
         <h4 className="font-medium">Stronger answer</h4>
         <p className="mt-1 leading-6 text-muted-foreground">{feedback.suggested_better_answer}</p>
       </div>
-      <div className="mt-3">
-        <h4 className="font-medium">Follow-up</h4>
-        <p className="mt-1 text-muted-foreground">{feedback.follow_up_question}</p>
-      </div>
+      {feedback.follow_up ? (
+        <div className="mt-3 rounded-md border border-border bg-white p-3">
+          <h4 className="font-medium">Queued follow-up</h4>
+          <p className="mt-1 text-muted-foreground">{feedback.follow_up.content}</p>
+        </div>
+      ) : null}
     </div>
   );
 }
 
+function InsightsPanel({ insights }: { insights?: InterviewInsights }) {
+  return (
+    <Panel>
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Sparkles className="h-4 w-4 text-primary" />
+          <h2 className="text-base font-semibold">Interview Insights</h2>
+        </div>
+        <Badge>{insights?.average_score == null ? "No score" : `Avg ${insights.average_score}`}</Badge>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <div>
+          <h3 className="text-sm font-medium">Weak points</h3>
+          <div className="mt-2 grid gap-2">
+            {insights?.weak_points.length ? (
+              insights.weak_points.slice(0, 6).map((item) => (
+                <div key={item.tag} className="rounded-md border border-border bg-muted/40 p-3 text-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium">{weakPointLabels[item.tag] ?? item.tag.replace("_", " ")}</span>
+                    <Badge tone="warn">{item.count}</Badge>
+                  </div>
+                  {item.latest_note ? <p className="mt-1 text-xs leading-5 text-muted-foreground">{item.latest_note}</p> : null}
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground">No weak-point data yet.</p>
+            )}
+          </div>
+        </div>
+        <div>
+          <h3 className="text-sm font-medium">Recent scores</h3>
+          <div className="mt-2 grid gap-2">
+            {insights?.recent_scores.length ? (
+              insights.recent_scores.slice(0, 5).map((item) => (
+                <div key={`${item.session_id}-${item.created_at}`} className="rounded-md border border-border bg-muted/40 p-3 text-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="line-clamp-1 font-medium">{item.question}</span>
+                    <Badge tone={item.score >= 75 ? "good" : item.score >= 50 ? "warn" : "bad"}>{item.score}</Badge>
+                  </div>
+                  <div className="mt-1 text-xs text-muted-foreground">{formatDate(item.created_at)}</div>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground">No evaluated answers yet.</p>
+            )}
+          </div>
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
 function List({ title, items }: { title: string; items: string[] }) {
+  if (!items.length) return null;
   return (
     <div className="mt-3">
       <h4 className="font-medium">{title}</h4>
@@ -197,4 +459,12 @@ function List({ title, items }: { title: string; items: string[] }) {
       </ul>
     </div>
   );
+}
+
+function sessionTarget(session: { job_id: string | null; target_category: JobCategory | null; target_role: string | null }, jobsById: Map<string, { company: string; role_title: string }>) {
+  if (session.job_id) {
+    const job = jobsById.get(session.job_id);
+    if (job) return `${job.company} - ${job.role_title}`;
+  }
+  return session.target_role || session.target_category || "Interview session";
 }

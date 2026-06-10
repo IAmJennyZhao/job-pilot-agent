@@ -351,6 +351,7 @@ export type SkillGap = {
 export type InterviewMessage = {
   id: string;
   session_id: string;
+  question_id: string | null;
   role: "ai" | "user";
   content: string;
   question_type: string | null;
@@ -361,10 +362,14 @@ export type InterviewMessage = {
 
 export type InterviewSession = {
   id: string;
-  job_id: string;
+  job_id: string | null;
   resume_profile_id: string | null;
   mode: "question_list" | "live_practice";
   title: string | null;
+  target_category: JobCategory | null;
+  target_role: string | null;
+  stage: InterviewStage;
+  question_type: string;
   created_at: string;
   updated_at: string;
   messages: InterviewMessage[];
@@ -469,8 +474,96 @@ export type InterviewFeedback = {
   what_went_well: string[];
   what_was_missing: string[];
   suggested_better_answer: string;
+  coaching_notes: string[];
+  evidence_to_add: string[];
+  weak_point_tags: WeakPointTag[];
+  missing_skill_names: string[];
   follow_up_question: string;
   session_id: string | null;
+  follow_up_question_id: string | null;
+};
+
+export type InterviewStage = "mixed" | "recruiter_screen" | "tech_screen" | "final_interview";
+
+export type InterviewQuestionType =
+  | "technical"
+  | "behavioral"
+  | "company"
+  | "resume"
+  | "role_specific"
+  | "system_design"
+  | "mixed";
+
+export type WeakPointTag =
+  | "technical_depth"
+  | "answer_structure"
+  | "specific_evidence"
+  | "role_alignment"
+  | "concision"
+  | "communication_clarity"
+  | "missing_skill"
+  | "company_context"
+  | "resume_positioning";
+
+export type InterviewPracticeQuestion = {
+  id: string;
+  job_id: string | null;
+  resume_profile_id: string | null;
+  target_category: JobCategory | null;
+  target_role: string | null;
+  stage: InterviewStage;
+  question_type: string;
+  content: string;
+  why_it_matters: string | null;
+  strong_answer_should_include: string[];
+  source: "advanced_analysis" | "generated" | "follow_up" | "manual";
+  prompt_metadata: Record<string, unknown>;
+  weak_point_tags: string[];
+  asked_count: number;
+  last_asked_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type InterviewPracticeSetPayload = {
+  job_id?: string | null;
+  target_category?: JobCategory | null;
+  target_role?: string | null;
+  stage: InterviewStage;
+  question_type: InterviewQuestionType;
+  count: number;
+  resume_profile_id?: string | null;
+};
+
+export type InterviewPracticeSet = {
+  session_id: string;
+  questions: InterviewPracticeQuestion[];
+  reused_count: number;
+  generated_count: number;
+  job_id: string | null;
+  target_category: JobCategory | null;
+  target_role: string | null;
+  stage: InterviewStage;
+  question_type: string;
+};
+
+export type InterviewPracticeFeedback = InterviewFeedback & {
+  question_id: string;
+  follow_up: InterviewPracticeQuestion | null;
+};
+
+export type InterviewInsights = {
+  average_score: number | null;
+  recent_scores: Array<{
+    session_id: string;
+    question_id: string | null;
+    question: string;
+    score: number;
+    created_at: string;
+    weak_point_tags: string[];
+  }>;
+  weak_points: Array<{ tag: string; count: number; latest_note: string | null }>;
+  coaching_themes: string[];
 };
 
 export type StudyPlan = {

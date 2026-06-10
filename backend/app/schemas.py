@@ -7,6 +7,8 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, mod
 
 from app.models import (
     InterviewMode,
+    InterviewQuestionSource,
+    InterviewStage,
     JobCategory,
     JobLinkKind,
     JobStatus,
@@ -17,6 +19,28 @@ from app.models import (
     SkillGapSource,
     UserLevel,
 )
+
+
+InterviewQuestionType = Literal[
+    "technical",
+    "behavioral",
+    "company",
+    "resume",
+    "role_specific",
+    "system_design",
+    "mixed",
+]
+WeakPointTag = Literal[
+    "technical_depth",
+    "answer_structure",
+    "specific_evidence",
+    "role_alignment",
+    "concision",
+    "communication_clarity",
+    "missing_skill",
+    "company_context",
+    "resume_positioning",
+]
 
 
 class CareerPilotModel(BaseModel):
@@ -578,21 +602,33 @@ class SkillGapRead(CareerPilotModel):
 class InterviewMessageCreate(BaseModel):
     role: MessageRole
     content: str = Field(min_length=1)
+    question_id: str | None = None
     question_type: str | None = None
     score: int | None = Field(default=None, ge=0, le=100)
     feedback: dict[str, Any] | None = None
 
 
 class InterviewSessionCreate(BaseModel):
-    job_id: str
+    job_id: str | None = None
     resume_profile_id: str | None = None
     mode: InterviewMode = InterviewMode.question_list
     title: str | None = None
+    target_category: JobCategory | None = None
+    target_role: str | None = Field(default=None, max_length=255)
+    stage: InterviewStage = InterviewStage.mixed
+    question_type: InterviewQuestionType = "mixed"
+
+    @model_validator(mode="after")
+    def has_target(self) -> "InterviewSessionCreate":
+        if not self.job_id and not self.target_category and not (self.target_role and self.target_role.strip()):
+            raise ValueError("Provide a job, category, or target role for the interview session.")
+        return self
 
 
 class InterviewMessageRead(CareerPilotModel):
     id: str
     session_id: str
+    question_id: str | None
     role: MessageRole
     content: str
     question_type: str | None
@@ -603,10 +639,14 @@ class InterviewMessageRead(CareerPilotModel):
 
 class InterviewSessionRead(CareerPilotModel):
     id: str
-    job_id: str
+    job_id: str | None
     resume_profile_id: str | None
     mode: InterviewMode
     title: str | None
+    target_category: JobCategory | None
+    target_role: str | None
+    stage: InterviewStage
+    question_type: str
     created_at: datetime
     updated_at: datetime
     messages: list[InterviewMessageRead] = Field(default_factory=list)
@@ -614,7 +654,7 @@ class InterviewSessionRead(CareerPilotModel):
 
 class InterviewQuestion(AIModel):
     question: str
-    type: Literal["technical", "behavioral", "company", "resume", "role_specific", "system_design", "mixed"]
+    type: InterviewQuestionType
     why_it_matters: str
     strong_answer_should_include: list[str]
 
@@ -629,7 +669,7 @@ class InterviewQuestionResponse(InterviewQuestionsOutput):
 
 class GenerateInterviewQuestionsRequest(BaseModel):
     resume_profile_id: str | None = None
-    question_type: Literal["technical", "behavioral", "company", "resume", "mixed"] = "mixed"
+    question_type: InterviewQuestionType = "mixed"
     count: int = Field(default=10, ge=1, le=20)
 
 
@@ -645,11 +685,99 @@ class InterviewAnswerFeedbackOutput(AIModel):
     what_went_well: list[str]
     what_was_missing: list[str]
     suggested_better_answer: str
+    coaching_notes: list[str] = Field(default_factory=list)
+    evidence_to_add: list[str] = Field(default_factory=list)
+    weak_point_tags: list[WeakPointTag] = Field(default_factory=list)
+    missing_skill_names: list[str] = Field(default_factory=list)
     follow_up_question: str
 
 
 class InterviewAnswerFeedback(InterviewAnswerFeedbackOutput):
     session_id: str | None = None
+    follow_up_question_id: str | None = None
+
+
+class InterviewPracticeQuestionRead(CareerPilotModel):
+    id: str
+    job_id: str | None
+    resume_profile_id: str | None
+    target_category: JobCategory | None
+    target_role: str | None
+    stage: InterviewStage
+    question_type: str
+    content: str
+    why_it_matters: str | None
+    strong_answer_should_include: list[str]
+    source: InterviewQuestionSource
+    prompt_metadata: dict[str, Any]
+    weak_point_tags: list[str]
+    asked_count: int
+    last_asked_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class InterviewPracticeSetCreate(BaseModel):
+    job_id: str | None = None
+    target_category: JobCategory | None = None
+    target_role: str | None = Field(default=None, max_length=255)
+    stage: InterviewStage = InterviewStage.mixed
+    question_type: InterviewQuestionType = "mixed"
+    count: int = Field(default=6, ge=1, le=20)
+    resume_profile_id: str | None = None
+
+    @model_validator(mode="after")
+    def has_target(self) -> "InterviewPracticeSetCreate":
+        if not self.job_id and not self.target_category and not (self.target_role and self.target_role.strip()):
+            raise ValueError("Choose a saved job or provide a target category/role.")
+        return self
+
+
+class InterviewPracticeSetResponse(BaseModel):
+    session_id: str
+    questions: list[InterviewPracticeQuestionRead]
+    reused_count: int
+    generated_count: int
+    job_id: str | None
+    target_category: JobCategory | None
+    target_role: str | None
+    stage: InterviewStage
+    question_type: str
+
+
+class InterviewPracticeAnswerCreate(BaseModel):
+    session_id: str
+    question_id: str
+    answer: str = Field(min_length=1)
+
+
+class InterviewPracticeAnswerFeedback(InterviewAnswerFeedback):
+    question_id: str
+    follow_up_question: str
+    follow_up_question_id: str | None
+    follow_up: InterviewPracticeQuestionRead | None = None
+
+
+class InterviewRecentScore(BaseModel):
+    session_id: str
+    question_id: str | None
+    question: str
+    score: int
+    created_at: datetime
+    weak_point_tags: list[str] = Field(default_factory=list)
+
+
+class InterviewWeakPointInsight(BaseModel):
+    tag: str
+    count: int
+    latest_note: str | None = None
+
+
+class InterviewInsights(BaseModel):
+    average_score: int | None
+    recent_scores: list[InterviewRecentScore] = Field(default_factory=list)
+    weak_points: list[InterviewWeakPointInsight] = Field(default_factory=list)
+    coaching_themes: list[str] = Field(default_factory=list)
 
 
 class StudyPlanRequest(BaseModel):

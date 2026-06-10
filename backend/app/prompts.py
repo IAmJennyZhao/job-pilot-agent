@@ -247,12 +247,19 @@ def interview_questions_prompt(
     resume_text: str,
     question_type: str,
     count: int,
+    stage: str = "mixed",
+    target_category: str | None = None,
+    target_role: str | None = None,
+    prior_questions: list[str] | None = None,
 ) -> str:
     return f"""
 Generate {count} likely interview questions for this job.
 
 Company: {company}
 Role: {role_title}
+Target category: {target_category or ""}
+Target role/focus: {target_role or ""}
+Interview stage: {stage}
 Question type: {question_type}
 
 Job description:
@@ -260,6 +267,11 @@ Job description:
 
 Candidate resume/profile:
 {resume_text}
+
+Already-used questions to avoid unless they are useful weak-point drills:
+{prior_questions or []}
+
+Generate direct, realistic questions for the requested stage and question type. Use the resume/profile for honest personalization, but do not invent experience.
 """.strip()
 
 
@@ -267,23 +279,37 @@ def interview_feedback_prompt(
     company: str,
     role_title: str,
     job_description: str,
+    resume_text: str,
     question: str,
     answer: str,
+    stage: str = "mixed",
+    target_category: str | None = None,
+    target_role: str | None = None,
 ) -> str:
     return f"""
 Evaluate this interview answer constructively.
 
 Company: {company}
 Role: {role_title}
+Target category: {target_category or ""}
+Target role/focus: {target_role or ""}
+Interview stage: {stage}
 
 Job description:
 {job_description}
+
+Candidate resume/profile:
+{resume_text}
 
 Question:
 {question}
 
 Candidate answer:
 {answer}
+
+Return concise, actionable coaching. The stronger answer must stay grounded in the candidate profile and must not invent experience.
+Use weak_point_tags only from: technical_depth, answer_structure, specific_evidence, role_alignment, concision, communication_clarity, missing_skill, company_context, resume_positioning.
+Put only concrete missing technical/domain skills in missing_skill_names; do not include answer structure, clarity, confidence, or storytelling issues there.
 """.strip()
 
 

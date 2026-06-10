@@ -6,6 +6,10 @@ import type {
   CoverageGapResponse,
   DashboardSummary,
   InterviewFeedback,
+  InterviewInsights,
+  InterviewPracticeFeedback,
+  InterviewPracticeSet,
+  InterviewPracticeSetPayload,
   InterviewQuestionResponse,
   InterviewSession,
   Job,
@@ -191,6 +195,17 @@ export const api = {
       body: JSON.stringify(payload)
     }),
   interviewSessions: () => request<InterviewSession[]>("/api/interview/sessions"),
+  interviewInsights: () => request<InterviewInsights>("/api/interview/insights"),
+  createPracticeSet: (payload: InterviewPracticeSetPayload) =>
+    request<InterviewPracticeSet>("/api/interview/practice-sets", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+  evaluatePracticeAnswer: (payload: { session_id: string; question_id: string; answer: string }) =>
+    request<InterviewPracticeFeedback>("/api/interview/answers/evaluate", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
   analyzeJob: (jobId: string) =>
     request<JobDetail["analysis"]>(`/api/ai/analyze-job/${jobId}`, { method: "POST" }),
   suggestResume: (jobId: string) =>

@@ -64,6 +64,20 @@ class InterviewMode(str, enum.Enum):
     live_practice = "live_practice"
 
 
+class InterviewStage(str, enum.Enum):
+    mixed = "mixed"
+    recruiter_screen = "recruiter_screen"
+    tech_screen = "tech_screen"
+    final_interview = "final_interview"
+
+
+class InterviewQuestionSource(str, enum.Enum):
+    advanced_analysis = "advanced_analysis"
+    generated = "generated"
+    follow_up = "follow_up"
+    manual = "manual"
+
+
 class MessageRole(str, enum.Enum):
     ai = "ai"
     user = "user"
@@ -181,6 +195,10 @@ class Job(TimestampMixin, Base):
         back_populates="job",
         cascade="all, delete-orphan",
     )
+    interview_questions: Mapped[list["InterviewQuestion"]] = relationship(
+        back_populates="job",
+        cascade="all, delete-orphan",
+    )
     links: Mapped[list["JobLink"]] = relationship(
         back_populates="job",
         cascade="all, delete-orphan",
@@ -214,7 +232,7 @@ class JobLink(Base):
     __tablename__ = "job_links"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
-    job_id: Mapped[str] = mapped_column(
+    job_id: Mapped[str | None] = mapped_column(
         ForeignKey("jobs.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -511,8 +529,8 @@ class InterviewSession(TimestampMixin, Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
     job_id: Mapped[str] = mapped_column(
-        ForeignKey("jobs.id", ondelete="CASCADE"),
-        nullable=False,
+        ForeignKey("jobs.id", ondelete="SET NULL"),
+        nullable=True,
         index=True,
     )
     resume_profile_id: Mapped[str | None] = mapped_column(
@@ -530,14 +548,98 @@ class InterviewSession(TimestampMixin, Base):
         nullable=False,
     )
     title: Mapped[str | None] = mapped_column(String(255))
+    target_category: Mapped[JobCategory | None] = mapped_column(
+        Enum(
+            JobCategory,
+            values_callable=enum_values,
+            native_enum=False,
+            validate_strings=True,
+        ),
+        nullable=True,
+        index=True,
+    )
+    target_role: Mapped[str | None] = mapped_column(String(255))
+    stage: Mapped[InterviewStage] = mapped_column(
+        Enum(
+            InterviewStage,
+            values_callable=enum_values,
+            native_enum=False,
+            validate_strings=True,
+        ),
+        default=InterviewStage.mixed,
+        nullable=False,
+        index=True,
+    )
+    question_type: Mapped[str] = mapped_column(String(100), default="mixed", nullable=False, index=True)
 
-    job: Mapped[Job] = relationship(back_populates="interview_sessions")
+    job: Mapped[Job | None] = relationship(back_populates="interview_sessions")
     resume_profile: Mapped[ResumeProfile | None] = relationship(back_populates="interview_sessions")
     messages: Mapped[list["InterviewMessage"]] = relationship(
         back_populates="session",
         cascade="all, delete-orphan",
         order_by="InterviewMessage.created_at",
     )
+
+
+class InterviewQuestion(TimestampMixin, Base):
+    __tablename__ = "interview_questions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    job_id: Mapped[str | None] = mapped_column(
+        ForeignKey("jobs.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    resume_profile_id: Mapped[str | None] = mapped_column(
+        ForeignKey("resume_profiles.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    target_category: Mapped[JobCategory | None] = mapped_column(
+        Enum(
+            JobCategory,
+            values_callable=enum_values,
+            native_enum=False,
+            validate_strings=True,
+        ),
+        nullable=True,
+        index=True,
+    )
+    target_role: Mapped[str | None] = mapped_column(String(255))
+    stage: Mapped[InterviewStage] = mapped_column(
+        Enum(
+            InterviewStage,
+            values_callable=enum_values,
+            native_enum=False,
+            validate_strings=True,
+        ),
+        default=InterviewStage.mixed,
+        nullable=False,
+        index=True,
+    )
+    question_type: Mapped[str] = mapped_column(String(100), default="mixed", nullable=False, index=True)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    why_it_matters: Mapped[str | None] = mapped_column(Text)
+    strong_answer_should_include: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    source: Mapped[InterviewQuestionSource] = mapped_column(
+        Enum(
+            InterviewQuestionSource,
+            values_callable=enum_values,
+            native_enum=False,
+            validate_strings=True,
+        ),
+        default=InterviewQuestionSource.generated,
+        nullable=False,
+        index=True,
+    )
+    prompt_metadata: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    weak_point_tags: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    asked_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_asked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+
+    job: Mapped[Job | None] = relationship(back_populates="interview_questions")
+    resume_profile: Mapped[ResumeProfile | None] = relationship()
+    messages: Mapped[list["InterviewMessage"]] = relationship(back_populates="question")
 
 
 class InterviewMessage(Base):
@@ -547,6 +649,11 @@ class InterviewMessage(Base):
     session_id: Mapped[str] = mapped_column(
         ForeignKey("interview_sessions.id", ondelete="CASCADE"),
         nullable=False,
+        index=True,
+    )
+    question_id: Mapped[str | None] = mapped_column(
+        ForeignKey("interview_questions.id", ondelete="SET NULL"),
+        nullable=True,
         index=True,
     )
     role: Mapped[MessageRole] = mapped_column(
@@ -569,6 +676,7 @@ class InterviewMessage(Base):
     )
 
     session: Mapped[InterviewSession] = relationship(back_populates="messages")
+    question: Mapped[InterviewQuestion | None] = relationship(back_populates="messages")
 
 
 class SkillGap(TimestampMixin, Base):

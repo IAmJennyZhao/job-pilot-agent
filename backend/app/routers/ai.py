@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.database import get_db
-from app.services import advanced_analysis_service, ai_service, profile_asset_service, profile_service
+from app.services import advanced_analysis_service, ai_service, interview_service, profile_asset_service, profile_service
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
@@ -98,7 +98,7 @@ def generate_interview_questions(
         if payload.resume_profile_id
         else profile_service.get_active_profile(db)
     )
-    return ai_service.generate_interview_questions(
+    return interview_service.legacy_question_response(
         db,
         _get_job_or_404(db, job_id),
         profile,
@@ -111,7 +111,7 @@ def evaluate_interview_answer(
     payload: schemas.EvaluateInterviewAnswerRequest,
     db: Session = Depends(get_db),
 ):
-    return ai_service.evaluate_interview_answer(db, payload)
+    return interview_service.legacy_evaluate_answer(db, payload)
 
 
 @router.post("/generate-study-plan", response_model=schemas.StudyPlanResponse)

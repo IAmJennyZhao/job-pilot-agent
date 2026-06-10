@@ -4,14 +4,32 @@ from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.database import get_db
+from app.services import interview_service
 
 router = APIRouter(prefix="/api/interview", tags=["interview"])
 
 
+@router.post("/practice-sets", response_model=schemas.InterviewPracticeSetResponse, status_code=status.HTTP_201_CREATED)
+def create_practice_set(payload: schemas.InterviewPracticeSetCreate, db: Session = Depends(get_db)):
+    return interview_service.create_practice_set(db, payload)
+
+
+@router.post("/answers/evaluate", response_model=schemas.InterviewPracticeAnswerFeedback)
+def evaluate_practice_answer(payload: schemas.InterviewPracticeAnswerCreate, db: Session = Depends(get_db)):
+    return interview_service.evaluate_practice_answer(db, payload)
+
+
+@router.get("/insights", response_model=schemas.InterviewInsights)
+def interview_insights(db: Session = Depends(get_db)):
+    return interview_service.interview_insights(db)
+
+
 @router.post("/sessions", response_model=schemas.InterviewSessionRead, status_code=status.HTTP_201_CREATED)
 def create_session(payload: schemas.InterviewSessionCreate, db: Session = Depends(get_db)):
-    if not db.get(models.Job, payload.job_id):
+    if payload.job_id and not db.get(models.Job, payload.job_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+    if payload.resume_profile_id and not db.get(models.ResumeProfile, payload.resume_profile_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resume profile not found")
     session = models.InterviewSession(**payload.model_dump())
     db.add(session)
     db.commit()

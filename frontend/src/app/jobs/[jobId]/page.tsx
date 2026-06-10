@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, CheckCircle2, ChevronDown, ExternalLink, FileText, Mail, Pencil, RefreshCw, Save, Sparkles, X } from "lucide-react";
+import { AlertCircle, CheckCircle2, ChevronDown, ClipboardList, ExternalLink, FileText, Mail, Pencil, RefreshCw, Save, Sparkles, X } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -215,6 +215,15 @@ export default function JobDetailPage() {
             <Link href="/jobs" className="text-sm font-medium text-primary">
               Back to jobs
             </Link>
+            {job ? (
+              <Link
+                href={`/interview?jobId=${job.id}`}
+                className="inline-flex h-8 items-center justify-center gap-2 rounded-md border border-border bg-white px-3 text-xs font-medium text-foreground transition hover:bg-muted"
+              >
+                <ClipboardList className="h-4 w-4" />
+                Practice
+              </Link>
+            ) : null}
             {job && !isEditing ? (
               <Button variant="secondary" size="sm" onClick={() => setIsEditing(true)}>
                 <Pencil className="h-4 w-4" />

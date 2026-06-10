@@ -9,7 +9,7 @@ export function Panel({
   children: React.ReactNode;
 }) {
   return (
-    <section className={cn("rounded-lg border border-border bg-white p-5 shadow-panel", className)}>
+    <section className={cn("rounded-lg border border-border bg-card p-5 text-card-foreground shadow-panel", className)}>
       {children}
     </section>
   );
@@ -37,10 +37,10 @@ export function PageHeader({
 
 export function Badge({ children, tone = "neutral" }: { children: React.ReactNode; tone?: "neutral" | "good" | "warn" | "bad" }) {
   const tones = {
-    neutral: "border-border bg-muted text-muted-foreground",
-    good: "border-emerald-200 bg-emerald-50 text-emerald-700",
-    warn: "border-amber-200 bg-amber-50 text-amber-700",
-    bad: "border-rose-200 bg-rose-50 text-rose-700"
+    neutral: "border-border bg-card-strong/70 text-muted-foreground",
+    good: "border-success-foreground/20 bg-success text-success-foreground",
+    warn: "border-warning-foreground/20 bg-warning text-warning-foreground",
+    bad: "border-destructive/25 bg-destructive/10 text-destructive"
   };
   return (
     <span className={cn("inline-flex items-center rounded-md border px-2 py-1 text-xs font-medium", tones[tone])}>

@@ -167,14 +167,14 @@ function InterviewPageContent() {
           <div className="grid gap-4">
             <div className="grid grid-cols-2 gap-2 rounded-md border border-border bg-muted p-1">
               <button
-                className={cn("rounded px-3 py-2 text-sm font-medium", targetMode === "job" ? "bg-white shadow-sm" : "text-muted-foreground")}
+                className={cn("rounded px-3 py-2 text-sm font-medium", targetMode === "job" ? "bg-card-strong text-primary shadow-sm" : "text-muted-foreground")}
                 onClick={() => setTargetMode("job")}
                 type="button"
               >
                 Saved job
               </button>
               <button
-                className={cn("rounded px-3 py-2 text-sm font-medium", targetMode === "role" ? "bg-white shadow-sm" : "text-muted-foreground")}
+                className={cn("rounded px-3 py-2 text-sm font-medium", targetMode === "role" ? "bg-card-strong text-primary shadow-sm" : "text-muted-foreground")}
                 onClick={() => setTargetMode("role")}
                 type="button"
               >
@@ -340,7 +340,7 @@ function QuestionQueue({
           key={question.id}
           className={cn(
             "rounded-md border p-3 text-left text-sm transition",
-            question.id === activeQuestionId ? "border-primary bg-primary/5" : "border-border bg-white hover:bg-muted"
+            question.id === activeQuestionId ? "border-primary bg-primary/5" : "border-border bg-card-strong/75 hover:bg-muted"
           )}
           onClick={() => onSelect(question.id)}
           type="button"
@@ -386,7 +386,7 @@ function FeedbackPanel({ feedback }: { feedback: InterviewPracticeFeedback }) {
         <p className="mt-1 leading-6 text-muted-foreground">{feedback.suggested_better_answer}</p>
       </div>
       {feedback.follow_up ? (
-        <div className="mt-3 rounded-md border border-border bg-white p-3">
+        <div className="mt-3 rounded-md border border-border bg-card-strong/75 p-3">
           <h4 className="font-medium">Queued follow-up</h4>
           <p className="mt-1 text-muted-foreground">{feedback.follow_up.content}</p>
         </div>

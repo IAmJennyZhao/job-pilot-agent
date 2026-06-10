@@ -218,7 +218,7 @@ export default function JobDetailPage() {
             {job ? (
               <Link
                 href={`/interview?jobId=${job.id}`}
-                className="inline-flex h-8 items-center justify-center gap-2 rounded-md border border-border bg-white px-3 text-xs font-medium text-foreground transition hover:bg-muted"
+                className="inline-flex h-8 items-center justify-center gap-2 rounded-md border border-border bg-secondary px-3 text-xs font-medium text-secondary-foreground transition hover:border-primary/35 hover:bg-accent"
               >
                 <ClipboardList className="h-4 w-4" />
                 Practice
@@ -233,7 +233,7 @@ export default function JobDetailPage() {
           </div>
         }
       />
-      {error ? <Panel className="border-rose-200 bg-rose-50 text-sm text-rose-700">{(error as Error).message}</Panel> : null}
+      {error ? <Panel className="border-destructive/25 bg-destructive/10 text-sm text-destructive">{(error as Error).message}</Panel> : null}
       {isLoading ? <Panel>Loading job...</Panel> : null}
 
       {job ? (
@@ -270,7 +270,7 @@ export default function JobDetailPage() {
             )}
             <ProcessSteps active={advancedMutation.isPending} steps={advancedSteps} />
             {advancedMutation.data?.status === "partial" ? (
-              <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+              <div className="mt-4 rounded-md border border-warning-foreground/20 bg-warning p-3 text-sm text-warning-foreground">
                 {advancedMutation.data.errors.length
                   ? advancedMutation.data.errors.join(" ")
                   : "Advanced analysis completed with partial coverage."}
@@ -479,7 +479,7 @@ function MergedJobDetail({
         </div>
 
         {errors.length ? (
-          <div className="mb-5 grid gap-1 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          <div className="mb-5 grid gap-1 rounded-md border border-warning-foreground/20 bg-warning p-3 text-sm text-warning-foreground">
             {errors.map((error) => (
               <div key={error}>{compactText(error, 120)}</div>
             ))}
@@ -524,12 +524,12 @@ function MergedJobDetail({
             <h2 className="mb-5 text-base font-semibold">Fit And Gaps</h2>
             <div className="grid gap-5 md:grid-cols-3">
               <div>
-                <h3 className="mb-2 text-sm font-medium text-green-700">Fit</h3>
+                <h3 className="mb-2 text-sm font-medium text-success-foreground">Fit</h3>
                 <BulletList items={fitSignals} highlights={highlightPhrases.fit} />
               </div>
               <List title="Keywords" items={resumeKeywords} />
               <div>
-                <h3 className="mb-2 text-sm font-medium text-amber-700">Gaps</h3>
+                <h3 className="mb-2 text-sm font-medium text-warning-foreground">Gaps</h3>
                 <BulletList items={risksGaps} highlights={highlightPhrases.gaps} />
               </div>
             </div>
@@ -975,7 +975,7 @@ function StatusHistoryEditor({
 
 function StatusEventDisplayRow({ event }: { event: JobStatusEvent }) {
   return (
-    <div className="rounded-md border border-border bg-white p-3">
+    <div className="rounded-md border border-border bg-card-strong/75 p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="text-sm font-medium">
           {event.from_status ?? "Created"} to {event.to_status}
@@ -1015,7 +1015,7 @@ function StatusEventRow({
   }, [event.to_status, event.changed_at, event.note]);
 
   return (
-    <div className="rounded-md border border-border bg-white p-3">
+    <div className="rounded-md border border-border bg-card-strong/75 p-3">
       <div className="mb-2 text-xs text-muted-foreground">
         {event.from_status ?? "Created"} to {event.to_status} - {formatDate(event.changed_at)}
       </div>
@@ -1080,7 +1080,7 @@ function AdvancedAnalysisControl({
         <div className="mb-3 grid gap-2 text-sm text-muted-foreground">
           {setupNotes.map((item) => (
             <div key={item} className="flex items-center gap-2">
-              <AlertCircle className="h-4 w-4 text-amber-600" />
+              <AlertCircle className="h-4 w-4 text-warning-foreground" />
               {item}
             </div>
           ))}
@@ -1090,7 +1090,7 @@ function AdvancedAnalysisControl({
         <div className="mb-3 grid gap-2 text-sm text-muted-foreground">
           {skippedNotes.map((item) => (
             <div key={item} className="flex items-center gap-2">
-              <AlertCircle className="h-4 w-4 text-amber-600" />
+              <AlertCircle className="h-4 w-4 text-warning-foreground" />
               {item} may be unavailable.
             </div>
           ))}
@@ -1103,7 +1103,7 @@ function AdvancedAnalysisControl({
       ) : null}
       {readiness?.model ? (
         <div className="mb-3 flex items-center gap-2 text-sm text-muted-foreground">
-          <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+          <CheckCircle2 className="h-4 w-4 text-success-foreground" />
           Extraction model: {readiness.model}
         </div>
       ) : null}
@@ -1192,13 +1192,13 @@ function SourceLinks({ links }: { links: Array<{ title?: string; url?: string }>
 }
 
 const questionTypeColors: Record<string, string> = {
-  technical: "bg-violet-100 text-violet-800 border-violet-200",
-  behavioral: "bg-amber-100 text-amber-800 border-amber-200",
-  resume: "bg-blue-100 text-blue-800 border-blue-200",
-  company: "bg-teal-100 text-teal-800 border-teal-200",
-  role_specific: "bg-rose-100 text-rose-800 border-rose-200",
-  system_design: "bg-indigo-100 text-indigo-800 border-indigo-200",
-  mixed: "bg-gray-100 text-gray-700 border-gray-200",
+  technical: "border-chart-tech/35 bg-chart-tech/15 text-chart-tech",
+  behavioral: "border-warning-foreground/25 bg-warning text-warning-foreground",
+  resume: "border-info-foreground/25 bg-info text-info-foreground",
+  company: "border-chart-applied/35 bg-chart-applied/15 text-info-foreground",
+  role_specific: "border-destructive/25 bg-destructive/10 text-destructive",
+  system_design: "border-primary/25 bg-primary/10 text-primary",
+  mixed: "border-border bg-card-strong/75 text-muted-foreground",
 };
 
 function QuestionList({ questions }: { questions: Array<{ question: string; type: string; why_it_matters: string }> }) {
@@ -1213,7 +1213,7 @@ function QuestionList({ questions }: { questions: Array<{ question: string; type
           onClick={() => setFilter("all")}
           className={cn(
             "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
-            filter === "all" ? "bg-foreground text-background border-foreground" : "border-border hover:bg-muted text-muted-foreground"
+            filter === "all" ? "border-primary bg-primary text-primary-foreground" : "border-border text-muted-foreground hover:bg-muted"
           )}
         >
           All ({questions.length})
@@ -1235,7 +1235,7 @@ function QuestionList({ questions }: { questions: Array<{ question: string; type
       </div>
       <div className="grid gap-3">
         {visible.map((question, index) => (
-          <div key={`${question.question}-${index}`} className="rounded-md border border-border p-3 text-sm">
+          <div key={`${question.question}-${index}`} className="rounded-md border border-border bg-card-strong/55 p-3 text-sm">
             <div className="flex flex-wrap items-start gap-2">
               <span className={cn("shrink-0 rounded border px-1.5 py-0.5 text-xs font-medium", questionTypeColors[question.type] ?? "bg-muted text-muted-foreground border-border")}>
                 {question.type.replace("_", " ")}
@@ -1319,7 +1319,7 @@ function List({ title, items, tone = "neutral" }: { title?: string; items: strin
 
 function InfoRow({ label, value, href }: { label: string; value: string; href?: string }) {
   return (
-    <div className="rounded-md border border-border bg-white p-3">
+    <div className="rounded-md border border-border bg-card-strong/75 p-3">
       <div className="text-xs font-medium uppercase text-muted-foreground">{label}</div>
       {href ? (
         <a href={href} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-2 font-medium text-primary">

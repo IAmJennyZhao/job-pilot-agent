@@ -21,16 +21,17 @@ import { cn, formatDate } from "@/lib/utils";
 const stageOrder = ["Saved", "Applied", "Recruiter Screen", "Tech Screen", "Final Interview", "Offer"];
 const terminalOrder = ["Rejected", "Withdrawn", "Ghosted"];
 const stageColors: Record<string, string> = {
-  Saved: "#0f766e",
-  Applied: "#2563eb",
-  "Recruiter Screen": "#7c3aed",
-  "Tech Screen": "#9333ea",
-  "Final Interview": "#db2777",
-  Offer: "#059669",
-  Rejected: "#e11d48",
-  Withdrawn: "#d97706",
-  Ghosted: "#64748b"
+  Saved: "hsl(var(--chart-saved))",
+  Applied: "hsl(var(--chart-applied))",
+  "Recruiter Screen": "hsl(var(--chart-recruiter))",
+  "Tech Screen": "hsl(var(--chart-tech))",
+  "Final Interview": "hsl(var(--chart-final))",
+  Offer: "hsl(var(--chart-offer))",
+  Rejected: "hsl(var(--chart-rejected))",
+  Withdrawn: "hsl(var(--chart-withdrawn))",
+  Ghosted: "hsl(var(--chart-ghosted))"
 };
+const fallbackStageColor = "hsl(var(--chart-saved))";
 
 function jobsStatusHref(status: string) {
   return `/jobs?status=${encodeURIComponent(status)}`;
@@ -99,10 +100,10 @@ export default function DashboardPage() {
         }
       />
 
-      {error ? <Panel className="border-rose-200 bg-rose-50 text-sm text-rose-700">{(error as Error).message}</Panel> : null}
+      {error ? <Panel className="border-destructive/25 bg-destructive/10 text-sm text-destructive">{(error as Error).message}</Panel> : null}
       {isLoading ? <Panel>Loading dashboard...</Panel> : null}
-      {markGhostedMutation.error ? <Panel className="border-rose-200 bg-rose-50 text-sm text-rose-700">{(markGhostedMutation.error as Error).message}</Panel> : null}
-      {runAnalysisMutation.error ? <Panel className="border-rose-200 bg-rose-50 text-sm text-rose-700">{(runAnalysisMutation.error as Error).message}</Panel> : null}
+      {markGhostedMutation.error ? <Panel className="border-destructive/25 bg-destructive/10 text-sm text-destructive">{(markGhostedMutation.error as Error).message}</Panel> : null}
+      {runAnalysisMutation.error ? <Panel className="border-destructive/25 bg-destructive/10 text-sm text-destructive">{(runAnalysisMutation.error as Error).message}</Panel> : null}
 
       {data ? (
         <>
@@ -258,7 +259,7 @@ function Metric({
     <Panel className="h-full transition hover:border-primary/50 hover:shadow-md">
       <div className="flex items-center justify-between gap-3">
         <div className="text-sm font-medium text-muted-foreground">{title}</div>
-        <div className={cn("grid h-8 w-8 place-items-center rounded-md", tone === "warn" ? "bg-amber-50 text-amber-700" : "bg-accent text-accent-foreground")}>
+        <div className={cn("grid h-8 w-8 place-items-center rounded-md", tone === "warn" ? "bg-warning text-warning-foreground" : "bg-accent text-accent-foreground")}>
           {icon}
         </div>
       </div>
@@ -311,7 +312,7 @@ function SankeyChart({ sankey }: { sankey?: DashboardSankey }) {
           const target = positions.get(link.target);
           if (!source || !target) return null;
           const strokeWidth = Math.max(3, Math.min(30, (link.value / maxCount) * 30));
-          const color = stageColors[link.target] ?? stageColors[link.source] ?? "#0f766e";
+          const color = stageColors[link.target] ?? stageColors[link.source] ?? fallbackStageColor;
           const path = `M ${source.x + 28} ${source.y} C ${source.x + 86} ${source.y}, ${target.x - 86} ${target.y}, ${target.x - 28} ${target.y}`;
           return (
             <a key={`${link.source}-${link.target}`} href={jobsStatusHref(link.target)} aria-label={`Open ${link.target} jobs`} className="cursor-pointer">
@@ -346,15 +347,15 @@ function SankeyNode({
   maxCount: number;
 }) {
   const height = Math.max(24, Math.min(96, (node.count / maxCount) * 96));
-  const color = stageColors[node.id] ?? "#0f766e";
+  const color = stageColors[node.id] ?? fallbackStageColor;
   const labelY = node.kind === "terminal" ? y + 44 : y + 72;
   return (
     <g filter="url(#sankeyShadow)">
       <rect x={x - 24} y={y - height / 2} width="48" height={height} rx="7" fill={color} opacity={node.count ? 0.95 : 0.28} />
-      <text x={x} y={y + 5} textAnchor="middle" className="fill-white text-sm font-semibold">
+      <text x={x} y={y + 5} textAnchor="middle" fill="hsl(var(--primary-foreground))" className="text-sm font-semibold">
         {node.count}
       </text>
-      <text x={x} y={labelY} textAnchor="middle" className="fill-slate-700 text-[11px] font-medium">
+      <text x={x} y={labelY} textAnchor="middle" fill="hsl(var(--foreground))" className="text-[11px] font-medium">
         {node.label}
       </text>
     </g>
@@ -430,7 +431,7 @@ function DashboardJobTile({
   return (
     <div
       className={cn(
-        "grid gap-3 rounded-md border border-border bg-white p-3 transition hover:border-primary/40 hover:bg-muted/30",
+        "grid gap-3 rounded-md border border-border bg-card-strong/75 p-3 transition hover:border-primary/40 hover:bg-accent/45",
         action ? "sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center" : ""
       )}
     >

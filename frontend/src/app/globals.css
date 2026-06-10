@@ -3,17 +3,44 @@
 @tailwind utilities;
 
 :root {
-  --background: 210 40% 98%;
-  --foreground: 215 25% 17%;
-  --muted: 210 22% 94%;
-  --muted-foreground: 215 12% 43%;
-  --border: 214 19% 86%;
-  --primary: 192 79% 32%;
+  --background: 110 37% 97%;
+  --foreground: 133 27% 10%;
+  --card: 109 41% 95%;
+  --card-foreground: 133 27% 10%;
+  --card-strong: 0 0% 100%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 133 27% 10%;
+  --muted: 108 33% 91%;
+  --muted-foreground: 116 8% 38%;
+  --border: 110 26% 82%;
+  --input: 100 60% 99%;
+  --primary: 131 39% 30%;
   --primary-foreground: 0 0% 100%;
-  --accent: 191 70% 92%;
-  --accent-foreground: 192 82% 24%;
-  --destructive: 352 72% 46%;
+  --secondary: 106 37% 93%;
+  --secondary-foreground: 128 23% 19%;
+  --accent: 113 40% 88%;
+  --accent-foreground: 128 33% 25%;
+  --brand: 112 28% 58%;
+  --brand-foreground: 133 27% 10%;
+  --destructive: 357 39% 46%;
   --destructive-foreground: 0 0% 100%;
+  --success: 113 40% 88%;
+  --success-foreground: 131 39% 30%;
+  --warning: 40 57% 86%;
+  --warning-foreground: 37 55% 28%;
+  --info: 160 34% 88%;
+  --info-foreground: 167 32% 28%;
+  --ring: 112 28% 58%;
+  --shadow-color: 112 38% 32%;
+  --chart-saved: 112 28% 58%;
+  --chart-applied: 158 25% 50%;
+  --chart-recruiter: 136 20% 51%;
+  --chart-tech: 139 27% 43%;
+  --chart-final: 98 24% 50%;
+  --chart-offer: 112 38% 32%;
+  --chart-rejected: 356 28% 49%;
+  --chart-withdrawn: 34 37% 46%;
+  --chart-ghosted: 106 8% 43%;
 }
 
 * {
@@ -27,6 +54,10 @@ body {
 
 body {
   margin: 0;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 a {
@@ -36,5 +67,9 @@ a {
 
 table {
   border-collapse: collapse;
+}
+
+::selection {
+  background: hsl(var(--brand) / 0.28);
 }
 

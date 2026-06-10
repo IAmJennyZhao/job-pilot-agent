@@ -7,9 +7,9 @@ type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
 };
 
 const variants = {
-  primary: "bg-primary text-primary-foreground hover:bg-primary/90",
-  secondary: "border border-border bg-white text-foreground hover:bg-muted",
-  ghost: "text-foreground hover:bg-muted",
+  primary: "bg-primary text-primary-foreground shadow-sm hover:bg-primary/90",
+  secondary: "border border-border bg-secondary text-secondary-foreground hover:border-primary/35 hover:bg-accent",
+  ghost: "text-foreground hover:bg-accent/70",
   danger: "bg-destructive text-destructive-foreground hover:bg-destructive/90"
 };
 
@@ -30,7 +30,7 @@ export function Button({
     <button
       type={type}
       className={cn(
-        "inline-flex items-center justify-center gap-2 rounded-md font-medium transition disabled:pointer-events-none disabled:opacity-55",
+        "inline-flex items-center justify-center gap-2 rounded-md font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35 disabled:pointer-events-none disabled:opacity-55",
         variants[variant],
         sizes[size],
         className

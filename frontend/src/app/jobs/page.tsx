@@ -189,7 +189,7 @@ export default function JobsPage() {
               />
             </Field>
             {extractMutation.error ? (
-              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+              <div className="rounded-md border border-warning-foreground/20 bg-warning p-3 text-sm text-warning-foreground">
                 <div>{(extractMutation.error as Error).message}</div>
                 <Button className="mt-3" size="sm" variant="secondary" onClick={startManualFallback}>
                   Use manual fallback
@@ -446,7 +446,7 @@ function ReviewEditor({
         {review.duplicateCount ? <Badge tone="warn">{review.duplicateCount} possible duplicate</Badge> : null}
       </div>
       {preview?.duplicate_candidates.length ? (
-        <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+        <div className="rounded-md border border-warning-foreground/20 bg-warning p-3 text-sm text-warning-foreground">
           {preview.duplicate_candidates.map((candidate) => (
             <div key={candidate.id}>
               Possible duplicate:{" "}
@@ -458,7 +458,7 @@ function ReviewEditor({
         </div>
       ) : null}
       {(review.extraction_warnings ?? []).length ? (
-        <div className="grid gap-1 text-xs text-amber-700">
+        <div className="grid gap-1 text-xs text-warning-foreground">
           {(review.extraction_warnings ?? []).map((warning) => (
             <div key={warning}>{warning}</div>
           ))}
@@ -679,7 +679,7 @@ function PayEditor({ job, onSave }: { job: JobListItem; onSave: (payload: Partia
         <div className="text-xs text-muted-foreground">{formatAnnualPay(job)}</div>
       </button>
       {isOpen ? (
-        <div className="absolute right-0 z-20 mt-2 w-80 rounded-md border border-border bg-white p-3 shadow-xl">
+        <div className="absolute right-0 z-20 mt-2 w-80 rounded-md border border-border bg-popover p-3 text-popover-foreground shadow-xl">
           <div className="grid gap-3">
             <div className="grid grid-cols-2 gap-2">
               <Field label="Min">
@@ -724,9 +724,9 @@ function PayEditor({ job, onSave }: { job: JobListItem; onSave: (payload: Partia
 
 function JobDrawer({ job, onClose }: { job: JobListItem; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-30 bg-black/20" onClick={onClose}>
+    <div className="fixed inset-0 z-30 bg-foreground/25" onClick={onClose}>
       <aside
-        className="ml-auto h-full w-full max-w-xl overflow-y-auto border-l border-border bg-white p-5 shadow-xl"
+        className="ml-auto h-full w-full max-w-xl overflow-y-auto border-l border-border bg-popover p-5 text-popover-foreground shadow-xl"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3">

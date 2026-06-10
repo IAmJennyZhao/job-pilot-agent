@@ -51,7 +51,7 @@ export default function ProfilePage() {
         title="Profile Library"
         description="Manage the aggregate profile, resume options, and reusable cover letter templates used during job review."
       />
-      {error ? <Panel className="border-rose-200 bg-rose-50 text-sm text-rose-700">{(error as Error).message}</Panel> : null}
+      {error ? <Panel className="border-destructive/25 bg-destructive/10 text-sm text-destructive">{(error as Error).message}</Panel> : null}
       {isLoading ? <Panel>Loading profile...</Panel> : null}
       <ProfileReadinessPanel profile={profile ?? null} resumeOptions={resumeOptions} templates={templates} />
       <div className="flex flex-wrap gap-2 border-b border-border pb-2">
@@ -65,7 +65,7 @@ export default function ProfilePage() {
               onClick={() => setActiveTab(tab.key)}
               className={cn(
                 "inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition",
-                active ? "border-primary bg-primary text-primary-foreground" : "border-border bg-white text-muted-foreground hover:text-foreground"
+                active ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card-strong/75 text-muted-foreground hover:bg-accent/50 hover:text-foreground"
               )}
             >
               <Icon className="h-4 w-4" />
@@ -111,7 +111,7 @@ function ProfileReadinessPanel({
       <div className="mt-4 grid gap-3 md:grid-cols-4">
         {checks.map((item) => (
           <div key={item.label} className="flex items-center gap-2 text-sm">
-            {item.ready ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <AlertCircle className="h-4 w-4 text-amber-600" />}
+            {item.ready ? <CheckCircle2 className="h-4 w-4 text-success-foreground" /> : <AlertCircle className="h-4 w-4 text-warning-foreground" />}
             {item.label}
           </div>
         ))}

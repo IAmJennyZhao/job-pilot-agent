@@ -23,6 +23,7 @@ const config: Config = {
         "muted-foreground": "hsl(var(--muted-foreground))",
         primary: "hsl(var(--primary))",
         "primary-foreground": "hsl(var(--primary-foreground))",
+        sidebar: "hsl(var(--sidebar))",
         secondary: "hsl(var(--secondary))",
         "secondary-foreground": "hsl(var(--secondary-foreground))",
         accent: "hsl(var(--accent))",

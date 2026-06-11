@@ -552,18 +552,33 @@ export type InterviewPracticeFeedback = InterviewFeedback & {
   follow_up: InterviewPracticeQuestion | null;
 };
 
+export type InterviewScoreEntry = {
+  message_id: string;
+  session_id: string;
+  question_id: string | null;
+  question: string;
+  answer: string | null;
+  score: number;
+  feedback: Record<string, unknown> | null;
+  created_at: string;
+  weak_point_tags: string[];
+};
+
+export type InterviewTrendPoint = {
+  created_at: string;
+  score: number;
+};
+
 export type InterviewInsights = {
   average_score: number | null;
-  recent_scores: Array<{
-    session_id: string;
-    question_id: string | null;
-    question: string;
-    score: number;
-    created_at: string;
-    weak_point_tags: string[];
-  }>;
-  weak_points: Array<{ tag: string; count: number; latest_note: string | null }>;
+  recent_scores: InterviewScoreEntry[];
+  weak_points: Array<{ tag: string; count: number; latest_note: string | null; examples: InterviewScoreEntry[] }>;
   coaching_themes: string[];
+  trends: {
+    overall: InterviewTrendPoint[];
+    knowledge: InterviewTrendPoint[];
+    interview_skills: InterviewTrendPoint[];
+  };
 };
 
 export type StudyPlan = {

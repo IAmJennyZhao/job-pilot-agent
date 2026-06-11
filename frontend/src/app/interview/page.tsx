@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, ClipboardList, MessageSquareText, Play, RotateCcw, Sparkles, Target } from "lucide-react";
+import { BarChart3, Brain, ChevronDown, ClipboardList, ExternalLink, MessageSquareText, Play, RotateCcw, Sparkles, Target, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
@@ -13,13 +13,17 @@ import { api } from "@/lib/api";
 import { sessionTarget } from "@/lib/interview";
 import {
   jobCategories,
+  type InterviewFeedback,
   type InterviewInsights,
   type InterviewPracticeFeedback,
   type InterviewPracticeQuestion,
   type InterviewPracticeSet,
   type InterviewQuestionType,
+  type InterviewScoreEntry,
   type InterviewSession,
   type InterviewStage,
+  type InterviewTrendPoint,
+  type WeakPointTag,
   type JobCategory
 } from "@/lib/types";
 import { cn, formatDate } from "@/lib/utils";
@@ -179,6 +183,8 @@ function InterviewPageContent() {
   });
 
   const canStart = targetMode === "job" ? Boolean(jobId) : Boolean(targetCategory || targetRole.trim());
+  const selectedJob = jobId ? jobsById.get(jobId) : null;
+  const currentTarget = targetMode === "job" ? (selectedJob ? `${selectedJob.company} - ${selectedJob.role_title}` : "Saved job") : targetRole || targetCategory;
 
   const resetPracticeSet = () => {
     setPracticeSet(null);
@@ -238,7 +244,7 @@ function InterviewPageContent() {
           </div>
         </Panel>
       ) : (
-        <div className="mx-auto w-full max-w-xl">
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,0.92fr)_minmax(360px,1.08fr)]">
           <Panel>
             <div className="mb-4 flex items-center gap-2">
               <Target className="h-4 w-4 text-primary" />
@@ -323,6 +329,14 @@ function InterviewPageContent() {
               </Button>
             </div>
           </Panel>
+          <CommandCenterPanel
+            insights={insights}
+            sessions={sessions}
+            jobsById={jobsById}
+            currentTarget={currentTarget}
+            stage={stage}
+            questionType={questionType}
+          />
         </div>
       )}
 
@@ -350,6 +364,169 @@ function InterviewPageContent() {
         </div>
       )}
     </div>
+  );
+}
+
+function scoreTone(score: number): "good" | "warn" | "bad" {
+  return score >= 75 ? "good" : score >= 50 ? "warn" : "bad";
+}
+
+function labelForWeakPoint(tag: string) {
+  return weakPointLabels[tag] ?? tag.replace("_", " ");
+}
+
+function hasUnansweredPrompts(session: InterviewSession) {
+  const asked = new Set(
+    session.messages
+      .filter((message) => message.role === "ai" && message.score == null && message.question_id)
+      .map((message) => message.question_id as string)
+  );
+  const answered = new Set(
+    session.messages
+      .filter((message) => message.role === "user" && message.question_id)
+      .map((message) => message.question_id as string)
+  );
+  return [...asked].some((questionId) => !answered.has(questionId));
+}
+
+function CommandCenterPanel({
+  insights,
+  sessions,
+  jobsById,
+  currentTarget,
+  stage,
+  questionType
+}: {
+  insights?: InterviewInsights;
+  sessions: InterviewSession[];
+  jobsById: Map<string, { company: string; role_title: string }>;
+  currentTarget: string;
+  stage: InterviewStage;
+  questionType: InterviewQuestionType;
+}) {
+  const latestScore = insights?.recent_scores[0] ?? null;
+  const topWeakPoint = insights?.weak_points[0] ?? null;
+  const resumableSession = sessions.find(hasUnansweredPrompts);
+  const nextAction = !latestScore
+    ? "Start a first scored practice round."
+    : topWeakPoint
+      ? `Work on ${labelForWeakPoint(topWeakPoint.tag).toLowerCase()} next.`
+      : latestScore.score < 75
+        ? "Review the latest feedback before starting another set."
+        : "Keep the streak going with a fresh question set.";
+
+  return (
+    <Panel>
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <BarChart3 className="h-4 w-4 text-primary" />
+          <h2 className="text-base font-semibold">Command Center</h2>
+        </div>
+        <Badge>{insights?.average_score == null ? "No score" : `Avg ${insights.average_score}`}</Badge>
+      </div>
+
+      <div className="grid gap-4">
+        <div className="rounded-md border border-border bg-muted/35 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-medium uppercase text-muted-foreground">Current target</p>
+              <p className="mt-1 font-semibold">{currentTarget}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {stage.replace("_", " ")} - {questionType.replace("_", " ")}
+              </p>
+            </div>
+            {latestScore ? <Badge tone={scoreTone(latestScore.score)}>Latest {latestScore.score}</Badge> : <Badge>No reps yet</Badge>}
+          </div>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-3">
+          <TrendMetric title="Overall" points={insights?.trends?.overall ?? []} />
+          <TrendMetric title="Knowledge" points={insights?.trends?.knowledge ?? []} />
+          <TrendMetric title="Interview skills" points={insights?.trends?.interview_skills ?? []} />
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="rounded-md border border-border bg-card-strong/60 p-3">
+            <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
+              <Brain className="h-4 w-4 text-primary" />
+              Next action
+            </div>
+            <p className="text-sm leading-6 text-muted-foreground">{nextAction}</p>
+            {topWeakPoint ? (
+              <div className="mt-3">
+                <Badge tone="warn">
+                  {labelForWeakPoint(topWeakPoint.tag)} ({topWeakPoint.count})
+                </Badge>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="rounded-md border border-border bg-card-strong/60 p-3">
+            <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
+              <ClipboardList className="h-4 w-4 text-primary" />
+              Session cue
+            </div>
+            {resumableSession ? (
+              <div className="grid gap-3">
+                <p className="text-sm leading-6 text-muted-foreground">{sessionTarget(resumableSession, jobsById)}</p>
+                <Link href={`/interview?resumeSessionId=${resumableSession.id}`}>
+                  <Button size="sm" variant="secondary">Resume session</Button>
+                </Link>
+              </div>
+            ) : (
+              <p className="text-sm leading-6 text-muted-foreground">No unfinished practice set is waiting.</p>
+            )}
+          </div>
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
+function TrendMetric({ title, points }: { title: string; points: InterviewTrendPoint[] }) {
+  const latest = points.at(-1)?.score ?? null;
+  const first = points[0]?.score ?? null;
+  const delta = latest != null && first != null && points.length > 1 ? latest - first : null;
+  return (
+    <div className="rounded-md border border-border bg-muted/25 p-3">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-medium text-muted-foreground">{title}</span>
+        <span className="text-sm font-semibold">{latest ?? "--"}</span>
+      </div>
+      <TrendSparkline points={points} />
+      <div className="mt-1 text-[11px] text-muted-foreground">
+        {delta == null ? `${points.length} scored` : `${delta >= 0 ? "+" : ""}${delta} since first`}
+      </div>
+    </div>
+  );
+}
+
+function TrendSparkline({ points }: { points: InterviewTrendPoint[] }) {
+  const width = 160;
+  const height = 44;
+  const padding = 4;
+  if (!points.length) {
+    return <div className="mt-2 h-11 rounded bg-muted/60" />;
+  }
+
+  const values = points.map((point) => point.score);
+  const min = Math.min(0, ...values);
+  const max = Math.max(100, ...values);
+  const range = Math.max(1, max - min);
+  const coordinates = points.map((point, index) => {
+    const x = points.length === 1 ? width / 2 : padding + (index / (points.length - 1)) * (width - padding * 2);
+    const y = padding + ((max - point.score) / range) * (height - padding * 2);
+    return { x, y };
+  });
+  const path = coordinates.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(" ");
+  const last = coordinates.at(-1)!;
+
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} className="mt-2 h-11 w-full" role="img" aria-label="Score trend">
+      <path d={`M ${padding} ${height - padding} L ${width - padding} ${height - padding}`} stroke="hsl(var(--border))" strokeWidth="1" />
+      {points.length > 1 ? <path d={path} fill="none" stroke="hsl(var(--chart-tech))" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" /> : null}
+      <circle cx={last.x} cy={last.y} r="3.5" fill="hsl(var(--chart-tech))" />
+    </svg>
   );
 }
 
@@ -415,7 +592,34 @@ function FeedbackPanel({ feedback }: { feedback: InterviewPracticeFeedback }) {
   );
 }
 
+type InsightSelection =
+  | { kind: "weak_point"; weakPoint: InterviewInsights["weak_points"][number] }
+  | { kind: "score"; score: InterviewScoreEntry };
+
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function scoreEntryFeedback(entry: InterviewScoreEntry): InterviewFeedback {
+  const feedback = entry.feedback ?? {};
+  return {
+    score: entry.score,
+    what_went_well: asStringArray(feedback.what_went_well),
+    what_was_missing: asStringArray(feedback.what_was_missing),
+    suggested_better_answer: typeof feedback.suggested_better_answer === "string" ? feedback.suggested_better_answer : "",
+    coaching_notes: asStringArray(feedback.coaching_notes),
+    evidence_to_add: asStringArray(feedback.evidence_to_add),
+    weak_point_tags: asStringArray(feedback.weak_point_tags) as WeakPointTag[],
+    missing_skill_names: asStringArray(feedback.missing_skill_names),
+    follow_up_question: typeof feedback.follow_up_question === "string" ? feedback.follow_up_question : "",
+    session_id: entry.session_id,
+    follow_up_question_id: typeof feedback.follow_up_question_id === "string" ? feedback.follow_up_question_id : null
+  };
+}
+
 function InsightsPanel({ insights }: { insights?: InterviewInsights }) {
+  const [selection, setSelection] = React.useState<InsightSelection | null>(null);
+
   return (
     <Panel>
       <div className="mb-4 flex items-center justify-between gap-3">
@@ -431,13 +635,23 @@ function InsightsPanel({ insights }: { insights?: InterviewInsights }) {
           <div className="mt-2 grid gap-2">
             {insights?.weak_points.length ? (
               insights.weak_points.slice(0, 6).map((item) => (
-                <div key={item.tag} className="rounded-md border border-border bg-muted/40 p-3 text-sm">
+                <button
+                  key={item.tag}
+                  type="button"
+                  onClick={() => setSelection({ kind: "weak_point", weakPoint: item })}
+                  className={cn(
+                    "rounded-md border p-3 text-left text-sm transition hover:bg-muted",
+                    selection?.kind === "weak_point" && selection.weakPoint.tag === item.tag
+                      ? "border-primary bg-primary/5"
+                      : "border-border bg-muted/40"
+                  )}
+                >
                   <div className="flex items-center justify-between gap-2">
-                    <span className="font-medium">{weakPointLabels[item.tag] ?? item.tag.replace("_", " ")}</span>
+                    <span className="font-medium">{labelForWeakPoint(item.tag)}</span>
                     <Badge tone="warn">{item.count}</Badge>
                   </div>
                   {item.latest_note ? <p className="mt-1 text-xs leading-5 text-muted-foreground">{item.latest_note}</p> : null}
-                </div>
+                </button>
               ))
             ) : (
               <p className="text-sm text-muted-foreground">No weak-point data yet.</p>
@@ -449,13 +663,23 @@ function InsightsPanel({ insights }: { insights?: InterviewInsights }) {
           <div className="mt-2 grid gap-2">
             {insights?.recent_scores.length ? (
               insights.recent_scores.slice(0, 5).map((item) => (
-                <div key={`${item.session_id}-${item.created_at}`} className="rounded-md border border-border bg-muted/40 p-3 text-sm">
+                <button
+                  key={item.message_id}
+                  type="button"
+                  onClick={() => setSelection({ kind: "score", score: item })}
+                  className={cn(
+                    "rounded-md border p-3 text-left text-sm transition hover:bg-muted",
+                    selection?.kind === "score" && selection.score.message_id === item.message_id
+                      ? "border-primary bg-primary/5"
+                      : "border-border bg-muted/40"
+                  )}
+                >
                   <div className="flex items-center justify-between gap-2">
                     <span className="line-clamp-1 font-medium">{item.question}</span>
-                    <Badge tone={item.score >= 75 ? "good" : item.score >= 50 ? "warn" : "bad"}>{item.score}</Badge>
+                    <Badge tone={scoreTone(item.score)}>{item.score}</Badge>
                   </div>
                   <div className="mt-1 text-xs text-muted-foreground">{formatDate(item.created_at)}</div>
-                </div>
+                </button>
               ))
             ) : (
               <p className="text-sm text-muted-foreground">No evaluated answers yet.</p>
@@ -463,7 +687,71 @@ function InsightsPanel({ insights }: { insights?: InterviewInsights }) {
           </div>
         </div>
       </div>
+      {selection ? <InsightDrawer selection={selection} onClose={() => setSelection(null)} /> : null}
     </Panel>
+  );
+}
+
+function InsightDrawer({ selection, onClose }: { selection: InsightSelection; onClose: () => void }) {
+  const entries = selection.kind === "weak_point" ? selection.weakPoint.examples : [selection.score];
+  const title = selection.kind === "weak_point" ? labelForWeakPoint(selection.weakPoint.tag) : "Recent score";
+  const detail = selection.kind === "weak_point" ? `${selection.weakPoint.count} tagged score${selection.weakPoint.count === 1 ? "" : "s"}` : formatDate(selection.score.created_at);
+
+  return (
+    <div className="mt-5 rounded-md border border-border bg-card-strong/65 p-4">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="font-semibold">{title}</h3>
+          <p className="mt-1 text-xs text-muted-foreground">{detail}</p>
+        </div>
+        <Button size="icon" variant="ghost" onClick={onClose} aria-label="Close insight details">
+          <X className="h-4 w-4" />
+        </Button>
+      </div>
+      <div className="grid gap-4">
+        {entries.length ? (
+          entries.map((entry) => <ScoreEntryDetails key={entry.message_id} entry={entry} />)
+        ) : (
+          <p className="text-sm text-muted-foreground">No scored examples are available for this weak point yet.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ScoreEntryDetails({ entry }: { entry: InterviewScoreEntry }) {
+  return (
+    <div className="rounded-md border border-border bg-card p-4 text-sm">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <Badge tone={scoreTone(entry.score)}>Score {entry.score}</Badge>
+        <span className="text-xs text-muted-foreground">{formatDate(entry.created_at)}</span>
+        {entry.weak_point_tags.map((tag) => (
+          <Badge key={tag} tone="warn">
+            {labelForWeakPoint(tag)}
+          </Badge>
+        ))}
+      </div>
+      <p className="font-medium leading-6">{entry.question}</p>
+      {entry.answer ? (
+        <div className="mt-3 rounded-md border border-border bg-muted/30 p-3">
+          <h4 className="font-medium">Your answer</h4>
+          <p className="mt-1 leading-6 text-muted-foreground">{entry.answer}</p>
+        </div>
+      ) : null}
+      {entry.feedback ? (
+        <div className="mt-3 rounded-md border border-border bg-muted/40 p-3">
+          <FeedbackDetails feedback={scoreEntryFeedback(entry)} />
+        </div>
+      ) : null}
+      <div className="mt-3">
+        <Link href={`/interview/sessions/${entry.session_id}`}>
+          <Button size="sm" variant="secondary">
+            <ExternalLink className="h-4 w-4" />
+            Open session
+          </Button>
+        </Link>
+      </div>
+    </div>
   );
 }
 

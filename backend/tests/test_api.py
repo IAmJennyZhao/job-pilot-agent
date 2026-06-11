@@ -1449,6 +1449,21 @@ def test_practice_answer_feedback_follow_up_insights_and_skill_gaps(client, monk
     assert insights["average_score"] == 62
     assert [item["tag"] for item in insights["weak_points"]] == ["answer_structure", "missing_skill"]
     assert insights["coaching_themes"] == ["Use a tighter STAR structure."]
+    recent_score = insights["recent_scores"][0]
+    assert recent_score["message_id"]
+    assert recent_score["session_id"] == practice_set["session_id"]
+    assert recent_score["question_id"] == question_id
+    assert recent_score["question"] == "How do you approach production incident debugging?"
+    assert recent_score["answer"] == "I would check logs and fix the issue."
+    assert recent_score["feedback"]["what_was_missing"] == ["Needs stronger incident structure"]
+    assert recent_score["created_at"]
+    assert recent_score["weak_point_tags"] == ["answer_structure", "missing_skill"]
+    for weak_point in insights["weak_points"]:
+        assert weak_point["examples"]
+        assert all(weak_point["tag"] in example["weak_point_tags"] for example in weak_point["examples"])
+    assert insights["trends"]["overall"][0]["score"] == 62
+    assert insights["trends"]["knowledge"][0]["score"] == 62
+    assert insights["trends"]["interview_skills"][0]["score"] == 62
 
     skill_gaps = client.get("/api/skill-gaps").json()
     assert [gap["skill_name"] for gap in skill_gaps] == ["Incident response"]

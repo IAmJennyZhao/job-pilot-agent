@@ -759,10 +759,13 @@ class InterviewPracticeAnswerFeedback(InterviewAnswerFeedback):
 
 
 class InterviewRecentScore(BaseModel):
+    message_id: str
     session_id: str
     question_id: str | None
     question: str
+    answer: str | None = None
     score: int
+    feedback: dict[str, Any] | None = None
     created_at: datetime
     weak_point_tags: list[str] = Field(default_factory=list)
 
@@ -771,6 +774,18 @@ class InterviewWeakPointInsight(BaseModel):
     tag: str
     count: int
     latest_note: str | None = None
+    examples: list[InterviewRecentScore] = Field(default_factory=list)
+
+
+class InterviewTrendPoint(BaseModel):
+    created_at: datetime
+    score: int
+
+
+class InterviewTrendSeries(BaseModel):
+    overall: list[InterviewTrendPoint] = Field(default_factory=list)
+    knowledge: list[InterviewTrendPoint] = Field(default_factory=list)
+    interview_skills: list[InterviewTrendPoint] = Field(default_factory=list)
 
 
 class InterviewInsights(BaseModel):
@@ -778,6 +793,7 @@ class InterviewInsights(BaseModel):
     recent_scores: list[InterviewRecentScore] = Field(default_factory=list)
     weak_points: list[InterviewWeakPointInsight] = Field(default_factory=list)
     coaching_themes: list[str] = Field(default_factory=list)
+    trends: InterviewTrendSeries = Field(default_factory=InterviewTrendSeries)
 
 
 class StudyPlanRequest(BaseModel):

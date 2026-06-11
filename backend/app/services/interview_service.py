@@ -13,6 +13,16 @@ from app.services import ai_service, profile_asset_service, profile_service, ski
 
 
 MAX_INSIGHT_MESSAGES = 50
+WEAK_POINT_EXAMPLE_LIMIT = 3
+KNOWLEDGE_TREND_TAGS = {"technical_depth", "missing_skill", "company_context"}
+INTERVIEW_SKILL_TREND_TAGS = {
+    "answer_structure",
+    "specific_evidence",
+    "role_alignment",
+    "concision",
+    "communication_clarity",
+    "resume_positioning",
+}
 WHITESPACE_RE = re.compile(r"\s+")
 
 
@@ -646,6 +656,42 @@ def legacy_evaluate_answer(
     return schemas.InterviewAnswerFeedback(**feedback.model_dump())
 
 
+def _answer_for_score_message(message: models.InterviewMessage) -> str | None:
+    if not message.question_id:
+        return None
+
+    matching_answers = [
+        candidate
+        for candidate in message.session.messages
+        if candidate.role == models.MessageRole.user and candidate.question_id == message.question_id
+    ]
+    if not matching_answers:
+        return None
+
+    answers_before_score = [candidate for candidate in matching_answers if candidate.created_at <= message.created_at]
+    return (answers_before_score or matching_answers)[-1].content
+
+
+def _score_entry(message: models.InterviewMessage) -> schemas.InterviewRecentScore:
+    feedback = message.feedback or {}
+    tags = [str(tag) for tag in feedback.get("weak_point_tags", [])]
+    return schemas.InterviewRecentScore(
+        message_id=message.id,
+        session_id=message.session_id,
+        question_id=message.question_id,
+        question=message.question.content if message.question else message.content,
+        answer=_answer_for_score_message(message),
+        score=message.score or 0,
+        feedback=feedback,
+        created_at=message.created_at,
+        weak_point_tags=tags,
+    )
+
+
+def _trend_point(score: schemas.InterviewRecentScore) -> schemas.InterviewTrendPoint:
+    return schemas.InterviewTrendPoint(created_at=score.created_at, score=score.score)
+
+
 def interview_insights(db: Session) -> schemas.InterviewInsights:
     messages = list(
         db.scalars(
@@ -663,10 +709,12 @@ def interview_insights(db: Session) -> schemas.InterviewInsights:
     latest_notes: dict[str, str] = {}
     coaching_themes: list[str] = []
     recent_scores: list[schemas.InterviewRecentScore] = []
+    examples_by_tag: dict[str, list[schemas.InterviewRecentScore]] = {}
 
     for message in messages:
-        feedback = message.feedback or {}
-        tags = [str(tag) for tag in feedback.get("weak_point_tags", [])]
+        score = _score_entry(message)
+        feedback = score.feedback or {}
+        tags = score.weak_point_tags
         tag_counts.update(tags)
         note_candidates = [
             *[str(item) for item in feedback.get("what_was_missing", [])],
@@ -678,22 +726,33 @@ def interview_insights(db: Session) -> schemas.InterviewInsights:
         for note in [str(item) for item in feedback.get("coaching_notes", [])]:
             if note and note not in coaching_themes:
                 coaching_themes.append(note)
-        recent_scores.append(
-            schemas.InterviewRecentScore(
-                session_id=message.session_id,
-                question_id=message.question_id,
-                question=message.question.content if message.question else message.content,
-                score=message.score or 0,
-                created_at=message.created_at,
-                weak_point_tags=tags,
-            )
-        )
+        for tag in tags:
+            examples = examples_by_tag.setdefault(tag, [])
+            if len(examples) < WEAK_POINT_EXAMPLE_LIMIT:
+                examples.append(score)
+        recent_scores.append(score)
+
+    chronological_scores = list(reversed(recent_scores))
+    trends = schemas.InterviewTrendSeries(
+        overall=[_trend_point(score) for score in chronological_scores],
+        knowledge=[
+            _trend_point(score)
+            for score in chronological_scores
+            if set(score.weak_point_tags).intersection(KNOWLEDGE_TREND_TAGS)
+        ],
+        interview_skills=[
+            _trend_point(score)
+            for score in chronological_scores
+            if set(score.weak_point_tags).intersection(INTERVIEW_SKILL_TREND_TAGS)
+        ],
+    )
 
     weak_points = [
         schemas.InterviewWeakPointInsight(
             tag=tag,
             count=count,
             latest_note=latest_notes.get(tag),
+            examples=examples_by_tag.get(tag, []),
         )
         for tag, count in tag_counts.most_common()
     ]
@@ -702,6 +761,7 @@ def interview_insights(db: Session) -> schemas.InterviewInsights:
         recent_scores=recent_scores[:10],
         weak_points=weak_points,
         coaching_themes=coaching_themes[:6],
+        trends=trends,
     )
 
 

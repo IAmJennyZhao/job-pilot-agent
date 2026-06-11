@@ -12,6 +12,7 @@ export type ThemeColorKey =
   | "input"
   | "primary"
   | "primaryForeground"
+  | "sidebar"
   | "secondary"
   | "secondaryForeground"
   | "accent"
@@ -58,6 +59,7 @@ const cssVariableNames: Record<ThemeColorKey, `--${string}`> = {
   input: "--input",
   primary: "--primary",
   primaryForeground: "--primary-foreground",
+  sidebar: "--sidebar",
   secondary: "--secondary",
   secondaryForeground: "--secondary-foreground",
   accent: "--accent",
@@ -101,8 +103,9 @@ export const themes = {
       mutedForeground: "#5B695A",
       border: "#C8DCC4",
       input: "#FCFEFB",
-      primary: "#2F6A3A",
+      primary: "#3A503F",
       primaryForeground: "#FFFFFF",
+      sidebar: "#3A503F",
       secondary: "#EAF4E7",
       secondaryForeground: "#263D29",
       accent: "#D8EDD5",

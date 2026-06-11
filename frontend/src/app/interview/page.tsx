@@ -183,9 +183,6 @@ function InterviewPageContent() {
   });
 
   const canStart = targetMode === "job" ? Boolean(jobId) : Boolean(targetCategory || targetRole.trim());
-  const selectedJob = jobId ? jobsById.get(jobId) : null;
-  const currentTarget = targetMode === "job" ? (selectedJob ? `${selectedJob.company} - ${selectedJob.role_title}` : "Saved job") : targetRole || targetCategory;
-
   const resetPracticeSet = () => {
     setPracticeSet(null);
     setQueue([]);
@@ -333,9 +330,6 @@ function InterviewPageContent() {
             insights={insights}
             sessions={sessions}
             jobsById={jobsById}
-            currentTarget={currentTarget}
-            stage={stage}
-            questionType={questionType}
           />
         </div>
       )}
@@ -392,17 +386,11 @@ function hasUnansweredPrompts(session: InterviewSession) {
 function CommandCenterPanel({
   insights,
   sessions,
-  jobsById,
-  currentTarget,
-  stage,
-  questionType
+  jobsById
 }: {
   insights?: InterviewInsights;
   sessions: InterviewSession[];
   jobsById: Map<string, { company: string; role_title: string }>;
-  currentTarget: string;
-  stage: InterviewStage;
-  questionType: InterviewQuestionType;
 }) {
   const latestScore = insights?.recent_scores[0] ?? null;
   const topWeakPoint = insights?.weak_points[0] ?? null;
@@ -417,28 +405,12 @@ function CommandCenterPanel({
 
   return (
     <Panel>
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <BarChart3 className="h-4 w-4 text-primary" />
-          <h2 className="text-base font-semibold">Command Center</h2>
-        </div>
-        <Badge>{insights?.average_score == null ? "No score" : `Avg ${insights.average_score}`}</Badge>
+      <div className="mb-4 flex items-center gap-2">
+        <BarChart3 className="h-4 w-4 text-primary" />
+        <h2 className="text-base font-semibold">Command Center</h2>
       </div>
 
       <div className="grid gap-4">
-        <div className="rounded-md border border-border bg-muted/35 p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-xs font-medium uppercase text-muted-foreground">Current target</p>
-              <p className="mt-1 font-semibold">{currentTarget}</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {stage.replace("_", " ")} - {questionType.replace("_", " ")}
-              </p>
-            </div>
-            {latestScore ? <Badge tone={scoreTone(latestScore.score)}>Latest {latestScore.score}</Badge> : <Badge>No reps yet</Badge>}
-          </div>
-        </div>
-
         <div className="grid gap-3 md:grid-cols-3">
           <TrendMetric title="Overall" points={insights?.trends?.overall ?? []} />
           <TrendMetric title="Knowledge" points={insights?.trends?.knowledge ?? []} />
@@ -482,7 +454,6 @@ function CommandCenterPanel({
     </Panel>
   );
 }
-
 function TrendMetric({ title, points }: { title: string; points: InterviewTrendPoint[] }) {
   const latest = points.at(-1)?.score ?? null;
   const first = points[0]?.score ?? null;
@@ -622,12 +593,9 @@ function InsightsPanel({ insights }: { insights?: InterviewInsights }) {
 
   return (
     <Panel>
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Sparkles className="h-4 w-4 text-primary" />
-          <h2 className="text-base font-semibold">Interview Insights</h2>
-        </div>
-        <Badge>{insights?.average_score == null ? "No score" : `Avg ${insights.average_score}`}</Badge>
+      <div className="mb-4 flex items-center gap-2">
+        <Sparkles className="h-4 w-4 text-primary" />
+        <h2 className="text-base font-semibold">Interview Insights</h2>
       </div>
       <div className="grid gap-4 md:grid-cols-2">
         <div>

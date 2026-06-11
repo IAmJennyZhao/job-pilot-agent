@@ -457,18 +457,6 @@ export type DashboardSkillGap = {
   suggested_action: string;
 };
 
-export type InterviewQuestion = {
-  question: string;
-  type: string;
-  why_it_matters: string;
-  strong_answer_should_include: string[];
-};
-
-export type InterviewQuestionResponse = {
-  session_id: string | null;
-  questions: InterviewQuestion[];
-};
-
 export type InterviewFeedback = {
   score: number;
   what_went_well: string[];

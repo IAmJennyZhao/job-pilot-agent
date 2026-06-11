@@ -757,14 +757,16 @@ def test_dashboard_skill_gaps_are_active_opportunity_weighted(client, monkeypatc
         status="Ghosted",
     )
 
-    def fake_suggestion(output_model, _system_prompt, _user_prompt):
+    def fake_structured_output(output_model, _system_prompt, _user_prompt):
+        if output_model is schemas.JobAnalysisOutput:
+            return fake_analysis_output()
         if output_model is schemas.ResumeSuggestionOutput:
             return fake_resume_suggestion_output()
         raise AssertionError("Unexpected model")
 
-    monkeypatch.setattr("app.services.ai_service.get_structured_output", fake_suggestion)
+    monkeypatch.setattr("app.services.ai_service.get_structured_output", fake_structured_output)
 
-    response = client.post(f"/api/ai/suggest-resume/{matched['id']}")
+    response = client.post(f"/api/ai/run-job-intelligence/{matched['id']}")
     assert response.status_code == 200
 
     response = client.get("/api/dashboard/summary")
@@ -787,14 +789,16 @@ def test_job_list_top_gaps_sources(client, monkeypatch):
     assert listed_job["top_gaps"] == ["Python", "FastAPI", "React"]
     assert listed_job["top_gaps_source"] == "analysis"
 
-    def fake_suggestion(output_model, _system_prompt, _user_prompt):
+    def fake_structured_output(output_model, _system_prompt, _user_prompt):
+        if output_model is schemas.JobAnalysisOutput:
+            return fake_analysis_output()
         if output_model is schemas.ResumeSuggestionOutput:
             return fake_resume_suggestion_output()
         raise AssertionError("Unexpected model")
 
-    monkeypatch.setattr("app.services.ai_service.get_structured_output", fake_suggestion)
+    monkeypatch.setattr("app.services.ai_service.get_structured_output", fake_structured_output)
 
-    response = client.post(f"/api/ai/suggest-resume/{job['id']}")
+    response = client.post(f"/api/ai/run-job-intelligence/{job['id']}")
     assert response.status_code == 200
 
     response = client.get("/api/jobs")
@@ -978,6 +982,25 @@ def test_ai_readiness_reports_missing_requirements(client, monkeypatch):
         "Resume text",
         "Skills",
     }
+
+
+def test_removed_legacy_ai_endpoints_return_not_found(client):
+    job = create_job(client)
+
+    removed_requests = [
+        ("post", f"/api/ai/analyze-job/{job['id']}", {}),
+        ("post", f"/api/ai/suggest-resume/{job['id']}", {}),
+        ("post", f"/api/ai/generate-interview-questions/{job['id']}", {"question_type": "mixed", "count": 1}),
+        (
+            "post",
+            "/api/ai/evaluate-interview-answer",
+            {"job_id": job["id"], "question": "Question?", "answer": "Answer."},
+        ),
+    ]
+
+    for method, path, payload in removed_requests:
+        response = getattr(client, method)(path, json=payload)
+        assert response.status_code == 404
 
 
 def test_run_job_intelligence_completes_and_persists(client, monkeypatch):

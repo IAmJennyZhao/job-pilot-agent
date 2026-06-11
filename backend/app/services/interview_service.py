@@ -439,38 +439,6 @@ def create_practice_set(
     )
 
 
-def legacy_question_response(
-    db: Session,
-    job: models.Job,
-    profile: models.ResumeProfile | None,
-    request: schemas.GenerateInterviewQuestionsRequest,
-) -> schemas.InterviewQuestionResponse:
-    response = create_practice_set(
-        db,
-        schemas.InterviewPracticeSetCreate(
-            job_id=job.id,
-            target_category=job.category,
-            target_role=job.role_title,
-            stage=models.InterviewStage.mixed,
-            question_type=request.question_type,
-            count=request.count,
-            resume_profile_id=profile.id if profile else None,
-        ),
-    )
-    return schemas.InterviewQuestionResponse(
-        session_id=response.session_id,
-        questions=[
-            schemas.InterviewQuestion(
-                question=question.content,
-                type=question.question_type,  # type: ignore[arg-type]
-                why_it_matters=question.why_it_matters or "",
-                strong_answer_should_include=question.strong_answer_should_include,
-            )
-            for question in response.questions
-        ],
-    )
-
-
 def _practice_target_for_session(
     db: Session,
     session: models.InterviewSession,
@@ -592,68 +560,6 @@ def evaluate_practice_answer(
         follow_up_question_id=follow_up.id if follow_up else None,
         follow_up=schemas.InterviewPracticeQuestionRead.model_validate(follow_up) if follow_up else None,
     )
-
-
-def legacy_evaluate_answer(
-    db: Session,
-    payload: schemas.EvaluateInterviewAnswerRequest,
-) -> schemas.InterviewAnswerFeedback:
-    job = db.get(models.Job, payload.job_id)
-    if not job:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
-    session = db.get(models.InterviewSession, payload.session_id) if payload.session_id else None
-    profile = (
-        db.get(models.ResumeProfile, session.resume_profile_id)
-        if session and session.resume_profile_id
-        else profile_service.get_active_profile(db)
-    )
-    if not session:
-        session = models.InterviewSession(
-            job_id=job.id,
-            resume_profile_id=profile.id if profile else None,
-            mode=models.InterviewMode.live_practice,
-            title=f"{job.role_title} practice",
-            target_category=job.category,
-            target_role=job.role_title,
-            stage=models.InterviewStage.mixed,
-            question_type="mixed",
-        )
-        db.add(session)
-        db.flush()
-
-    question, _ = _save_question(
-        db,
-        content=payload.question,
-        source=models.InterviewQuestionSource.manual,
-        job=job,
-        profile=profile,
-        target_category=job.category,
-        target_role=job.role_title,
-        stage=session.stage,
-        question_type=session.question_type,
-    )
-    question.asked_count += 1
-    question.last_asked_at = datetime.now(timezone.utc)
-    db.add(question)
-    db.add(
-        models.InterviewMessage(
-            session_id=session.id,
-            question_id=question.id,
-            role=models.MessageRole.ai,
-            content=question.content,
-            question_type=question.question_type,
-        )
-    )
-    db.flush()
-    feedback = evaluate_practice_answer(
-        db,
-        schemas.InterviewPracticeAnswerCreate(
-            session_id=session.id,
-            question_id=question.id,
-            answer=payload.answer,
-        ),
-    )
-    return schemas.InterviewAnswerFeedback(**feedback.model_dump())
 
 
 def _answer_for_score_message(message: models.InterviewMessage) -> str | None:

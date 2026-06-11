@@ -5,12 +5,10 @@ import type {
   CoverLetterTemplate,
   CoverageGapResponse,
   DashboardSummary,
-  InterviewFeedback,
   InterviewInsights,
   InterviewPracticeFeedback,
   InterviewPracticeSet,
   InterviewPracticeSetPayload,
-  InterviewQuestionResponse,
   InterviewSession,
   Job,
   JobCategory,
@@ -23,7 +21,6 @@ import type {
   JobStatus,
   ResumeProfile,
   ResumeOption,
-  ResumeSuggestion,
   SkillGap,
   StudyPlan
 } from "@/lib/types";
@@ -208,10 +205,6 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload)
     }),
-  analyzeJob: (jobId: string) =>
-    request<JobDetail["analysis"]>(`/api/ai/analyze-job/${jobId}`, { method: "POST" }),
-  suggestResume: (jobId: string) =>
-    request<ResumeSuggestion>(`/api/ai/suggest-resume/${jobId}`, { method: "POST" }),
   aiReadiness: (jobId: string) => request<AIReadiness>(`/api/ai/readiness/${jobId}`),
   runJobIntelligence: (jobId: string) =>
     request<JobIntelligenceResponse>(`/api/ai/run-job-intelligence/${jobId}`, { method: "POST" }),
@@ -224,24 +217,6 @@ export const api = {
       `/api/ai/run-advanced-analysis/${jobId}${refreshCompany ? "?refresh_company=true" : ""}`,
       { method: "POST" }
     ),
-  generateInterviewQuestions: (
-    jobId: string,
-    payload: { question_type: string; count: number; resume_profile_id?: string | null }
-  ) =>
-    request<InterviewQuestionResponse>(`/api/ai/generate-interview-questions/${jobId}`, {
-      method: "POST",
-      body: JSON.stringify(payload)
-    }),
-  evaluateInterviewAnswer: (payload: {
-    job_id: string;
-    question: string;
-    answer: string;
-    session_id?: string | null;
-  }) =>
-    request<InterviewFeedback>("/api/ai/evaluate-interview-answer", {
-      method: "POST",
-      body: JSON.stringify(payload)
-    }),
   generateStudyPlan: (payload: {
     resume_profile_id?: string | null;
     timeframe: "1 week" | "2 weeks" | "1 month";

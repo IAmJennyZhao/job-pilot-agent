@@ -663,23 +663,6 @@ class InterviewQuestionsOutput(AIModel):
     questions: list[InterviewQuestion]
 
 
-class InterviewQuestionResponse(InterviewQuestionsOutput):
-    session_id: str | None = None
-
-
-class GenerateInterviewQuestionsRequest(BaseModel):
-    resume_profile_id: str | None = None
-    question_type: InterviewQuestionType = "mixed"
-    count: int = Field(default=10, ge=1, le=20)
-
-
-class EvaluateInterviewAnswerRequest(BaseModel):
-    job_id: str
-    question: str = Field(min_length=1)
-    answer: str = Field(min_length=1)
-    session_id: str | None = None
-
-
 class InterviewAnswerFeedbackOutput(AIModel):
     score: int = Field(ge=0, le=100)
     what_went_well: list[str]

@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.database import get_db
-from app.services import advanced_analysis_service, ai_service, interview_service, profile_asset_service, profile_service
+from app.services import advanced_analysis_service, ai_service, profile_asset_service, profile_service
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
@@ -13,11 +13,6 @@ def _get_job_or_404(db: Session, job_id: str) -> models.Job:
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
     return job
-
-
-@router.post("/analyze-job/{job_id}", response_model=schemas.JobAnalysisRead)
-def analyze_job(job_id: str, db: Session = Depends(get_db)):
-    return ai_service.analyze_job_description(db, _get_job_or_404(db, job_id))
 
 
 @router.get("/readiness/{job_id}", response_model=schemas.AIReadiness)
@@ -62,56 +57,12 @@ def run_advanced_analysis(
     )
 
 
-@router.post("/suggest-resume/{job_id}", response_model=schemas.ResumeSuggestionRead)
-def suggest_resume(job_id: str, db: Session = Depends(get_db)):
-    profile = profile_service.get_active_profile(db)
-    if not profile:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resume profile not found")
-    job = _get_job_or_404(db, job_id)
-    return ai_service.suggest_resume_changes(
-        db,
-        job,
-        profile,
-        resume_option=profile_asset_service.best_resume_option_for_job(db, job),
-    )
-
-
 @router.post("/rank-assets/{job_id}", response_model=schemas.AssetRecommendationRead)
 def rank_assets(job_id: str, db: Session = Depends(get_db)):
     profile = profile_service.get_active_profile(db)
     if not profile:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resume profile not found")
     return profile_asset_service.create_ai_recommendation_snapshot(db, _get_job_or_404(db, job_id))
-
-
-@router.post(
-    "/generate-interview-questions/{job_id}",
-    response_model=schemas.InterviewQuestionResponse,
-)
-def generate_interview_questions(
-    job_id: str,
-    payload: schemas.GenerateInterviewQuestionsRequest,
-    db: Session = Depends(get_db),
-):
-    profile = (
-        db.get(models.ResumeProfile, payload.resume_profile_id)
-        if payload.resume_profile_id
-        else profile_service.get_active_profile(db)
-    )
-    return interview_service.legacy_question_response(
-        db,
-        _get_job_or_404(db, job_id),
-        profile,
-        payload,
-    )
-
-
-@router.post("/evaluate-interview-answer", response_model=schemas.InterviewAnswerFeedback)
-def evaluate_interview_answer(
-    payload: schemas.EvaluateInterviewAnswerRequest,
-    db: Session = Depends(get_db),
-):
-    return interview_service.legacy_evaluate_answer(db, payload)
 
 
 @router.post("/generate-study-plan", response_model=schemas.StudyPlanResponse)

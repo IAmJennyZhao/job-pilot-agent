@@ -5,7 +5,6 @@ import {
   BriefcaseBusiness,
   ClipboardList,
   GraduationCap,
-  MessageSquare,
   UserRound
 } from "lucide-react";
 import Link from "next/link";
@@ -17,8 +16,7 @@ const nav = [
   { href: "/jobs", label: "Jobs", icon: BriefcaseBusiness },
   { href: "/profile", label: "Profile", icon: UserRound },
   { href: "/interview", label: "Interview", icon: ClipboardList },
-  { href: "/skills", label: "Skills", icon: GraduationCap },
-  { href: "/chat", label: "Chat", icon: MessageSquare }
+  { href: "/skills", label: "Skills", icon: GraduationCap }
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {

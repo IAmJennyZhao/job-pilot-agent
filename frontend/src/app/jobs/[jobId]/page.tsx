@@ -1096,7 +1096,7 @@ function AdvancedAnalysisControl({
           ))}
           {!readiness?.has_profile || !readiness.has_resume_text || !readiness.has_skills ? (
             <Link href="/profile" className="font-medium text-primary">
-              Open profile
+              Open Application Assets
             </Link>
           ) : null}
         </div>

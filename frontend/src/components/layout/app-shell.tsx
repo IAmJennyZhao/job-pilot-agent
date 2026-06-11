@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 const nav = [
   { href: "/dashboard", label: "Dashboard", icon: BarChart3 },
   { href: "/jobs", label: "Jobs", icon: BriefcaseBusiness },
-  { href: "/profile", label: "Profile", icon: UserRound },
+  { href: "/profile", label: "Application Assets", icon: UserRound },
   { href: "/interview", label: "Interview", icon: ClipboardList },
   { href: "/skills", label: "Skills", icon: GraduationCap }
 ];

@@ -4,10 +4,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   Download,
   FileSearch,
   FileText,
   Mail,
+  Pencil,
   Save,
   Search,
   Trash2,
@@ -22,18 +25,18 @@ import { api } from "@/lib/api";
 import type { CoverLetterTemplate, CoverageGapResponse, ResumeOption, ResumeProfile } from "@/lib/types";
 import { cn, csvToList, formatDate, listToCsv } from "@/lib/utils";
 
-type TabKey = "overview" | "resumes" | "templates" | "gaps";
+type TabKey = "base" | "resumes" | "templates" | "coverage";
 
 const tabs: Array<{ key: TabKey; label: string; icon: React.ElementType }> = [
-  { key: "overview", label: "Overview", icon: UserRound },
-  { key: "resumes", label: "Resume Options", icon: FileText },
+  { key: "base", label: "Base Profile", icon: UserRound },
+  { key: "resumes", label: "Resume Variants", icon: FileText },
   { key: "templates", label: "Cover Letters", icon: Mail },
-  { key: "gaps", label: "Coverage Gaps", icon: Search }
+  { key: "coverage", label: "Coverage Audit", icon: Search }
 ];
 
 export default function ProfilePage() {
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = React.useState<TabKey>("overview");
+  const [activeTab, setActiveTab] = React.useState<TabKey>("base");
   const { data: profile, isLoading, error } = useQuery({ queryKey: ["profile"], queryFn: api.profile });
   const { data: resumeOptions = [] } = useQuery({ queryKey: ["resume-options"], queryFn: api.resumeOptions });
   const { data: templates = [] } = useQuery({ queryKey: ["cover-letter-templates"], queryFn: api.coverLetterTemplates });
@@ -48,12 +51,12 @@ export default function ProfilePage() {
   return (
     <div className="grid gap-6">
       <PageHeader
-        title="Profile Library"
-        description="Manage the aggregate profile, resume options, and reusable cover letter templates used during job review."
+        title="Application Assets"
+        description="Base profile, resume variants, cover letter templates, and coverage audit."
       />
       {error ? <Panel className="border-destructive/25 bg-destructive/10 text-sm text-destructive">{(error as Error).message}</Panel> : null}
-      {isLoading ? <Panel>Loading profile...</Panel> : null}
-      <ProfileReadinessPanel profile={profile ?? null} resumeOptions={resumeOptions} templates={templates} />
+      {isLoading ? <Panel>Loading application assets...</Panel> : null}
+      <ReadinessStrip profile={profile ?? null} resumeOptions={resumeOptions} templates={templates} />
       <div className="flex flex-wrap gap-2 border-b border-border pb-2">
         {tabs.map((tab) => {
           const Icon = tab.icon;
@@ -74,15 +77,15 @@ export default function ProfilePage() {
           );
         })}
       </div>
-      {activeTab === "overview" ? <OverviewTab profile={profile ?? null} onSaved={invalidateProfileAssets} /> : null}
-      {activeTab === "resumes" ? <ResumeOptionsTab resumeOptions={resumeOptions} onChanged={invalidateProfileAssets} /> : null}
+      {activeTab === "base" ? <BaseProfileTab profile={profile ?? null} onSaved={invalidateProfileAssets} /> : null}
+      {activeTab === "resumes" ? <ResumeVariantsTab resumeOptions={resumeOptions} onChanged={invalidateProfileAssets} /> : null}
       {activeTab === "templates" ? <CoverLetterTemplatesTab templates={templates} onChanged={invalidateProfileAssets} /> : null}
-      {activeTab === "gaps" ? <CoverageGapsTab /> : null}
+      {activeTab === "coverage" ? <CoverageAuditTab /> : null}
     </div>
   );
 }
 
-function ProfileReadinessPanel({
+function ReadinessStrip({
   profile,
   resumeOptions,
   templates
@@ -92,35 +95,41 @@ function ProfileReadinessPanel({
   templates: CoverLetterTemplate[];
 }) {
   const checks = [
-    { label: "Aggregate profile", ready: Boolean(profile) },
-    { label: "Profile skills", ready: Boolean(profile?.skills.length) },
+    { label: "Base profile", ready: Boolean(profile) },
+    { label: "Skills", ready: Boolean(profile?.skills.length) },
     { label: "Ready resume", ready: resumeOptions.some((option) => option.status === "ready") },
     { label: "Cover template", ready: Boolean(templates.length) }
   ];
   const ready = checks.every((item) => item.ready);
+  const StatusIcon = ready ? CheckCircle2 : AlertCircle;
 
   return (
-    <Panel>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="text-base font-semibold">Application Asset Readiness</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Job review uses these assets for resume and template recommendations.</p>
+    <Panel className="p-3">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex items-center gap-2">
+          <StatusIcon className={cn("h-4 w-4", ready ? "text-success-foreground" : "text-warning-foreground")} />
+          <span className="text-sm font-semibold">{ready ? "Ready for job review" : "Needs assets"}</span>
         </div>
-        <Badge tone={ready ? "good" : "warn"}>{ready ? "Ready" : "Needs assets"}</Badge>
-      </div>
-      <div className="mt-4 grid gap-3 md:grid-cols-4">
-        {checks.map((item) => (
-          <div key={item.label} className="flex items-center gap-2 text-sm">
-            {item.ready ? <CheckCircle2 className="h-4 w-4 text-success-foreground" /> : <AlertCircle className="h-4 w-4 text-warning-foreground" />}
-            {item.label}
-          </div>
-        ))}
+        <div className="flex flex-wrap gap-2">
+          {checks.map((item) => (
+            <span
+              key={item.label}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium",
+                item.ready ? "border-success-foreground/20 bg-success text-success-foreground" : "border-warning-foreground/20 bg-warning text-warning-foreground"
+              )}
+            >
+              {item.ready ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertCircle className="h-3.5 w-3.5" />}
+              {item.label}
+            </span>
+          ))}
+        </div>
       </div>
     </Panel>
   );
 }
 
-function OverviewTab({ profile, onSaved }: { profile: ResumeProfile | null; onSaved: () => void }) {
+function BaseProfileTab({ profile, onSaved }: { profile: ResumeProfile | null; onSaved: () => void }) {
   const [form, setForm] = React.useState(() => profileFormFromProfile(profile));
   React.useEffect(() => setForm(profileFormFromProfile(profile)), [profile]);
   const mutation = useMutation({
@@ -144,8 +153,8 @@ function OverviewTab({ profile, onSaved }: { profile: ResumeProfile | null; onSa
 
   return (
     <Panel>
-      <SectionHeader icon={UserRound} title={profile ? "Aggregate Profile" : "Create Aggregate Profile"} />
-      <div className="grid gap-4">
+      <SectionHeader icon={UserRound} title={profile ? "Base Profile" : "Create Base Profile"} />
+      <div className="mt-4 grid gap-4">
         <div className="grid gap-4 lg:grid-cols-2">
           <Field label="Name">
             <Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
@@ -161,29 +170,31 @@ function OverviewTab({ profile, onSaved }: { profile: ResumeProfile | null; onSa
           <Field label="Skills">
             <Textarea value={form.skills} onChange={(event) => setForm({ ...form, skills: event.target.value })} />
           </Field>
+          <Field label="Certifications">
+            <Textarea value={form.certifications} onChange={(event) => setForm({ ...form, certifications: event.target.value })} />
+          </Field>
+        </div>
+        <AdvancedDetails>
           <Field label="Skill groups">
             <Textarea value={form.skill_groups} onChange={(event) => setForm({ ...form, skill_groups: event.target.value })} />
           </Field>
-        </div>
-        <Field label="Certifications">
-          <Textarea value={form.certifications} onChange={(event) => setForm({ ...form, certifications: event.target.value })} />
-        </Field>
-        <div className="grid gap-4 lg:grid-cols-3">
-          <Field label="Experience">
-            <Textarea className="min-h-48 font-mono text-xs" value={form.experience_json} onChange={(event) => setForm({ ...form, experience_json: event.target.value })} />
+          <div className="grid gap-4 lg:grid-cols-3">
+            <Field label="Experience">
+              <Textarea className="min-h-48 font-mono text-xs" value={form.experience_json} onChange={(event) => setForm({ ...form, experience_json: event.target.value })} />
+            </Field>
+            <Field label="Projects">
+              <Textarea className="min-h-48 font-mono text-xs" value={form.projects_json} onChange={(event) => setForm({ ...form, projects_json: event.target.value })} />
+            </Field>
+            <Field label="Education">
+              <Textarea className="min-h-48 font-mono text-xs" value={form.education_json} onChange={(event) => setForm({ ...form, education_json: event.target.value })} />
+            </Field>
+          </div>
+          <Field label="Raw resume text">
+            <Textarea className="min-h-48" value={form.resume_text} onChange={(event) => setForm({ ...form, resume_text: event.target.value })} />
           </Field>
-          <Field label="Projects">
-            <Textarea className="min-h-48 font-mono text-xs" value={form.projects_json} onChange={(event) => setForm({ ...form, projects_json: event.target.value })} />
-          </Field>
-          <Field label="Education">
-            <Textarea className="min-h-48 font-mono text-xs" value={form.education_json} onChange={(event) => setForm({ ...form, education_json: event.target.value })} />
-          </Field>
-        </div>
-        <Field label="Raw resume text">
-          <Textarea className="min-h-48" value={form.resume_text} onChange={(event) => setForm({ ...form, resume_text: event.target.value })} />
-        </Field>
+        </AdvancedDetails>
         {mutation.error ? <p className="text-sm text-destructive">{(mutation.error as Error).message}</p> : null}
-        <Button onClick={() => mutation.mutate()} disabled={mutation.isPending}>
+        <Button className="justify-self-start" onClick={() => mutation.mutate()} disabled={mutation.isPending}>
           <Save className="h-4 w-4" />
           {mutation.isPending ? "Saving..." : "Save profile"}
         </Button>
@@ -192,22 +203,46 @@ function OverviewTab({ profile, onSaved }: { profile: ResumeProfile | null; onSa
   );
 }
 
-function ResumeOptionsTab({ resumeOptions, onChanged }: { resumeOptions: ResumeOption[]; onChanged: () => void }) {
+function ResumeVariantsTab({ resumeOptions, onChanged }: { resumeOptions: ResumeOption[]; onChanged: () => void }) {
   const [file, setFile] = React.useState<File | null>(null);
+  const [fileInputKey, setFileInputKey] = React.useState(0);
+  const [expandedResumeId, setExpandedResumeId] = React.useState<string | null>(null);
+  const pendingResumeId = React.useRef<string | null>(null);
+
+  React.useEffect(() => {
+    if (!resumeOptions.length) {
+      if (!pendingResumeId.current) setExpandedResumeId(null);
+      return;
+    }
+    if (pendingResumeId.current) {
+      if (resumeOptions.some((option) => option.id === pendingResumeId.current)) {
+        setExpandedResumeId(pendingResumeId.current);
+        pendingResumeId.current = null;
+      }
+      return;
+    }
+    if (!expandedResumeId || !resumeOptions.some((option) => option.id === expandedResumeId)) {
+      setExpandedResumeId(resumeOptions[0].id);
+    }
+  }, [expandedResumeId, resumeOptions]);
+
   const importMutation = useMutation({
     mutationFn: () => {
       if (!file) throw new Error("Choose a PDF file first.");
       return api.importResumeOption(file);
     },
-    onSuccess: () => {
+    onSuccess: (option) => {
+      pendingResumeId.current = option.id;
+      setExpandedResumeId(option.id);
       setFile(null);
+      setFileInputKey((value) => value + 1);
       onChanged();
     }
   });
   const createMutation = useMutation({
     mutationFn: () =>
       api.createResumeOption({
-        title: "New Resume Option",
+        title: "New Resume Variant",
         status: "draft",
         parsed_text: "",
         skills: [],
@@ -219,36 +254,133 @@ function ResumeOptionsTab({ resumeOptions, onChanged }: { resumeOptions: ResumeO
         education: [],
         certifications: []
       }),
-    onSuccess: onChanged
+    onSuccess: (option) => {
+      pendingResumeId.current = option.id;
+      setExpandedResumeId(option.id);
+      onChanged();
+    }
   });
 
   return (
     <div className="grid gap-4">
-      <Panel>
-        <SectionHeader icon={Upload} title="Import Resume PDF" />
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <Input type="file" accept="application/pdf,.pdf" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <SectionHeader icon={Upload} title="Resume Variants" />
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <Input
+            key={fileInputKey}
+            className="sm:w-72"
+            type="file"
+            accept="application/pdf,.pdf"
+            onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+          />
           <Button onClick={() => importMutation.mutate()} disabled={importMutation.isPending || !file}>
             <Upload className="h-4 w-4" />
             {importMutation.isPending ? "Importing..." : "Import PDF"}
           </Button>
           <Button variant="secondary" onClick={() => createMutation.mutate()} disabled={createMutation.isPending}>
             <FileText className="h-4 w-4" />
-            New option
+            New variant
           </Button>
         </div>
-        {importMutation.error ? <p className="mt-3 text-sm text-destructive">{(importMutation.error as Error).message}</p> : null}
-      </Panel>
+      </div>
+      {importMutation.error ? <p className="text-sm text-destructive">{(importMutation.error as Error).message}</p> : null}
       {resumeOptions.length ? (
-        resumeOptions.map((option) => <ResumeOptionEditor key={option.id} option={option} onChanged={onChanged} />)
+        resumeOptions.map((option) =>
+          option.id === expandedResumeId ? (
+            <ResumeOptionEditor
+              key={option.id}
+              option={option}
+              onChanged={onChanged}
+              onDeleted={() => setExpandedResumeId(null)}
+            />
+          ) : (
+            <ResumeOptionCard
+              key={option.id}
+              option={option}
+              onEdit={() => setExpandedResumeId(option.id)}
+              onChanged={onChanged}
+            />
+          )
+        )
       ) : (
-        <Panel className="text-sm text-muted-foreground">No resume options yet.</Panel>
+        <Panel className="text-sm text-muted-foreground">No resume variants yet.</Panel>
       )}
     </div>
   );
 }
 
-function ResumeOptionEditor({ option, onChanged }: { option: ResumeOption; onChanged: () => void }) {
+function ResumeOptionCard({
+  option,
+  onEdit,
+  onChanged
+}: {
+  option: ResumeOption;
+  onEdit: () => void;
+  onChanged: () => void;
+}) {
+  const confirmMutation = useMutation({
+    mutationFn: () => api.confirmResumeOption(option.id, false),
+    onSuccess: onChanged
+  });
+  const deleteMutation = useMutation({ mutationFn: () => api.deleteResumeOption(option.id), onSuccess: onChanged });
+
+  const deleteOption = () => {
+    if (window.confirm(`Delete ${option.title}? This cannot be undone.`)) {
+      deleteMutation.mutate();
+    }
+  };
+
+  return (
+    <Panel className="p-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <AssetHeading
+          title={option.title}
+          badge={<Badge tone={option.status === "ready" ? "good" : "warn"}>{option.status}</Badge>}
+          meta={`${option.source_filename ? `${option.source_filename} - ` : ""}Updated ${formatDate(option.updated_at)}`}
+        />
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" size="sm" onClick={onEdit}>
+            <Pencil className="h-4 w-4" />
+            Edit
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => confirmMutation.mutate()}
+            disabled={confirmMutation.isPending || option.status === "ready"}
+          >
+            <CheckCircle2 className="h-4 w-4" />
+            Ready
+          </Button>
+          {option.source_filename ? (
+            <a href={api.resumeOptionDownloadUrl(option.id)} className="inline-flex h-8 items-center gap-2 rounded-md border border-border bg-secondary px-3 text-xs font-medium text-secondary-foreground hover:border-primary/35 hover:bg-accent">
+              <Download className="h-4 w-4" />
+              PDF
+            </a>
+          ) : null}
+          <Button variant="ghost" size="sm" onClick={deleteOption} disabled={deleteMutation.isPending}>
+            <Trash2 className="h-4 w-4" />
+            Delete
+          </Button>
+        </div>
+      </div>
+      <div className="mt-3 grid gap-2">
+        <PreviewTags label="Roles" items={option.target_roles} />
+        <PreviewTags label="Skills/keywords" items={[...option.skills, ...option.target_keywords]} />
+      </div>
+    </Panel>
+  );
+}
+
+function ResumeOptionEditor({
+  option,
+  onChanged,
+  onDeleted
+}: {
+  option: ResumeOption;
+  onChanged: () => void;
+  onDeleted: () => void;
+}) {
   const [form, setForm] = React.useState(() => resumeFormFromOption(option));
   React.useEffect(() => setForm(resumeFormFromOption(option)), [option]);
   const saveMutation = useMutation({
@@ -274,29 +406,36 @@ function ResumeOptionEditor({ option, onChanged }: { option: ResumeOption; onCha
     mutationFn: (merge: boolean) => api.confirmResumeOption(option.id, merge),
     onSuccess: onChanged
   });
-  const deleteMutation = useMutation({ mutationFn: () => api.deleteResumeOption(option.id), onSuccess: onChanged });
+  const deleteMutation = useMutation({
+    mutationFn: () => api.deleteResumeOption(option.id),
+    onSuccess: () => {
+      onDeleted();
+      onChanged();
+    }
+  });
+
+  const deleteOption = () => {
+    if (window.confirm(`Delete ${option.title}? This cannot be undone.`)) {
+      deleteMutation.mutate();
+    }
+  };
 
   return (
     <Panel>
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <div className="flex items-center gap-2">
-            <h2 className="text-base font-semibold">{option.title}</h2>
-            <Badge tone={option.status === "ready" ? "good" : "warn"}>{option.status}</Badge>
-          </div>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {option.source_filename ? `${option.source_filename} - ` : ""}
-            Updated {formatDate(option.updated_at)}
-          </p>
-        </div>
+      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <AssetHeading
+          title={option.title}
+          badge={<Badge tone={option.status === "ready" ? "good" : "warn"}>{option.status}</Badge>}
+          meta={`${option.source_filename ? `${option.source_filename} - ` : ""}Updated ${formatDate(option.updated_at)}`}
+        />
         <div className="flex flex-wrap gap-2">
           {option.source_filename ? (
-            <a href={api.resumeOptionDownloadUrl(option.id)} className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-muted-foreground hover:text-foreground">
+            <a href={api.resumeOptionDownloadUrl(option.id)} className="inline-flex h-8 items-center gap-2 rounded-md border border-border bg-secondary px-3 text-xs font-medium text-secondary-foreground hover:border-primary/35 hover:bg-accent">
               <Download className="h-4 w-4" />
               PDF
             </a>
           ) : null}
-          <Button variant="secondary" size="sm" onClick={() => confirmMutation.mutate(false)} disabled={confirmMutation.isPending}>
+          <Button variant="secondary" size="sm" onClick={() => confirmMutation.mutate(false)} disabled={confirmMutation.isPending || option.status === "ready"}>
             <CheckCircle2 className="h-4 w-4" />
             Ready
           </Button>
@@ -304,8 +443,9 @@ function ResumeOptionEditor({ option, onChanged }: { option: ResumeOption; onCha
             <UserRound className="h-4 w-4" />
             Ready + merge
           </Button>
-          <Button variant="ghost" size="sm" onClick={() => deleteMutation.mutate()} disabled={deleteMutation.isPending}>
+          <Button variant="ghost" size="sm" onClick={deleteOption} disabled={deleteMutation.isPending}>
             <Trash2 className="h-4 w-4" />
+            Delete
           </Button>
         </div>
       </div>
@@ -335,35 +475,37 @@ function ResumeOptionEditor({ option, onChanged }: { option: ResumeOption; onCha
             <Textarea value={form.target_keywords} onChange={(event) => setForm({ ...form, target_keywords: event.target.value })} />
           </Field>
         </div>
-        <div className="grid gap-4 lg:grid-cols-2">
-          <Field label="Skills">
-            <Textarea value={form.skills} onChange={(event) => setForm({ ...form, skills: event.target.value })} />
-          </Field>
-          <Field label="Skill groups">
-            <Textarea value={form.skill_groups} onChange={(event) => setForm({ ...form, skill_groups: event.target.value })} />
-          </Field>
-        </div>
-        <Field label="Certifications">
-          <Textarea value={form.certifications} onChange={(event) => setForm({ ...form, certifications: event.target.value })} />
+        <Field label="Skills">
+          <Textarea value={form.skills} onChange={(event) => setForm({ ...form, skills: event.target.value })} />
         </Field>
-        <div className="grid gap-4 lg:grid-cols-3">
-          <Field label="Experience">
-            <Textarea className="min-h-48 font-mono text-xs" value={form.experience_json} onChange={(event) => setForm({ ...form, experience_json: event.target.value })} />
+        <AdvancedDetails>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Field label="Skill groups">
+              <Textarea value={form.skill_groups} onChange={(event) => setForm({ ...form, skill_groups: event.target.value })} />
+            </Field>
+            <Field label="Certifications">
+              <Textarea value={form.certifications} onChange={(event) => setForm({ ...form, certifications: event.target.value })} />
+            </Field>
+          </div>
+          <div className="grid gap-4 lg:grid-cols-3">
+            <Field label="Experience">
+              <Textarea className="min-h-48 font-mono text-xs" value={form.experience_json} onChange={(event) => setForm({ ...form, experience_json: event.target.value })} />
+            </Field>
+            <Field label="Projects">
+              <Textarea className="min-h-48 font-mono text-xs" value={form.projects_json} onChange={(event) => setForm({ ...form, projects_json: event.target.value })} />
+            </Field>
+            <Field label="Education">
+              <Textarea className="min-h-48 font-mono text-xs" value={form.education_json} onChange={(event) => setForm({ ...form, education_json: event.target.value })} />
+            </Field>
+          </div>
+          <Field label="Parsed resume text">
+            <Textarea className="min-h-56" value={form.parsed_text} onChange={(event) => setForm({ ...form, parsed_text: event.target.value })} />
           </Field>
-          <Field label="Projects">
-            <Textarea className="min-h-48 font-mono text-xs" value={form.projects_json} onChange={(event) => setForm({ ...form, projects_json: event.target.value })} />
-          </Field>
-          <Field label="Education">
-            <Textarea className="min-h-48 font-mono text-xs" value={form.education_json} onChange={(event) => setForm({ ...form, education_json: event.target.value })} />
-          </Field>
-        </div>
-        <Field label="Parsed resume text">
-          <Textarea className="min-h-56" value={form.parsed_text} onChange={(event) => setForm({ ...form, parsed_text: event.target.value })} />
-        </Field>
+        </AdvancedDetails>
         {saveMutation.error ? <p className="text-sm text-destructive">{(saveMutation.error as Error).message}</p> : null}
-        <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
+        <Button className="justify-self-start" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
           <Save className="h-4 w-4" />
-          {saveMutation.isPending ? "Saving..." : "Save resume option"}
+          {saveMutation.isPending ? "Saving..." : "Save resume variant"}
         </Button>
       </div>
     </Panel>
@@ -371,15 +513,36 @@ function ResumeOptionEditor({ option, onChanged }: { option: ResumeOption; onCha
 }
 
 function CoverLetterTemplatesTab({ templates, onChanged }: { templates: CoverLetterTemplate[]; onChanged: () => void }) {
+  const [expandedTemplateId, setExpandedTemplateId] = React.useState<string | null>(null);
+  const pendingTemplateId = React.useRef<string | null>(null);
+
+  React.useEffect(() => {
+    if (!expandedTemplateId) return;
+    if (pendingTemplateId.current) {
+      if (templates.some((template) => template.id === pendingTemplateId.current)) {
+        setExpandedTemplateId(pendingTemplateId.current);
+        pendingTemplateId.current = null;
+      }
+      return;
+    }
+    if (!templates.some((template) => template.id === expandedTemplateId)) {
+      setExpandedTemplateId(null);
+    }
+  }, [expandedTemplateId, templates]);
+
   const createMutation = useMutation({
     mutationFn: () => api.createCoverLetterTemplate({ title: "New Cover Letter Template", target_roles: [], target_keywords: [], body: "" }),
-    onSuccess: onChanged
+    onSuccess: (template) => {
+      pendingTemplateId.current = template.id;
+      setExpandedTemplateId(template.id);
+      onChanged();
+    }
   });
   return (
     <div className="grid gap-4">
       <Panel>
         <div className="flex items-center justify-between gap-3">
-          <SectionHeader icon={Mail} title="Cover Letter Templates" />
+          <SectionHeader icon={Mail} title="Cover Letters" />
           <Button onClick={() => createMutation.mutate()} disabled={createMutation.isPending}>
             <Mail className="h-4 w-4" />
             New template
@@ -387,7 +550,23 @@ function CoverLetterTemplatesTab({ templates, onChanged }: { templates: CoverLet
         </div>
       </Panel>
       {templates.length ? (
-        templates.map((template) => <CoverLetterTemplateEditor key={template.id} template={template} onChanged={onChanged} />)
+        templates.map((template) =>
+          template.id === expandedTemplateId ? (
+            <CoverLetterTemplateEditor
+              key={template.id}
+              template={template}
+              onChanged={onChanged}
+              onDeleted={() => setExpandedTemplateId(null)}
+            />
+          ) : (
+            <CoverLetterTemplateCard
+              key={template.id}
+              template={template}
+              onEdit={() => setExpandedTemplateId(template.id)}
+              onChanged={onChanged}
+            />
+          )
+        )
       ) : (
         <Panel className="text-sm text-muted-foreground">No cover letter templates yet.</Panel>
       )}
@@ -395,7 +574,55 @@ function CoverLetterTemplatesTab({ templates, onChanged }: { templates: CoverLet
   );
 }
 
-function CoverLetterTemplateEditor({ template, onChanged }: { template: CoverLetterTemplate; onChanged: () => void }) {
+function CoverLetterTemplateCard({
+  template,
+  onEdit,
+  onChanged
+}: {
+  template: CoverLetterTemplate;
+  onEdit: () => void;
+  onChanged: () => void;
+}) {
+  const deleteMutation = useMutation({ mutationFn: () => api.deleteCoverLetterTemplate(template.id), onSuccess: onChanged });
+
+  const deleteTemplate = () => {
+    if (window.confirm(`Delete ${template.title}? This cannot be undone.`)) {
+      deleteMutation.mutate();
+    }
+  };
+
+  return (
+    <Panel className="p-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <AssetHeading title={template.title} meta={`Updated ${formatDate(template.updated_at)}`} />
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" size="sm" onClick={onEdit}>
+            <Pencil className="h-4 w-4" />
+            Edit
+          </Button>
+          <Button variant="ghost" size="sm" onClick={deleteTemplate} disabled={deleteMutation.isPending}>
+            <Trash2 className="h-4 w-4" />
+            Delete
+          </Button>
+        </div>
+      </div>
+      <div className="mt-3 grid gap-2">
+        <PreviewTags label="Roles" items={template.target_roles} />
+        <PreviewTags label="Keywords" items={template.target_keywords} />
+      </div>
+    </Panel>
+  );
+}
+
+function CoverLetterTemplateEditor({
+  template,
+  onChanged,
+  onDeleted
+}: {
+  template: CoverLetterTemplate;
+  onChanged: () => void;
+  onDeleted: () => void;
+}) {
   const [form, setForm] = React.useState(() => ({
     title: template.title,
     target_roles: listToCsv(template.target_roles),
@@ -423,16 +650,27 @@ function CoverLetterTemplateEditor({ template, onChanged }: { template: CoverLet
       }),
     onSuccess: onChanged
   });
-  const deleteMutation = useMutation({ mutationFn: () => api.deleteCoverLetterTemplate(template.id), onSuccess: onChanged });
+  const deleteMutation = useMutation({
+    mutationFn: () => api.deleteCoverLetterTemplate(template.id),
+    onSuccess: () => {
+      onDeleted();
+      onChanged();
+    }
+  });
+
+  const deleteTemplate = () => {
+    if (window.confirm(`Delete ${template.title}? This cannot be undone.`)) {
+      deleteMutation.mutate();
+    }
+  };
+
   return (
     <Panel>
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <div>
-          <h2 className="text-base font-semibold">{template.title}</h2>
-          <p className="mt-1 text-xs text-muted-foreground">Updated {formatDate(template.updated_at)}</p>
-        </div>
-        <Button variant="ghost" size="sm" onClick={() => deleteMutation.mutate()} disabled={deleteMutation.isPending}>
+      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <AssetHeading title={template.title} meta={`Updated ${formatDate(template.updated_at)}`} />
+        <Button variant="ghost" size="sm" onClick={deleteTemplate} disabled={deleteMutation.isPending}>
           <Trash2 className="h-4 w-4" />
+          Delete
         </Button>
       </div>
       <div className="grid gap-4">
@@ -447,14 +685,16 @@ function CoverLetterTemplateEditor({ template, onChanged }: { template: CoverLet
             <Textarea value={form.target_keywords} onChange={(event) => setForm({ ...form, target_keywords: event.target.value })} />
           </Field>
         </div>
-        <Field label="Body">
-          <Textarea className="min-h-56" value={form.body} onChange={(event) => setForm({ ...form, body: event.target.value })} />
-        </Field>
-        <Field label="Notes">
-          <Textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} />
-        </Field>
+        <AdvancedDetails>
+          <Field label="Body">
+            <Textarea className="min-h-56" value={form.body} onChange={(event) => setForm({ ...form, body: event.target.value })} />
+          </Field>
+          <Field label="Notes">
+            <Textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} />
+          </Field>
+        </AdvancedDetails>
         {saveMutation.error ? <p className="text-sm text-destructive">{(saveMutation.error as Error).message}</p> : null}
-        <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
+        <Button className="justify-self-start" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
           <Save className="h-4 w-4" />
           {saveMutation.isPending ? "Saving..." : "Save template"}
         </Button>
@@ -463,16 +703,16 @@ function CoverLetterTemplateEditor({ template, onChanged }: { template: CoverLet
   );
 }
 
-function CoverageGapsTab() {
+function CoverageAuditTab() {
   const [result, setResult] = React.useState<CoverageGapResponse | null>(null);
   const mutation = useMutation({ mutationFn: api.generateCoverageGaps, onSuccess: setResult });
   return (
     <Panel>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <SectionHeader icon={FileSearch} title="Coverage Gaps" />
+        <SectionHeader icon={FileSearch} title="Coverage Audit" />
         <Button onClick={() => mutation.mutate()} disabled={mutation.isPending}>
           <Search className="h-4 w-4" />
-          {mutation.isPending ? "Checking..." : "Generate gaps"}
+          {mutation.isPending ? "Checking..." : "Generate audit"}
         </Button>
       </div>
       {mutation.error ? <p className="mt-3 text-sm text-destructive">{(mutation.error as Error).message}</p> : null}
@@ -510,6 +750,58 @@ function SectionHeader({ icon: Icon, title }: { icon: React.ElementType; title: 
   );
 }
 
+function AssetHeading({
+  title,
+  meta,
+  badge
+}: {
+  title: string;
+  meta: string;
+  badge?: React.ReactNode;
+}) {
+  return (
+    <div>
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="text-base font-semibold">{title}</h2>
+        {badge}
+      </div>
+      <p className="mt-1 text-xs text-muted-foreground">{meta}</p>
+    </div>
+  );
+}
+
+function AdvancedDetails({ children }: { children: React.ReactNode }) {
+  const [open, setOpen] = React.useState(false);
+  const Icon = open ? ChevronDown : ChevronRight;
+  return (
+    <div className="grid gap-4 border-t border-border pt-4">
+      <Button className="justify-self-start px-0" variant="ghost" size="sm" onClick={() => setOpen((value) => !value)}>
+        <Icon className="h-4 w-4" />
+        Advanced details
+      </Button>
+      {open ? <div className="grid gap-4">{children}</div> : null}
+    </div>
+  );
+}
+
+function PreviewTags({ label, items, max = 6 }: { label: string; items: string[]; max?: number }) {
+  const unique = uniqueStrings(items);
+  if (!unique.length) return null;
+  const visible = unique.slice(0, max);
+  const remaining = unique.length - visible.length;
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-xs">
+      <span className="font-medium text-muted-foreground">{label}</span>
+      {visible.map((item) => (
+        <span key={item} className="rounded-md border border-border bg-muted px-2 py-1 text-muted-foreground">
+          {item}
+        </span>
+      ))}
+      {remaining > 0 ? <span className="text-muted-foreground">+{remaining}</span> : null}
+    </div>
+  );
+}
+
 function TagList({ items }: { items: string[] }) {
   if (!items.length) return null;
   return (
@@ -521,6 +813,19 @@ function TagList({ items }: { items: string[] }) {
       ))}
     </div>
   );
+}
+
+function uniqueStrings(items: string[]) {
+  const output: string[] = [];
+  const seen = new Set<string>();
+  for (const item of items) {
+    const text = item.trim();
+    const key = text.toLocaleLowerCase();
+    if (!text || seen.has(key)) continue;
+    output.push(text);
+    seen.add(key);
+  }
+  return output;
 }
 
 function profileFormFromProfile(profile: ResumeProfile | null) {

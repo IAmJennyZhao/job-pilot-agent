@@ -521,29 +521,47 @@ def evaluate_practice_answer(
             prompt_metadata={"source_question_id": question.id, "session_id": session.id},
             weak_point_tags=list(output.weak_point_tags),
         )
+        follow_up.asked_count += 1
+        follow_up.last_asked_at = datetime.now(timezone.utc)
+        db.add(follow_up)
 
     feedback_payload = output.model_dump()
     feedback_payload["follow_up_question_id"] = follow_up.id if follow_up else None
-    db.add_all(
-        [
+    messages = [
+        models.InterviewMessage(
+            session_id=session.id,
+            question_id=question.id,
+            role=models.MessageRole.user,
+            content=payload.answer,
+            question_type=question.question_type,
+        ),
+        models.InterviewMessage(
+            session_id=session.id,
+            question_id=question.id,
+            role=models.MessageRole.ai,
+            content=output.suggested_better_answer,
+            question_type=question.question_type,
+            score=output.score,
+            feedback=feedback_payload,
+        ),
+    ]
+    if follow_up:
+        messages.append(
             models.InterviewMessage(
                 session_id=session.id,
-                question_id=question.id,
-                role=models.MessageRole.user,
-                content=payload.answer,
-                question_type=question.question_type,
-            ),
-            models.InterviewMessage(
-                session_id=session.id,
-                question_id=question.id,
+                question_id=follow_up.id,
                 role=models.MessageRole.ai,
-                content=output.suggested_better_answer,
-                question_type=question.question_type,
-                score=output.score,
-                feedback=feedback_payload,
-            ),
-        ]
-    )
+                content=follow_up.content,
+                question_type=follow_up.question_type,
+                feedback={
+                    "why_it_matters": follow_up.why_it_matters,
+                    "strong_answer_should_include": follow_up.strong_answer_should_include,
+                    "source": follow_up.source.value,
+                    "weak_point_tags": follow_up.weak_point_tags,
+                },
+            )
+        )
+    db.add_all(messages)
     db.commit()
 
     if session.resume_profile_id and output.missing_skill_names:
@@ -684,4 +702,41 @@ def interview_insights(db: Session) -> schemas.InterviewInsights:
         recent_scores=recent_scores[:10],
         weak_points=weak_points,
         coaching_themes=coaching_themes[:6],
+    )
+
+
+def resume_session(db: Session, session_id: str) -> schemas.InterviewPracticeSetResponse:
+    session = db.get(models.InterviewSession, session_id)
+    if not session:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+    asked_question_ids: list[str] = []
+    answered_question_ids: set[str] = set()
+    for message in session.messages:
+        if message.question_id is None:
+            continue
+        if message.role == models.MessageRole.ai and message.score is None:
+            if message.question_id not in asked_question_ids:
+                asked_question_ids.append(message.question_id)
+        elif message.role == models.MessageRole.user:
+            answered_question_ids.add(message.question_id)
+
+    unanswered_ids = [question_id for question_id in asked_question_ids if question_id not in answered_question_ids]
+
+    questions: list[schemas.InterviewPracticeQuestionRead] = []
+    for question_id in unanswered_ids:
+        question = db.get(models.InterviewQuestion, question_id)
+        if question:
+            questions.append(schemas.InterviewPracticeQuestionRead.model_validate(question))
+
+    return schemas.InterviewPracticeSetResponse(
+        session_id=session.id,
+        questions=questions,
+        reused_count=len(questions),
+        generated_count=0,
+        job_id=session.job_id,
+        target_category=session.target_category,
+        target_role=session.target_role,
+        stage=session.stage,
+        question_type=session.question_type,
     )

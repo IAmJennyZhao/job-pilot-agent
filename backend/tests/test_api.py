@@ -1452,3 +1452,79 @@ def test_practice_answer_feedback_follow_up_insights_and_skill_gaps(client, monk
 
     skill_gaps = client.get("/api/skill-gaps").json()
     assert [gap["skill_name"] for gap in skill_gaps] == ["Incident response"]
+
+
+def test_resume_session_returns_only_unanswered_questions(client, monkeypatch):
+    create_profile(client)
+
+    def fake_question_output(output_model, _system_prompt, _user_prompt):
+        assert output_model is schemas.InterviewQuestionsOutput
+        return schemas.InterviewQuestionsOutput(
+            questions=[
+                schemas.InterviewQuestion(
+                    question="How do you approach production incident debugging?",
+                    type="technical",
+                    why_it_matters="Tests operational judgment.",
+                    strong_answer_should_include=["Triage", "Instrumentation", "Prevention"],
+                ),
+                schemas.InterviewQuestion(
+                    question="Tell me about a time you mentored a teammate.",
+                    type="behavioral",
+                    why_it_matters="Tests leadership.",
+                    strong_answer_should_include=["Situation", "Action", "Result"],
+                ),
+            ]
+        )
+
+    monkeypatch.setattr("app.services.ai_service.get_structured_output", fake_question_output)
+    response = client.post(
+        "/api/interview/practice-sets",
+        json={
+            "target_category": "DevOps/Infrastructure",
+            "target_role": "Platform Engineer",
+            "stage": "tech_screen",
+            "question_type": "technical",
+            "count": 2,
+        },
+    )
+    assert response.status_code == 201
+    practice_set = response.json()
+    session_id = practice_set["session_id"]
+    first_question_id = practice_set["questions"][0]["id"]
+    second_question_id = practice_set["questions"][1]["id"]
+
+    def fake_feedback_output(output_model, _system_prompt, _user_prompt):
+        assert output_model is schemas.InterviewAnswerFeedbackOutput
+        return schemas.InterviewAnswerFeedbackOutput(
+            score=80,
+            what_went_well=["Clear structure"],
+            what_was_missing=[],
+            suggested_better_answer="Looks solid.",
+            coaching_notes=[],
+            evidence_to_add=[],
+            weak_point_tags=[],
+            missing_skill_names=[],
+            follow_up_question="What metric proved the incident was resolved?",
+        )
+
+    monkeypatch.setattr("app.services.ai_service.get_structured_output", fake_feedback_output)
+    response = client.post(
+        "/api/interview/answers/evaluate",
+        json={
+            "session_id": session_id,
+            "question_id": first_question_id,
+            "answer": "I would scope impact, inspect telemetry, and roll back if needed.",
+        },
+    )
+    assert response.status_code == 200
+    follow_up_id = response.json()["follow_up_question_id"]
+    assert follow_up_id
+
+    response = client.get(f"/api/interview/sessions/{session_id}/resume")
+    assert response.status_code == 200
+    resume = response.json()
+    assert resume["session_id"] == session_id
+    resumed_ids = {question["id"] for question in resume["questions"]}
+    assert resumed_ids == {second_question_id, follow_up_id}
+    assert resume["reused_count"] == len(resume["questions"])
+    assert resume["generated_count"] == 0

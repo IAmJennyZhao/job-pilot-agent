@@ -56,6 +56,11 @@ def get_session(session_id: str, db: Session = Depends(get_db)):
     return session
 
 
+@router.get("/sessions/{session_id}/resume", response_model=schemas.InterviewPracticeSetResponse)
+def resume_session(session_id: str, db: Session = Depends(get_db)):
+    return interview_service.resume_session(db, session_id)
+
+
 @router.post(
     "/sessions/{session_id}/messages",
     response_model=schemas.InterviewMessageRead,

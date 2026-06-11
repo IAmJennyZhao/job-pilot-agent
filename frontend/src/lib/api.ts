@@ -195,6 +195,8 @@ export const api = {
       body: JSON.stringify(payload)
     }),
   interviewSessions: () => request<InterviewSession[]>("/api/interview/sessions"),
+  interviewSession: (sessionId: string) => request<InterviewSession>(`/api/interview/sessions/${sessionId}`),
+  resumeSession: (sessionId: string) => request<InterviewPracticeSet>(`/api/interview/sessions/${sessionId}/resume`),
   interviewInsights: () => request<InterviewInsights>("/api/interview/insights"),
   createPracticeSet: (payload: InterviewPracticeSetPayload) =>
     request<InterviewPracticeSet>("/api/interview/practice-sets", {

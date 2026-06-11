@@ -1,5 +1,9 @@
 .env
 scope.md
+.agents/
+.claude/
+.vscode/
+skills-lock.json
 *.db
 *.db.bak*
 *.sqlite

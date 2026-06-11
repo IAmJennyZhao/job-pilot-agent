@@ -1,3 +1,4 @@
+import logging
 from typing import TypeVar
 
 from fastapi import HTTPException, status
@@ -10,6 +11,8 @@ from sqlalchemy.orm import Session
 from app import models, prompts, schemas
 from app.config import get_settings
 from app.services import profile_asset_service, profile_service, skill_gap_service
+
+logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
 OPENAI_TIMEOUT_SECONDS = 60.0
@@ -44,11 +47,13 @@ def get_structured_output(
                 text_format=output_model,
             )
     except Exception as exc:
+        logger.exception("OpenAI request failed (model=%s, output=%s)", model, output_model.__name__)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"OpenAI request failed: {exc}",
         ) from exc
     if response.output_parsed is None:
+        logger.error("OpenAI returned no structured output (model=%s, output=%s)", model, output_model.__name__)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="OpenAI returned no structured output.",

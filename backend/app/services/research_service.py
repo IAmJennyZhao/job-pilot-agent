@@ -1,10 +1,13 @@
 import json
+import logging
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 from app.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 TAVILY_SEARCH_URL = "https://api.tavily.com/search"
 MAX_SNIPPETS = 6
@@ -130,6 +133,7 @@ class TavilySearchProvider:
             with urlopen(request, timeout=12) as response:
                 body = json.loads(response.read().decode("utf-8"))
         except Exception as exc:
+            logger.exception("Tavily search failed (query=%r)", query)
             return ResearchContext(snippets=[], warnings=[f"Tavily search failed: {exc}"])
 
         snippets: list[ResearchSnippet] = []

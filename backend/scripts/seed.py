@@ -1,9 +1,12 @@
+from pathlib import Path
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import models
 from app.config import get_settings
-from app.database import Base, SessionLocal, engine
+from app.database import get_engine, get_sessionmaker
+from app.migrations import run_migrations
 from app.schemas import JobCreate, ResumeProfileCreate
 from app.services import job_service, profile_service
 
@@ -192,15 +195,18 @@ def ensure_skill_gaps(db: Session, profile: models.ResumeProfile, skills: list[s
 
 def reset_local_db() -> None:
     database_url = get_settings().database_url
-    if not database_url.startswith("sqlite"):
+    if not database_url.startswith("sqlite:///"):
         raise RuntimeError("Seed reset is limited to local SQLite databases.")
-    Base.metadata.drop_all(bind=engine)
-    Base.metadata.create_all(bind=engine)
+    db_path = Path(database_url.removeprefix("sqlite:///"))
+    get_engine().dispose()
+    if db_path.exists():
+        db_path.unlink()
+    run_migrations()
 
 
 def main() -> None:
     reset_local_db()
-    db = SessionLocal()
+    db = get_sessionmaker()()
     try:
         profile = ensure_profile(db)
 

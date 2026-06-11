@@ -1,3 +1,4 @@
+import logging
 import re
 
 from fastapi import HTTPException
@@ -13,6 +14,8 @@ from app.services.concise_output import (
     normalize_resume_fit_output,
 )
 from app.services.research_service import CompanyResearchRetrievalAgent
+
+logger = logging.getLogger(__name__)
 
 
 def normalize_company_name(company_name: str) -> str:
@@ -199,12 +202,14 @@ def run_advanced_analysis(
         responsibility_highlights = posting_output.responsibility_highlights
         job_insights = posting_output.model_dump(exclude={"responsibility_highlights"})
     except Exception as exc:
+        logger.exception("Posting analysis failed (job=%s)", job.id)
         errors.append(f"Posting analysis failed: {_error_message(exc)}")
 
     if company_research is None:
         try:
             company_research = CompanyResearchAgent().run(db, job)
         except Exception as exc:
+            logger.exception("Company research failed (job=%s, company=%r)", job.id, job.company)
             errors.append(f"Company research failed: {_error_message(exc)}")
 
     if profile:
@@ -213,6 +218,7 @@ def run_advanced_analysis(
             fit_highlights = resume_fit.fit_highlights
             gap_highlights = resume_fit.gap_highlights
         except Exception as exc:
+            logger.exception("Resume fit failed (job=%s)", job.id)
             errors.append(f"Resume fit failed: {_error_message(exc)}")
     else:
         errors.append("Resume fit skipped: Active resume profile not found.")
@@ -220,6 +226,7 @@ def run_advanced_analysis(
     try:
         interview_prep = InterviewPrepAgent.run(job, job_source, profile)
     except Exception as exc:
+        logger.exception("Interview prep failed (job=%s)", job.id)
         errors.append(f"Interview prep failed: {_error_message(exc)}")
 
     source_links = company_research.source_links if company_research else []

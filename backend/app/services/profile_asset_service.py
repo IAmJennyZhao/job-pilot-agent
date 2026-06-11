@@ -1,3 +1,4 @@
+import logging
 import re
 import shutil
 import uuid
@@ -12,6 +13,8 @@ from sqlalchemy.orm import Session
 from app import models, prompts, schemas
 from app.config import get_settings
 from app.services import profile_service
+
+logger = logging.getLogger(__name__)
 
 MAX_RECENT_JOB_DAYS = 30
 INACTIVE_GAP_STATUSES = {
@@ -79,6 +82,7 @@ def extract_pdf_text(path: Path) -> str:
         reader = PdfReader(str(path))
         text = "\n".join(page.extract_text() or "" for page in reader.pages)
     except Exception as exc:
+        logger.exception("Could not read uploaded PDF (path=%s)", path)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Could not read PDF: {exc}") from exc
     if not text.strip():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No readable text was found in the PDF")

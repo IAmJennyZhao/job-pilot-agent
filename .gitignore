@@ -12,6 +12,7 @@ pytest-cache-files-*/
 .venv/
 node_modules/
 .next/
+logs/
 dist/
 build/
 coverage/

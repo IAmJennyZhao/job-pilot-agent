@@ -89,8 +89,10 @@ def update_status_event(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
     try:
         return job_service.update_status_event(db, job, event_id, payload)
-    except ValueError as exc:
+    except LookupError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.delete("/{job_id}/status-events/{event_id}", response_model=schemas.JobDetail)
@@ -104,8 +106,10 @@ def delete_status_event(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
     try:
         return job_service.delete_status_event(db, job, event_id)
-    except ValueError as exc:
+    except LookupError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.delete("/{job_id}", response_model=schemas.JobRead)

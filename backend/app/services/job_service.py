@@ -399,7 +399,7 @@ def update_status_event(
 ) -> models.Job:
     event = next((item for item in job.status_events if item.id == event_id), None)
     if event is None:
-        raise ValueError("Status event not found")
+        raise LookupError("Status event not found")
     values = payload.model_dump(exclude_unset=True)
     for key, value in values.items():
         setattr(event, key, value)
@@ -419,7 +419,7 @@ def delete_status_event(
 ) -> models.Job:
     event = next((item for item in job.status_events if item.id == event_id), None)
     if event is None:
-        raise ValueError("Status event not found")
+        raise LookupError("Status event not found")
     db.delete(event)
     db.flush()
     db.refresh(job)

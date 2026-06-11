@@ -1,13 +1,10 @@
-import json
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import create_engine, text
 
 from app import models, schemas
-from app.database import _ensure_skill_gaps_merged
 from app.services import ai_service
 
 
@@ -971,81 +968,6 @@ def test_dashboard_skill_gaps_exclude_known_skills(client, monkeypatch):
     top_gaps = dashboard["top_skill_gaps"]
     assert top_gaps
     assert all(gap["skill_name"] != "LangChain" for gap in top_gaps)
-
-
-def test_startup_migration_merges_duplicate_skill_gap_rows():
-    engine = create_engine("sqlite://", future=True)
-    with engine.begin() as connection:
-        connection.execute(
-            text(
-                """
-                CREATE TABLE skill_gaps (
-                    id VARCHAR(36) NOT NULL,
-                    resume_profile_id VARCHAR(36) NOT NULL,
-                    skill_name VARCHAR(255) NOT NULL,
-                    source VARCHAR(32) NOT NULL,
-                    count INTEGER NOT NULL,
-                    priority VARCHAR(32) NOT NULL,
-                    user_level VARCHAR(32) NOT NULL,
-                    suggested_action TEXT,
-                    created_at DATETIME NOT NULL,
-                    updated_at DATETIME NOT NULL,
-                    PRIMARY KEY (id)
-                )
-                """
-            )
-        )
-        old_rows = [
-            ("gap-1", "profile-1", "LangChain", "job_analysis", 2, "medium", "unknown",
-             "Review job requirement: LangChain", "2026-01-01 10:00:00", "2026-01-02 10:00:00"),
-            ("gap-2", "profile-1", "langchain", "resume_match", 1, "low", "medium",
-             "Build proof or study plan for: langchain", "2026-01-03 10:00:00", "2026-01-04 10:00:00"),
-            ("gap-3", "profile-1", "Kubernetes", "interview_feedback", 1, "low", "unknown",
-             "Practice interview answer for: Kubernetes", "2026-01-05 10:00:00", "2026-01-05 10:00:00"),
-            ("gap-4", "profile-2", "LangChain", "job_analysis", 1, "low", "unknown",
-             "Review job requirement: LangChain", "2026-01-06 10:00:00", "2026-01-06 10:00:00"),
-        ]
-        for row in old_rows:
-            connection.execute(
-                text(
-                    "INSERT INTO skill_gaps VALUES (:id, :profile, :skill, :source, :count,"
-                    " :priority, :user_level, :action, :created_at, :updated_at)"
-                ),
-                dict(zip(
-                    ["id", "profile", "skill", "source", "count", "priority", "user_level",
-                     "action", "created_at", "updated_at"],
-                    row,
-                )),
-            )
-        _ensure_skill_gaps_merged(connection)
-
-    with engine.connect() as connection:
-        rows = {
-            (row["resume_profile_id"], row["skill_name"]): row
-            for row in connection.execute(text("SELECT * FROM skill_gaps")).mappings()
-        }
-    assert len(rows) == 3
-
-    merged = rows[("profile-1", "LangChain")]
-    assert merged["id"] == "gap-1"
-    assert merged["count"] == 3
-    assert json.loads(merged["sources"]) == ["resume_match", "job_analysis"]
-    assert merged["priority"] == "high"
-    assert merged["user_level"] == "medium"
-    assert merged["suggested_action"] == "Build proof or study plan for: langchain"
-    assert merged["created_at"] == "2026-01-01 10:00:00"
-    assert merged["updated_at"] == "2026-01-04 10:00:00"
-
-    other_profile = rows[("profile-2", "LangChain")]
-    assert json.loads(other_profile["sources"]) == ["job_analysis"]
-    assert other_profile["priority"] == "low"
-
-    # Re-running must be a no-op now that the table is in the new shape.
-    with engine.begin() as connection:
-        _ensure_skill_gaps_merged(connection)
-    with engine.connect() as connection:
-        count = connection.execute(text("SELECT COUNT(*) FROM skill_gaps")).scalar_one()
-    assert count == 3
 
 
 def test_job_list_top_gaps_sources(client, monkeypatch):

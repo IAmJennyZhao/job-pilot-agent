@@ -1,3 +1,9 @@
+import os
+
+# Must be set before app modules import settings: keeps the test client's
+# lifespan from running real migrations against the dev database.
+os.environ.setdefault("AUTO_MIGRATE", "0")
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -33,4 +39,3 @@ def client():
 
     app.dependency_overrides.clear()
     Base.metadata.drop_all(bind=engine)
-

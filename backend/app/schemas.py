@@ -580,8 +580,6 @@ class CoverageGapResponse(BaseModel):
 
 
 class SkillGapUpdate(BaseModel):
-    count: int | None = Field(default=None, ge=0)
-    priority: Priority | None = None
     user_level: UserLevel | None = None
     suggested_action: str | None = None
 
@@ -590,7 +588,7 @@ class SkillGapRead(CareerPilotModel):
     id: str
     resume_profile_id: str
     skill_name: str
-    source: SkillGapSource
+    sources: list[SkillGapSource]
     count: int
     priority: Priority
     user_level: UserLevel

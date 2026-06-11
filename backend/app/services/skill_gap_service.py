@@ -5,6 +5,12 @@ from sqlalchemy.orm import Session
 
 from app import models
 
+SOURCE_PRECEDENCE = {
+    models.SkillGapSource.resume_match: 0,
+    models.SkillGapSource.interview_feedback: 1,
+    models.SkillGapSource.job_analysis: 2,
+}
+
 
 def _priority_for_count(count: int) -> models.Priority:
     if count >= 3:
@@ -14,6 +20,13 @@ def _priority_for_count(count: int) -> models.Priority:
     return models.Priority.low
 
 
+def _source_rank(source_value: str) -> int:
+    try:
+        return SOURCE_PRECEDENCE[models.SkillGapSource(source_value)]
+    except ValueError:
+        return 99
+
+
 def upsert_skill_gaps(
     db: Session,
     profile_id: str,
@@ -21,25 +34,42 @@ def upsert_skill_gaps(
     source: models.SkillGapSource,
     suggested_action_prefix: str,
 ) -> None:
-    normalized = [skill.strip() for skill in skills if skill and skill.strip()]
+    # Dedupe case-insensitively up front: the session has autoflush disabled, so a
+    # repeated skill in one batch would not see the pending row and would duplicate it.
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for skill in skills:
+        cleaned = skill.strip() if skill else ""
+        if not cleaned or cleaned.casefold() in seen:
+            continue
+        seen.add(cleaned.casefold())
+        normalized.append(cleaned)
     for skill in normalized:
         existing = db.scalars(
             select(models.SkillGap).where(
                 models.SkillGap.resume_profile_id == profile_id,
-                models.SkillGap.source == source,
                 models.SkillGap.skill_name.ilike(skill),
             )
         ).first()
         if existing:
             existing.count += 1
             existing.priority = _priority_for_count(existing.count)
+            current_best_rank = min(
+                (_source_rank(value) for value in existing.sources),
+                default=99,
+            )
+            if SOURCE_PRECEDENCE[source] < current_best_rank:
+                existing.suggested_action = f"{suggested_action_prefix}: {existing.skill_name}"
+            if source.value not in existing.sources:
+                # Reassign instead of mutating so SQLAlchemy detects the JSON change.
+                existing.sources = sorted({*existing.sources, source.value}, key=_source_rank)
             db.add(existing)
             continue
         db.add(
             models.SkillGap(
                 resume_profile_id=profile_id,
                 skill_name=skill,
-                source=source,
+                sources=[source.value],
                 count=1,
                 priority=models.Priority.low,
                 user_level=models.UserLevel.unknown,
@@ -51,11 +81,9 @@ def upsert_skill_gaps(
 
 def list_skill_gaps(db: Session, profile_id: str | None = None) -> list[models.SkillGap]:
     statement = select(models.SkillGap).order_by(
-        models.SkillGap.priority.desc(),
         models.SkillGap.count.desc(),
         models.SkillGap.updated_at.desc(),
     )
     if profile_id:
         statement = statement.where(models.SkillGap.resume_profile_id == profile_id)
     return list(db.scalars(statement).all())
-

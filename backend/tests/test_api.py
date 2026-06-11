@@ -1,10 +1,13 @@
+import json
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy import create_engine, text
 
 from app import models, schemas
+from app.database import _ensure_skill_gaps_merged
 from app.services import ai_service
 
 
@@ -778,6 +781,178 @@ def test_dashboard_skill_gaps_are_active_opportunity_weighted(client, monkeypatc
     assert all(gap["skill_name"] != "Kubernetes" for gap in gaps)
     assert response.json()["ghosted_jobs"] == 1
     assert all(job["status"] != "Ghosted" for gap in gaps for job in gap["affected_jobs"])
+
+
+def run_intelligence_with_fakes(client, monkeypatch, resume_suggestion_output=None):
+    job = create_job(client)
+
+    def fake_structured_output(output_model, _system_prompt, _user_prompt):
+        if output_model is schemas.JobAnalysisOutput:
+            return fake_analysis_output()
+        if output_model is schemas.ResumeSuggestionOutput:
+            return resume_suggestion_output or fake_resume_suggestion_output()
+        raise AssertionError("Unexpected model")
+
+    monkeypatch.setattr("app.services.ai_service.get_structured_output", fake_structured_output)
+    response = client.post(f"/api/ai/run-job-intelligence/{job['id']}")
+    assert response.status_code == 200
+    return job
+
+
+def test_skill_gaps_merge_sources_and_derive_priority(client, monkeypatch):
+    create_profile(client)
+    suggestion = fake_resume_suggestion_output().model_copy(
+        update={"missing_skills": ["FastAPI", "LangChain"], "weak_skills": []}
+    )
+    run_intelligence_with_fakes(client, monkeypatch, resume_suggestion_output=suggestion)
+
+    gaps = {gap["skill_name"]: gap for gap in client.get("/api/skill-gaps").json()}
+    # FastAPI appears twice in the analysis output (required skill + technology) and once
+    # in the resume match: one row, batch-deduped, with both sources.
+    assert sorted(gaps) == ["FastAPI", "LangChain", "Python", "Vector search"]
+    fastapi = gaps["FastAPI"]
+    assert fastapi["count"] == 2
+    assert fastapi["sources"] == ["resume_match", "job_analysis"]
+    assert fastapi["priority"] == "medium"
+    assert fastapi["suggested_action"] == "Build proof or study plan for: FastAPI"
+    assert gaps["Python"]["sources"] == ["job_analysis"]
+    assert gaps["Python"]["count"] == 1
+    assert gaps["Python"]["priority"] == "low"
+
+
+def test_skill_gap_patch_ignores_priority_and_count(client, monkeypatch):
+    create_profile(client)
+    run_intelligence_with_fakes(client, monkeypatch)
+
+    gap = client.get("/api/skill-gaps").json()[0]
+    response = client.patch(
+        f"/api/skill-gaps/{gap['id']}",
+        json={"priority": "high", "count": 99, "user_level": "medium"},
+    )
+    assert response.status_code == 200
+    updated = response.json()
+    assert updated["priority"] == gap["priority"]
+    assert updated["count"] == gap["count"]
+    assert updated["user_level"] == "medium"
+
+
+def test_study_plan_excludes_known_skills(client, monkeypatch):
+    create_profile(client)
+    run_intelligence_with_fakes(client, monkeypatch)
+
+    gaps = client.get("/api/skill-gaps").json()
+    langchain = next(gap for gap in gaps if gap["skill_name"] == "LangChain")
+    response = client.patch(f"/api/skill-gaps/{langchain['id']}", json={"user_level": "high"})
+    assert response.status_code == 200
+
+    captured = {}
+
+    def fake_plan_output(output_model, _system_prompt, user_prompt):
+        assert output_model is schemas.StudyPlanResponse
+        captured["prompt"] = user_prompt
+        return schemas.StudyPlanResponse(top_gaps=[], priority_order=[], study_plan=[], project_ideas=[])
+
+    monkeypatch.setattr("app.services.ai_service.get_structured_output", fake_plan_output)
+    response = client.post("/api/ai/generate-study-plan", json={"timeframe": "2 weeks"})
+    assert response.status_code == 200
+    assert "LangChain" not in captured["prompt"]
+    assert "AWS Bedrock" in captured["prompt"]
+
+
+def test_dashboard_skill_gaps_exclude_known_skills(client, monkeypatch):
+    create_profile(client)
+    create_job(
+        client,
+        company="Fallback Co",
+        role_title="AI Platform Engineer",
+        required_skills=["LangChain", "FastAPI"],
+    )
+    run_intelligence_with_fakes(client, monkeypatch)
+
+    gaps = client.get("/api/skill-gaps").json()
+    langchain = next(gap for gap in gaps if gap["skill_name"] == "LangChain")
+    response = client.patch(f"/api/skill-gaps/{langchain['id']}", json={"user_level": "high"})
+    assert response.status_code == 200
+
+    dashboard = client.get("/api/dashboard/summary").json()
+    top_gaps = dashboard["top_skill_gaps"]
+    assert top_gaps
+    assert all(gap["skill_name"] != "LangChain" for gap in top_gaps)
+
+
+def test_startup_migration_merges_duplicate_skill_gap_rows():
+    engine = create_engine("sqlite://", future=True)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                CREATE TABLE skill_gaps (
+                    id VARCHAR(36) NOT NULL,
+                    resume_profile_id VARCHAR(36) NOT NULL,
+                    skill_name VARCHAR(255) NOT NULL,
+                    source VARCHAR(32) NOT NULL,
+                    count INTEGER NOT NULL,
+                    priority VARCHAR(32) NOT NULL,
+                    user_level VARCHAR(32) NOT NULL,
+                    suggested_action TEXT,
+                    created_at DATETIME NOT NULL,
+                    updated_at DATETIME NOT NULL,
+                    PRIMARY KEY (id)
+                )
+                """
+            )
+        )
+        old_rows = [
+            ("gap-1", "profile-1", "LangChain", "job_analysis", 2, "medium", "unknown",
+             "Review job requirement: LangChain", "2026-01-01 10:00:00", "2026-01-02 10:00:00"),
+            ("gap-2", "profile-1", "langchain", "resume_match", 1, "low", "medium",
+             "Build proof or study plan for: langchain", "2026-01-03 10:00:00", "2026-01-04 10:00:00"),
+            ("gap-3", "profile-1", "Kubernetes", "interview_feedback", 1, "low", "unknown",
+             "Practice interview answer for: Kubernetes", "2026-01-05 10:00:00", "2026-01-05 10:00:00"),
+            ("gap-4", "profile-2", "LangChain", "job_analysis", 1, "low", "unknown",
+             "Review job requirement: LangChain", "2026-01-06 10:00:00", "2026-01-06 10:00:00"),
+        ]
+        for row in old_rows:
+            connection.execute(
+                text(
+                    "INSERT INTO skill_gaps VALUES (:id, :profile, :skill, :source, :count,"
+                    " :priority, :user_level, :action, :created_at, :updated_at)"
+                ),
+                dict(zip(
+                    ["id", "profile", "skill", "source", "count", "priority", "user_level",
+                     "action", "created_at", "updated_at"],
+                    row,
+                )),
+            )
+        _ensure_skill_gaps_merged(connection)
+
+    with engine.connect() as connection:
+        rows = {
+            (row["resume_profile_id"], row["skill_name"]): row
+            for row in connection.execute(text("SELECT * FROM skill_gaps")).mappings()
+        }
+    assert len(rows) == 3
+
+    merged = rows[("profile-1", "LangChain")]
+    assert merged["id"] == "gap-1"
+    assert merged["count"] == 3
+    assert json.loads(merged["sources"]) == ["resume_match", "job_analysis"]
+    assert merged["priority"] == "high"
+    assert merged["user_level"] == "medium"
+    assert merged["suggested_action"] == "Build proof or study plan for: langchain"
+    assert merged["created_at"] == "2026-01-01 10:00:00"
+    assert merged["updated_at"] == "2026-01-04 10:00:00"
+
+    other_profile = rows[("profile-2", "LangChain")]
+    assert json.loads(other_profile["sources"]) == ["job_analysis"]
+    assert other_profile["priority"] == "low"
+
+    # Re-running must be a no-op now that the table is in the new shape.
+    with engine.begin() as connection:
+        _ensure_skill_gaps_merged(connection)
+    with engine.connect() as connection:
+        count = connection.execute(text("SELECT COUNT(*) FROM skill_gaps")).scalar_one()
+    assert count == 3
 
 
 def test_job_list_top_gaps_sources(client, monkeypatch):

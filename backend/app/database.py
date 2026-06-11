@@ -1,3 +1,4 @@
+import json
 from collections.abc import Generator
 
 from sqlalchemy import create_engine, event, inspect, text
@@ -114,6 +115,127 @@ def _ensure_added_columns() -> None:
             if column_name not in columns:
                 connection.execute(text(ddl))
         _ensure_interview_sessions_job_nullable(connection)
+        _ensure_skill_gaps_merged(connection)
+
+
+SKILL_GAP_SOURCE_PRECEDENCE = {"resume_match": 0, "interview_feedback": 1, "job_analysis": 2}
+_USER_LEVEL_RANK = {"unknown": 0, "low": 1, "medium": 2, "high": 3}
+
+
+def _skill_gap_priority_for_count(count: int) -> str:
+    if count >= 3:
+        return "high"
+    if count == 2:
+        return "medium"
+    return "low"
+
+
+def _ensure_skill_gaps_merged(connection) -> None:
+    inspector = inspect(connection)
+    if "skill_gaps" not in inspector.get_table_names():
+        return
+    columns = {column["name"] for column in inspector.get_columns("skill_gaps")}
+    if "source" not in columns:
+        return
+    if connection.dialect.name != "sqlite":
+        return
+
+    rows = connection.execute(
+        text(
+            """
+            SELECT id, resume_profile_id, skill_name, source, count, priority,
+                   user_level, suggested_action, created_at, updated_at
+            FROM skill_gaps
+            ORDER BY created_at, id
+            """
+        )
+    ).mappings().all()
+
+    merged: dict[tuple[str, str], dict] = {}
+    for row in rows:
+        key = (row["resume_profile_id"], row["skill_name"].strip().casefold())
+        entry = merged.get(key)
+        if entry is None:
+            merged[key] = {
+                "id": row["id"],
+                "resume_profile_id": row["resume_profile_id"],
+                "skill_name": row["skill_name"],
+                "sources": {row["source"]},
+                "count": row["count"],
+                "user_level": row["user_level"],
+                "suggested_action": row["suggested_action"],
+                "action_source": row["source"],
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"],
+            }
+            continue
+        entry["count"] += row["count"]
+        entry["sources"].add(row["source"])
+        if _USER_LEVEL_RANK.get(row["user_level"], 0) > _USER_LEVEL_RANK.get(entry["user_level"], 0):
+            entry["user_level"] = row["user_level"]
+        if SKILL_GAP_SOURCE_PRECEDENCE.get(row["source"], 99) < SKILL_GAP_SOURCE_PRECEDENCE.get(entry["action_source"], 99):
+            entry["suggested_action"] = row["suggested_action"]
+            entry["action_source"] = row["source"]
+        entry["created_at"] = min(entry["created_at"], row["created_at"])
+        entry["updated_at"] = max(entry["updated_at"], row["updated_at"])
+
+    connection.execute(text("PRAGMA foreign_keys=OFF"))
+    connection.execute(text("PRAGMA legacy_alter_table=ON"))
+    connection.execute(text("ALTER TABLE skill_gaps RENAME TO skill_gaps_old"))
+    connection.execute(
+        text(
+            """
+            CREATE TABLE skill_gaps (
+                id VARCHAR(36) NOT NULL,
+                resume_profile_id VARCHAR(36) NOT NULL,
+                skill_name VARCHAR(255) NOT NULL,
+                sources JSON NOT NULL DEFAULT '[]',
+                count INTEGER NOT NULL,
+                priority VARCHAR(32) NOT NULL,
+                user_level VARCHAR(32) NOT NULL,
+                suggested_action TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                PRIMARY KEY (id),
+                FOREIGN KEY(resume_profile_id) REFERENCES resume_profiles (id) ON DELETE CASCADE
+            )
+            """
+        )
+    )
+    for entry in merged.values():
+        connection.execute(
+            text(
+                """
+                INSERT INTO skill_gaps (
+                    id, resume_profile_id, skill_name, sources, count,
+                    priority, user_level, suggested_action, created_at, updated_at
+                )
+                VALUES (
+                    :id, :resume_profile_id, :skill_name, :sources, :count,
+                    :priority, :user_level, :suggested_action, :created_at, :updated_at
+                )
+                """
+            ),
+            {
+                "id": entry["id"],
+                "resume_profile_id": entry["resume_profile_id"],
+                "skill_name": entry["skill_name"],
+                "sources": json.dumps(
+                    sorted(entry["sources"], key=lambda source: SKILL_GAP_SOURCE_PRECEDENCE.get(source, 99))
+                ),
+                "count": entry["count"],
+                "priority": _skill_gap_priority_for_count(entry["count"]),
+                "user_level": entry["user_level"],
+                "suggested_action": entry["suggested_action"],
+                "created_at": entry["created_at"],
+                "updated_at": entry["updated_at"],
+            },
+        )
+    connection.execute(text("DROP TABLE skill_gaps_old"))
+    connection.execute(text("CREATE INDEX ix_skill_gaps_resume_profile_id ON skill_gaps (resume_profile_id)"))
+    connection.execute(text("CREATE INDEX ix_skill_gaps_skill_name ON skill_gaps (skill_name)"))
+    connection.execute(text("PRAGMA legacy_alter_table=OFF"))
+    connection.execute(text("PRAGMA foreign_keys=ON"))
 
 
 def _ensure_interview_sessions_job_nullable(connection) -> None:

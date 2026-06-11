@@ -186,7 +186,7 @@ export const api = {
     request<void>(`/api/profile/cover-letter-templates/${id}`, { method: "DELETE" }),
   generateCoverageGaps: () => request<CoverageGapResponse>("/api/profile/coverage-gaps", { method: "POST" }),
   skillGaps: () => request<SkillGap[]>("/api/skill-gaps"),
-  updateSkillGap: (id: string, payload: Partial<SkillGap>) =>
+  updateSkillGap: (id: string, payload: Partial<Pick<SkillGap, "user_level" | "suggested_action">>) =>
     request<SkillGap>(`/api/skill-gaps/${id}`, {
       method: "PATCH",
       body: JSON.stringify(payload)

@@ -232,7 +232,10 @@ def generate_study_plan(
     gaps = list(
         db.scalars(
             select(models.SkillGap)
-            .where(models.SkillGap.resume_profile_id == profile.id)
+            .where(
+                models.SkillGap.resume_profile_id == profile.id,
+                models.SkillGap.user_level != models.UserLevel.high,
+            )
             .order_by(models.SkillGap.count.desc())
             .limit(20)
         ).all()

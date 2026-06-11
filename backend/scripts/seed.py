@@ -171,7 +171,6 @@ def ensure_skill_gaps(db: Session, profile: models.ResumeProfile, skills: list[s
         existing = db.scalars(
             select(models.SkillGap).where(
                 models.SkillGap.resume_profile_id == profile.id,
-                models.SkillGap.source == models.SkillGapSource.resume_match,
                 models.SkillGap.skill_name.ilike(skill),
             )
         ).first()
@@ -181,7 +180,7 @@ def ensure_skill_gaps(db: Session, profile: models.ResumeProfile, skills: list[s
             models.SkillGap(
                 resume_profile_id=profile.id,
                 skill_name=skill,
-                source=models.SkillGapSource.resume_match,
+                sources=[models.SkillGapSource.resume_match.value],
                 count=1,
                 priority=models.Priority.low,
                 user_level=models.UserLevel.unknown,

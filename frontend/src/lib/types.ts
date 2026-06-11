@@ -335,11 +335,13 @@ export type CoverageGapResponse = {
   gaps: CoverageGap[];
 };
 
+export type SkillGapSource = "job_analysis" | "resume_match" | "interview_feedback";
+
 export type SkillGap = {
   id: string;
   resume_profile_id: string;
   skill_name: string;
-  source: "job_analysis" | "resume_match" | "interview_feedback";
+  sources: SkillGapSource[];
   count: number;
   priority: "low" | "medium" | "high";
   user_level: "low" | "medium" | "high" | "unknown";

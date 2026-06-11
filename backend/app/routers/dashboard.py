@@ -214,6 +214,12 @@ def _build_top_skill_gaps(
     gap_jobs: dict[str, list[models.Job]] = defaultdict(list)
     gap_labels: dict[str, str] = {}
     gap_sources: dict[str, set[str]] = defaultdict(set)
+    known_skills = {
+        name.casefold()
+        for name in db.scalars(
+            select(models.SkillGap.skill_name).where(models.SkillGap.user_level == models.UserLevel.high)
+        )
+    }
 
     for job in open_jobs:
         skills, source = _gap_skills_for_job(db, job)
@@ -221,6 +227,8 @@ def _build_top_skill_gaps(
             continue
         for skill in skills:
             key = skill.casefold()
+            if key in known_skills:
+                continue
             if any(existing.id == job.id for existing in gap_jobs[key]):
                 continue
             gap_jobs[key].append(job)

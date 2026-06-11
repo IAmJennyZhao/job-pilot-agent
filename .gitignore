@@ -1,6 +1,7 @@
 .env
 scope.md
 *.db
+*.db.bak*
 *.sqlite
 *.sqlite3
 __pycache__/

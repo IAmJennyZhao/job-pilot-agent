@@ -689,16 +689,7 @@ class SkillGap(TimestampMixin, Base):
         index=True,
     )
     skill_name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    source: Mapped[SkillGapSource] = mapped_column(
-        Enum(
-            SkillGapSource,
-            values_callable=enum_values,
-            native_enum=False,
-            validate_strings=True,
-        ),
-        nullable=False,
-        index=True,
-    )
+    sources: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
     count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     priority: Mapped[Priority] = mapped_column(
         Enum(Priority, values_callable=enum_values, native_enum=False, validate_strings=True),

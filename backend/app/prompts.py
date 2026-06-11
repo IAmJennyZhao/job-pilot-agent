@@ -318,12 +318,36 @@ def study_plan_prompt(
     target_roles: list[str],
     gaps: list[dict],
     resume_text: str,
+    focus_skills: list[str] | None = None,
+    time_budget_hours: int | None = None,
+    time_budget_unit: str = "day",
+    mode: str = "both",
 ) -> str:
+    period_style = "Day 1, Day 2, ..." if timeframe == "1 week" else "Week 1, Week 2, ..."
+    instructions = [f'Label each study_plan item\'s "period" as {period_style} to fit the timeframe.']
+    if time_budget_hours:
+        instructions.append(
+            f"The job seeker has about {time_budget_hours} hours available per {time_budget_unit}; "
+            "size the workload to fit that budget."
+        )
+    if focus_skills:
+        instructions.append(
+            f"Cover ONLY these skills the job seeker selected: {', '.join(focus_skills)}. "
+            "Do not add other skills."
+        )
+    if mode == "weekly_plan":
+        instructions.append("Return an empty project_ideas list; produce only the scheduled study plan.")
+    elif mode == "project_ideas":
+        instructions.append("Return an empty study_plan list; focus entirely on concrete project ideas.")
+    instruction_text = "\n".join(f"- {item}" for item in instructions)
     return f"""
 Create a practical study plan for a job seeker.
 
 Timeframe: {timeframe}
 Target roles: {", ".join(target_roles)}
+
+Instructions:
+{instruction_text}
 
 Current skill gaps:
 {gaps}

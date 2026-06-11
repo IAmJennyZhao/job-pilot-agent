@@ -571,11 +571,29 @@ export type InterviewInsights = {
   };
 };
 
+export type StudyPlanMode = "weekly_plan" | "project_ideas" | "both";
+
+export type StudyPlanTimeframe = "1 week" | "2 weeks" | "1 month";
+
 export type StudyPlan = {
   top_gaps: string[];
   priority_order: string[];
-  study_plan: Array<{ day: string; focus: string; tasks: string[] }>;
+  study_plan: Array<{ period: string; focus: string; tasks: string[] }>;
   project_ideas: string[];
+};
+
+export type SavedStudyPlan = {
+  id: string;
+  resume_profile_id: string;
+  title: string;
+  timeframe: string;
+  time_budget_hours: number | null;
+  time_budget_unit: "day" | "week";
+  mode: StudyPlanMode;
+  focus_skills: string[];
+  plan: StudyPlan;
+  created_at: string;
+  updated_at: string;
 };
 
 export type AIReadiness = {

@@ -781,10 +781,14 @@ class StudyPlanRequest(BaseModel):
     resume_profile_id: str | None = None
     timeframe: Literal["1 week", "2 weeks", "1 month"] = "2 weeks"
     target_roles: list[str] = Field(default_factory=list)
+    focus_skills: list[str] = Field(default_factory=list)
+    time_budget_hours: int | None = Field(default=None, ge=1)
+    time_budget_unit: Literal["day", "week"] = "day"
+    mode: Literal["weekly_plan", "project_ideas", "both"] = "both"
 
 
 class StudyPlanItem(AIModel):
-    day: str
+    period: str
     focus: str
     tasks: list[str]
 
@@ -794,6 +798,35 @@ class StudyPlanResponse(AIModel):
     priority_order: list[str]
     study_plan: list[StudyPlanItem]
     project_ideas: list[str]
+
+
+class SavedStudyPlanCreate(BaseModel):
+    resume_profile_id: str | None = None
+    title: str = Field(min_length=1, max_length=255)
+    timeframe: Literal["1 week", "2 weeks", "1 month"]
+    time_budget_hours: int | None = Field(default=None, ge=1)
+    time_budget_unit: Literal["day", "week"] = "day"
+    mode: Literal["weekly_plan", "project_ideas", "both"] = "both"
+    focus_skills: list[str] = Field(default_factory=list)
+    plan: StudyPlanResponse
+
+
+class SavedStudyPlanUpdate(BaseModel):
+    title: str = Field(min_length=1, max_length=255)
+
+
+class SavedStudyPlanRead(CareerPilotModel):
+    id: str
+    resume_profile_id: str
+    title: str
+    timeframe: str
+    time_budget_hours: int | None
+    time_budget_unit: str
+    mode: str
+    focus_skills: list[str]
+    plan: StudyPlanResponse
+    created_at: datetime
+    updated_at: datetime
 
 
 class JobAnalysisOutput(AIModel):

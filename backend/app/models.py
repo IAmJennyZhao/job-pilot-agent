@@ -399,6 +399,11 @@ class ResumeProfile(TimestampMixin, Base):
         back_populates="resume_profile",
         cascade="all, delete-orphan",
     )
+    saved_study_plans: Mapped[list["SavedStudyPlan"]] = relationship(
+        back_populates="resume_profile",
+        cascade="all, delete-orphan",
+        order_by="SavedStudyPlan.created_at.desc()",
+    )
     interview_sessions: Mapped[list["InterviewSession"]] = relationship(
         back_populates="resume_profile",
     )
@@ -704,4 +709,24 @@ class SkillGap(TimestampMixin, Base):
     suggested_action: Mapped[str | None] = mapped_column(Text)
 
     resume_profile: Mapped[ResumeProfile] = relationship(back_populates="skill_gaps")
+
+
+class SavedStudyPlan(TimestampMixin, Base):
+    __tablename__ = "saved_study_plans"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    resume_profile_id: Mapped[str] = mapped_column(
+        ForeignKey("resume_profiles.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    timeframe: Mapped[str] = mapped_column(String(32), nullable=False)
+    time_budget_hours: Mapped[int | None] = mapped_column(Integer)
+    time_budget_unit: Mapped[str] = mapped_column(String(16), default="day", nullable=False)
+    mode: Mapped[str] = mapped_column(String(32), default="both", nullable=False)
+    focus_skills: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    plan: Mapped[dict] = mapped_column(JSON, nullable=False)
+
+    resume_profile: Mapped[ResumeProfile] = relationship(back_populates="saved_study_plans")
 

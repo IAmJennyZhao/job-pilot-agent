@@ -1,27 +1,61 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookOpen, ChevronRight, RefreshCw } from "lucide-react";
+import { BookOpen, ChevronRight, Pencil, RefreshCw, Trash2 } from "lucide-react";
 import * as React from "react";
 import { Button } from "@/components/ui/button";
-import { Select } from "@/components/ui/field";
+import { Input, Select } from "@/components/ui/field";
 import { Badge, PageHeader, Panel } from "@/components/ui/panel";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import type { SkillGap, StudyPlan } from "@/lib/types";
+import type { SavedStudyPlan, SkillGap, StudyPlan, StudyPlanMode, StudyPlanTimeframe } from "@/lib/types";
 
 const priorityTone = { low: "neutral", medium: "warn", high: "bad" } as const;
+
+const modeLabels: Record<StudyPlanMode, string> = {
+  both: "plan + projects",
+  weekly_plan: "weekly plan",
+  project_ideas: "project ideas"
+};
+
+type PlanRequestMeta = {
+  timeframe: StudyPlanTimeframe;
+  focus_skills: string[];
+  time_budget_hours: number | null;
+  time_budget_unit: "day" | "week";
+  mode: StudyPlanMode;
+};
 
 export default function SkillsPage() {
   const queryClient = useQueryClient();
   const { data: gaps = [], isLoading, error } = useQuery({ queryKey: ["skill-gaps"], queryFn: api.skillGaps });
   const { data: profile } = useQuery({ queryKey: ["profile"], queryFn: api.profile });
-  const [timeframe, setTimeframe] = React.useState<"1 week" | "2 weeks" | "1 month">("2 weeks");
+  const { data: savedPlans = [] } = useQuery({ queryKey: ["study-plans"], queryFn: api.savedStudyPlans });
+
+  const [timeframe, setTimeframe] = React.useState<StudyPlanTimeframe>("2 weeks");
+  const [hours, setHours] = React.useState("");
+  const [hoursUnit, setHoursUnit] = React.useState<"day" | "week">("week");
+  const [mode, setMode] = React.useState<StudyPlanMode>("both");
+  const [selectedSkills, setSelectedSkills] = React.useState<Set<string>>(new Set());
   const [studyPlan, setStudyPlan] = React.useState<StudyPlan | null>(null);
+  const [planMeta, setPlanMeta] = React.useState<PlanRequestMeta | null>(null);
+  const [planTitle, setPlanTitle] = React.useState("");
   const [showKnown, setShowKnown] = React.useState(false);
 
   const activeGaps = gaps.filter((gap) => gap.user_level !== "high");
   const knownGaps = gaps.filter((gap) => gap.user_level === "high");
+  const focusSkills = activeGaps.filter((gap) => selectedSkills.has(gap.skill_name)).map((gap) => gap.skill_name);
+
+  const toggleSkill = (skillName: string) =>
+    setSelectedSkills((current) => {
+      const next = new Set(current);
+      if (next.has(skillName)) {
+        next.delete(skillName);
+      } else {
+        next.add(skillName);
+      }
+      return next;
+    });
 
   const updateMutation = useMutation({
     mutationFn: ({ id, payload }: { id: string; payload: Partial<Pick<SkillGap, "user_level" | "suggested_action">> }) =>
@@ -33,13 +67,43 @@ export default function SkillsPage() {
   });
 
   const planMutation = useMutation({
-    mutationFn: () =>
-      api.generateStudyPlan({
-        resume_profile_id: profile?.id ?? null,
+    mutationFn: async () => {
+      const meta: PlanRequestMeta = {
         timeframe,
-        target_roles: profile?.target_roles ?? []
-      }),
-    onSuccess: setStudyPlan
+        focus_skills: focusSkills,
+        time_budget_hours: Number.parseInt(hours, 10) > 0 ? Number.parseInt(hours, 10) : null,
+        time_budget_unit: hoursUnit,
+        mode
+      };
+      const plan = await api.generateStudyPlan({
+        resume_profile_id: profile?.id ?? null,
+        target_roles: profile?.target_roles ?? [],
+        ...meta
+      });
+      return { plan, meta };
+    },
+    onSuccess: ({ plan, meta }) => {
+      setStudyPlan(plan);
+      setPlanMeta(meta);
+      const covered = meta.focus_skills.length ? meta.focus_skills : plan.top_gaps;
+      setPlanTitle(`${meta.timeframe} - ${covered.slice(0, 3).join(", ")}` || "Study plan");
+      saveMutation.reset();
+    }
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: () => {
+      if (!studyPlan || !planMeta) {
+        throw new Error("Generate a plan first.");
+      }
+      return api.saveStudyPlan({
+        resume_profile_id: profile?.id ?? null,
+        title: planTitle.trim(),
+        plan: studyPlan,
+        ...planMeta
+      });
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["study-plans"] })
   });
 
   const setLevel = (id: string, level: SkillGap["user_level"]) =>
@@ -59,54 +123,111 @@ export default function SkillsPage() {
       />
 
       <div className="grid gap-4 xl:grid-cols-[1fr_420px]">
-        <Panel className="overflow-hidden">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <h2 className="text-base font-semibold">Gap Table</h2>
-            <Badge>{activeGaps.length} tracked</Badge>
-          </div>
-          {error ? <p className="text-sm text-destructive">{(error as Error).message}</p> : null}
-          {isLoading ? <p className="text-sm text-muted-foreground">Loading gaps...</p> : null}
-          <div className="overflow-x-auto">
-            <GapTable gaps={activeGaps} onLevelChange={setLevel} />
-            {!activeGaps.length && !isLoading ? (
-              <p className="py-8 text-sm text-muted-foreground">
-                {knownGaps.length
-                  ? "No active gaps - everything tracked is marked as known."
-                  : "No gaps yet. Run job analysis or resume suggestions first."}
-              </p>
-            ) : null}
-          </div>
-          {knownGaps.length ? (
-            <div className="mt-4 border-t border-border pt-4">
-              <button
-                type="button"
-                onClick={() => setShowKnown((value) => !value)}
-                className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-              >
-                <ChevronRight className={cn("h-4 w-4 transition-transform", showKnown && "rotate-90")} />
-                Known skills ({knownGaps.length})
-              </button>
-              {showKnown ? (
-                <div className="mt-3 overflow-x-auto">
-                  <GapTable gaps={knownGaps} onLevelChange={setLevel} muted />
-                </div>
+        <div className="grid content-start gap-4">
+          <Panel className="overflow-hidden">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <h2 className="text-base font-semibold">Gap Table</h2>
+              <Badge>{activeGaps.length} tracked</Badge>
+            </div>
+            {error ? <p className="text-sm text-destructive">{(error as Error).message}</p> : null}
+            {isLoading ? <p className="text-sm text-muted-foreground">Loading gaps...</p> : null}
+            <div className="overflow-x-auto">
+              <GapTable
+                gaps={activeGaps}
+                onLevelChange={setLevel}
+                selectable
+                selectedSkills={selectedSkills}
+                onToggleSkill={toggleSkill}
+              />
+              {!activeGaps.length && !isLoading ? (
+                <p className="py-8 text-sm text-muted-foreground">
+                  {knownGaps.length
+                    ? "No active gaps - everything tracked is marked as known."
+                    : "No gaps yet. Run job analysis or resume suggestions first."}
+                </p>
               ) : null}
             </div>
-          ) : null}
-        </Panel>
+            {knownGaps.length ? (
+              <div className="mt-4 border-t border-border pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowKnown((value) => !value)}
+                  className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <ChevronRight className={cn("h-4 w-4 transition-transform", showKnown && "rotate-90")} />
+                  Known skills ({knownGaps.length})
+                </button>
+                {showKnown ? (
+                  <div className="mt-3 overflow-x-auto">
+                    <GapTable gaps={knownGaps} onLevelChange={setLevel} muted />
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </Panel>
 
-        <Panel>
+          <SavedPlansPanel plans={savedPlans} />
+        </div>
+
+        <Panel className="self-start">
           <div className="mb-4 flex items-center gap-2">
             <BookOpen className="h-4 w-4 text-primary" />
             <h2 className="text-base font-semibold">Study Plan</h2>
           </div>
           <div className="grid gap-4">
+            <div className="grid gap-1.5 text-sm font-medium">
+              Skills to cover
+              <div className="flex flex-wrap items-center gap-1.5">
+                {focusSkills.length ? (
+                  <>
+                    {focusSkills.map((skill) => (
+                      <Badge key={skill}>{skill}</Badge>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setSelectedSkills(new Set())}
+                      className="text-xs font-medium text-muted-foreground underline-offset-2 hover:underline"
+                    >
+                      clear
+                    </button>
+                  </>
+                ) : (
+                  <p className="text-sm font-normal text-muted-foreground">
+                    None selected - the plan will use your top gaps. Tick skills in the gap table to focus it.
+                  </p>
+                )}
+              </div>
+            </div>
             <label className="grid gap-1.5 text-sm font-medium">
               Timeframe
-              <Select value={timeframe} onChange={(event) => setTimeframe(event.target.value as "1 week" | "2 weeks" | "1 month")}>
+              <Select value={timeframe} onChange={(event) => setTimeframe(event.target.value as StudyPlanTimeframe)}>
                 <option value="1 week">1 week</option>
                 <option value="2 weeks">2 weeks</option>
                 <option value="1 month">1 month</option>
+              </Select>
+            </label>
+            <div className="grid gap-1.5 text-sm font-medium">
+              Available time
+              <div className="grid grid-cols-[1fr_1fr] gap-2">
+                <Input
+                  type="number"
+                  min={1}
+                  placeholder="Hours (optional)"
+                  value={hours}
+                  onChange={(event) => setHours(event.target.value)}
+                />
+                <Select value={hoursUnit} onChange={(event) => setHoursUnit(event.target.value as "day" | "week")}>
+                  <option value="day">per day</option>
+                  <option value="week">per week</option>
+                </Select>
+              </div>
+            </div>
+            <label className="grid gap-1.5 text-sm font-medium">
+              Output
+              <Select value={mode} onChange={(event) => setMode(event.target.value as StudyPlanMode)}>
+                <option value="both">Weekly plan + project ideas</option>
+                <option value="weekly_plan">Weekly plan only</option>
+                <option value="project_ideas">Project ideas only</option>
               </Select>
             </label>
             {planMutation.error ? <p className="text-sm text-destructive">{(planMutation.error as Error).message}</p> : null}
@@ -115,24 +236,23 @@ export default function SkillsPage() {
             </Button>
             {studyPlan ? (
               <div className="grid gap-4 text-sm">
-                <List title="Top gaps" items={studyPlan.top_gaps} />
-                <List title="Priority order" items={studyPlan.priority_order} />
-                <div>
-                  <h3 className="font-medium">Plan</h3>
-                  <div className="mt-2 grid gap-3">
-                    {studyPlan.study_plan.map((item) => (
-                      <div key={`${item.day}-${item.focus}`} className="rounded-md border border-border bg-muted/40 p-3">
-                        <div className="font-medium">{item.day}: {item.focus}</div>
-                        <ul className="mt-2 list-inside list-disc text-muted-foreground">
-                          {item.tasks.map((task) => (
-                            <li key={task}>{task}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    ))}
-                  </div>
+                <StudyPlanView plan={studyPlan} />
+                <div className="grid gap-2 border-t border-border pt-4">
+                  <label className="grid gap-1.5 text-sm font-medium">
+                    Plan name
+                    <Input value={planTitle} onChange={(event) => setPlanTitle(event.target.value)} />
+                  </label>
+                  {saveMutation.error ? (
+                    <p className="text-sm text-destructive">{(saveMutation.error as Error).message}</p>
+                  ) : null}
+                  <Button
+                    variant="secondary"
+                    onClick={() => saveMutation.mutate()}
+                    disabled={saveMutation.isPending || saveMutation.isSuccess || !planTitle.trim()}
+                  >
+                    {saveMutation.isSuccess ? "Saved" : saveMutation.isPending ? "Saving..." : "Save plan"}
+                  </Button>
                 </div>
-                <List title="Project ideas" items={studyPlan.project_ideas} />
               </div>
             ) : null}
           </div>
@@ -142,14 +262,160 @@ export default function SkillsPage() {
   );
 }
 
+function SavedPlansPanel({ plans }: { plans: SavedStudyPlan[] }) {
+  const queryClient = useQueryClient();
+  const [expandedId, setExpandedId] = React.useState<string | null>(null);
+  const [renamingId, setRenamingId] = React.useState<string | null>(null);
+  const [renameValue, setRenameValue] = React.useState("");
+
+  const renameMutation = useMutation({
+    mutationFn: ({ id, title }: { id: string; title: string }) => api.renameStudyPlan(id, title),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["study-plans"] })
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.deleteStudyPlan(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["study-plans"] })
+  });
+
+  const submitRename = (id: string) => {
+    const title = renameValue.trim();
+    if (title) {
+      renameMutation.mutate({ id, title });
+    }
+    setRenamingId(null);
+  };
+
+  return (
+    <Panel>
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <h2 className="text-base font-semibold">Saved Study Plans</h2>
+        <Badge>{plans.length} saved</Badge>
+      </div>
+      {plans.length ? (
+        <div className="grid gap-3">
+          {plans.map((plan) => {
+            const expanded = expandedId === plan.id;
+            return (
+              <div key={plan.id} className="rounded-md border border-border">
+                <div className="flex flex-wrap items-center gap-2 p-3">
+                  {renamingId === plan.id ? (
+                    <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                      <ChevronRight className={cn("h-4 w-4 shrink-0 transition-transform", expanded && "rotate-90")} />
+                      <Input
+                        autoFocus
+                        value={renameValue}
+                        onChange={(event) => setRenameValue(event.target.value)}
+                        onBlur={() => submitRename(plan.id)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") submitRename(plan.id);
+                          if (event.key === "Escape") setRenamingId(null);
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setExpandedId(expanded ? null : plan.id)}
+                      className="flex min-w-0 flex-1 items-center gap-1.5 text-left text-sm font-medium"
+                    >
+                      <ChevronRight className={cn("h-4 w-4 shrink-0 transition-transform", expanded && "rotate-90")} />
+                      <span className="truncate">{plan.title}</span>
+                    </button>
+                  )}
+                  <Badge>{plan.timeframe}</Badge>
+                  <Badge>{modeLabels[plan.mode]}</Badge>
+                  {plan.time_budget_hours ? <Badge>{plan.time_budget_hours}h/{plan.time_budget_unit}</Badge> : null}
+                  <span className="text-xs text-muted-foreground">
+                    {new Date(plan.created_at).toLocaleDateString()}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label="Rename plan"
+                    onClick={() => {
+                      setRenamingId(plan.id);
+                      setRenameValue(plan.title);
+                    }}
+                    className="text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Delete plan"
+                    onClick={() => deleteMutation.mutate(plan.id)}
+                    className="text-muted-foreground transition-colors hover:text-destructive"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+                {expanded ? (
+                  <div className="grid gap-4 border-t border-border p-3 text-sm">
+                    {plan.focus_skills.length ? (
+                      <div>
+                        <h3 className="font-medium">Focused on</h3>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {plan.focus_skills.map((skill) => (
+                            <Badge key={skill}>{skill}</Badge>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                    <StudyPlanView plan={plan.plan} />
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">No saved plans yet. Generate a study plan and save it to keep it here.</p>
+      )}
+    </Panel>
+  );
+}
+
+function StudyPlanView({ plan }: { plan: StudyPlan }) {
+  return (
+    <div className="grid gap-4 text-sm">
+      {plan.top_gaps.length ? <List title="Top gaps" items={plan.top_gaps} /> : null}
+      {plan.priority_order.length ? <List title="Priority order" items={plan.priority_order} /> : null}
+      {plan.study_plan.length ? (
+        <div>
+          <h3 className="font-medium">Plan</h3>
+          <div className="mt-2 grid gap-3">
+            {plan.study_plan.map((item) => (
+              <div key={`${item.period}-${item.focus}`} className="rounded-md border border-border bg-muted/40 p-3">
+                <div className="font-medium">{item.period}: {item.focus}</div>
+                <ul className="mt-2 list-inside list-disc text-muted-foreground">
+                  {item.tasks.map((task) => (
+                    <li key={task}>{task}</li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {plan.project_ideas.length ? <List title="Project ideas" items={plan.project_ideas} /> : null}
+    </div>
+  );
+}
+
 function GapTable({
   gaps,
   onLevelChange,
-  muted = false
+  muted = false,
+  selectable = false,
+  selectedSkills,
+  onToggleSkill
 }: {
   gaps: SkillGap[];
   onLevelChange: (id: string, level: SkillGap["user_level"]) => void;
   muted?: boolean;
+  selectable?: boolean;
+  selectedSkills?: Set<string>;
+  onToggleSkill?: (skillName: string) => void;
 }) {
   if (!gaps.length) {
     return null;
@@ -158,6 +424,7 @@ function GapTable({
     <table className={cn("w-full min-w-[860px] text-left text-sm", muted && "opacity-70")}>
       <thead className="border-b border-border text-xs uppercase text-muted-foreground">
         <tr>
+          {selectable ? <th className="w-8 py-2 pr-2" aria-label="Select for study plan" /> : null}
           <th className="py-2 pr-4">Skill</th>
           <th className="py-2 pr-4">Sources</th>
           <th className="py-2 pr-4">Count</th>
@@ -169,6 +436,17 @@ function GapTable({
       <tbody>
         {gaps.map((gap) => (
           <tr key={gap.id} className="border-b border-border last:border-0">
+            {selectable ? (
+              <td className="py-3 pr-2">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 accent-primary"
+                  aria-label={`Include ${gap.skill_name} in study plan`}
+                  checked={selectedSkills?.has(gap.skill_name) ?? false}
+                  onChange={() => onToggleSkill?.(gap.skill_name)}
+                />
+              </td>
+            ) : null}
             <td className="py-3 pr-4 font-medium">{gap.skill_name}</td>
             <td className="py-3 pr-4">
               <div className="flex flex-wrap gap-1.5">

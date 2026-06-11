@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.database import init_db
-from app.routers import ai, dashboard, interview, jobs, profile, skill_gaps
+from app.routers import ai, dashboard, interview, jobs, profile, skill_gaps, study_plans
 
 
 @asynccontextmanager
@@ -33,6 +33,7 @@ def create_app() -> FastAPI:
     app.include_router(jobs.router)
     app.include_router(profile.router)
     app.include_router(skill_gaps.router)
+    app.include_router(study_plans.router)
     app.include_router(dashboard.router)
     app.include_router(interview.router)
     app.include_router(ai.router)

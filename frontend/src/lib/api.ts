@@ -21,8 +21,11 @@ import type {
   JobStatus,
   ResumeProfile,
   ResumeOption,
+  SavedStudyPlan,
   SkillGap,
-  StudyPlan
+  StudyPlan,
+  StudyPlanMode,
+  StudyPlanTimeframe
 } from "@/lib/types";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
@@ -219,11 +222,36 @@ export const api = {
     ),
   generateStudyPlan: (payload: {
     resume_profile_id?: string | null;
-    timeframe: "1 week" | "2 weeks" | "1 month";
+    timeframe: StudyPlanTimeframe;
     target_roles: string[];
+    focus_skills: string[];
+    time_budget_hours: number | null;
+    time_budget_unit: "day" | "week";
+    mode: StudyPlanMode;
   }) =>
     request<StudyPlan>("/api/ai/generate-study-plan", {
       method: "POST",
       body: JSON.stringify(payload)
-    })
+    }),
+  savedStudyPlans: () => request<SavedStudyPlan[]>("/api/study-plans"),
+  saveStudyPlan: (payload: {
+    resume_profile_id?: string | null;
+    title: string;
+    timeframe: StudyPlanTimeframe;
+    time_budget_hours: number | null;
+    time_budget_unit: "day" | "week";
+    mode: StudyPlanMode;
+    focus_skills: string[];
+    plan: StudyPlan;
+  }) =>
+    request<SavedStudyPlan>("/api/study-plans", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+  renameStudyPlan: (id: string, title: string) =>
+    request<SavedStudyPlan>(`/api/study-plans/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ title })
+    }),
+  deleteStudyPlan: (id: string) => request<void>(`/api/study-plans/${id}`, { method: "DELETE" })
 };

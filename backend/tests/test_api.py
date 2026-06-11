@@ -859,6 +859,99 @@ def test_study_plan_excludes_known_skills(client, monkeypatch):
     assert "AWS Bedrock" in captured["prompt"]
 
 
+def test_study_plan_honors_focus_skills_mode_and_time_budget(client, monkeypatch):
+    create_profile(client)
+    run_intelligence_with_fakes(client, monkeypatch)
+
+    captured = {}
+
+    def fake_plan_output(output_model, _system_prompt, user_prompt):
+        assert output_model is schemas.StudyPlanResponse
+        captured["prompt"] = user_prompt
+        return schemas.StudyPlanResponse(top_gaps=[], priority_order=[], study_plan=[], project_ideas=[])
+
+    monkeypatch.setattr("app.services.ai_service.get_structured_output", fake_plan_output)
+    response = client.post(
+        "/api/ai/generate-study-plan",
+        json={
+            "timeframe": "2 weeks",
+            "focus_skills": ["LangChain"],
+            "time_budget_hours": 3,
+            "time_budget_unit": "week",
+            "mode": "project_ideas",
+        },
+    )
+    assert response.status_code == 200
+    prompt = captured["prompt"]
+    assert "LangChain" in prompt
+    # Non-selected gaps are excluded from the gap payload (resume text doesn't mention these).
+    assert "AWS Bedrock" not in prompt
+    assert "Vector search" not in prompt
+    assert "Cover ONLY these skills" in prompt
+    assert "3 hours available per week" in prompt
+    assert "Return an empty study_plan list" in prompt
+    assert "Week 1, Week 2" in prompt
+
+    # Weekly-plan mode flips the instruction; 1 week timeframe flips period granularity.
+    response = client.post(
+        "/api/ai/generate-study-plan",
+        json={"timeframe": "1 week", "mode": "weekly_plan"},
+    )
+    assert response.status_code == 200
+    assert "Return an empty project_ideas list" in captured["prompt"]
+    assert "Day 1, Day 2" in captured["prompt"]
+
+
+def test_saved_study_plan_crud(client):
+    plan_payload = {
+        "title": "LangChain sprint",
+        "timeframe": "2 weeks",
+        "time_budget_hours": 3,
+        "time_budget_unit": "week",
+        "mode": "both",
+        "focus_skills": ["LangChain"],
+        "plan": {
+            "top_gaps": ["LangChain"],
+            "priority_order": ["LangChain"],
+            "study_plan": [{"period": "Week 1", "focus": "LangChain basics", "tasks": ["Do the tutorial"]}],
+            "project_ideas": ["Build a RAG demo"],
+        },
+    }
+
+    response = client.post("/api/study-plans", json=plan_payload)
+    assert response.status_code == 404  # no profile yet
+
+    profile = create_profile(client)
+    response = client.post("/api/study-plans", json=plan_payload)
+    assert response.status_code == 201
+    saved = response.json()
+    assert saved["title"] == "LangChain sprint"
+    assert saved["resume_profile_id"] == profile["id"]
+    assert saved["focus_skills"] == ["LangChain"]
+    assert saved["plan"]["study_plan"][0]["period"] == "Week 1"
+
+    response = client.post("/api/study-plans", json={**plan_payload, "title": "Second plan"})
+    assert response.status_code == 201
+
+    response = client.get("/api/study-plans")
+    assert response.status_code == 200
+    plans = response.json()
+    assert len(plans) == 2
+    assert {plan["title"] for plan in plans} == {"LangChain sprint", "Second plan"}
+
+    response = client.patch(f"/api/study-plans/{saved['id']}", json={"title": "Renamed sprint"})
+    assert response.status_code == 200
+    assert response.json()["title"] == "Renamed sprint"
+
+    response = client.delete(f"/api/study-plans/{saved['id']}")
+    assert response.status_code == 204
+    response = client.delete(f"/api/study-plans/{saved['id']}")
+    assert response.status_code == 404
+
+    response = client.get("/api/study-plans")
+    assert [plan["title"] for plan in response.json()] == ["Second plan"]
+
+
 def test_dashboard_skill_gaps_exclude_known_skills(client, monkeypatch):
     create_profile(client)
     create_job(

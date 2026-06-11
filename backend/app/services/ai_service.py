@@ -4,7 +4,7 @@ from fastapi import HTTPException, status
 import httpx
 from openai import OpenAI
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app import models, prompts, schemas
@@ -229,17 +229,16 @@ def generate_study_plan(
     if not profile:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resume profile not found")
 
-    gaps = list(
-        db.scalars(
-            select(models.SkillGap)
-            .where(
-                models.SkillGap.resume_profile_id == profile.id,
-                models.SkillGap.user_level != models.UserLevel.high,
-            )
-            .order_by(models.SkillGap.count.desc())
-            .limit(20)
-        ).all()
+    gap_query = select(models.SkillGap).where(
+        models.SkillGap.resume_profile_id == profile.id,
+        models.SkillGap.user_level != models.UserLevel.high,
     )
+    focus_skills = [skill.strip() for skill in request.focus_skills if skill and skill.strip()]
+    if focus_skills:
+        gap_query = gap_query.where(
+            func.lower(models.SkillGap.skill_name).in_([skill.lower() for skill in focus_skills])
+        )
+    gaps = list(db.scalars(gap_query.order_by(models.SkillGap.count.desc()).limit(20)).all())
     gap_payload = [
         {
             "skill_name": gap.skill_name,
@@ -258,5 +257,9 @@ def generate_study_plan(
             request.target_roles or profile.target_roles,
             gap_payload,
             profile.resume_text,
+            focus_skills=focus_skills,
+            time_budget_hours=request.time_budget_hours,
+            time_budget_unit=request.time_budget_unit,
+            mode=request.mode,
         ),
     )

@@ -1,25 +1,43 @@
 # Job Pilot Agent
 
-Job Pilot Agent is a local-first job search workspace that combines application tracking, resume assets, skill-gap planning, and interview practice in one AI-assisted dashboard. It is built as a portfolio-ready full-stack app: a FastAPI service owns the workflow logic and persistence, while a Next.js interface turns the job search into a focused operating view.
+Job Pilot Agent is a FastAPI + Next.js dashboard for managing the job search with AI-assisted workflows. It tracks opportunities, analyzes job fit, ranks resume assets, plans skill gaps, and supports interview practice from one focused workspace.
 
-## What It Does
+## Core Workflows
 
-- Tracks job opportunities from intake through interview, offer, rejection, ghosting, or archive.
-- Extracts structured job details from pasted descriptions or source URLs, then flags duplicate opportunities before saving.
-- Runs AI-assisted job intelligence for resume fit, company research, interview prep, asset ranking, skill gaps, and study plans.
-- Maintains a reusable candidate profile, resume options, and cover letter templates.
-- Surfaces dashboard health signals such as stale opportunities, missing data, pipeline movement, active risks, and prioritized skill gaps.
-- Supports interview practice sessions with generated questions, answer feedback, follow-up prompts, score trends, and weak-point insights.
+Job Pilot Agent is organized around three main job-search workflows:
 
-## Demo Slots
+### 1. Search Dashboard
 
-Short demo assets can be added under `docs/assets/` when recordings are ready:
+Use the dashboard to track active opportunities, spot stale applications, monitor pipeline movement, and surface missing data, active risks, and priority skill gaps.
 
-- `docs/assets/dashboard-flow.gif` - dashboard, pipeline health, and search focus.
-- `docs/assets/job-intelligence-flow.gif` - job intake, analysis, asset recommendations, and skill gaps.
-- `docs/assets/interview-practice-flow.gif` - practice set generation, answer feedback, and interview insights.
+Planned demo asset: `docs/assets/dashboard-flow.gif`
 
-The slots are documented in [docs/assets/README.md](docs/assets/README.md).
+![Dashboard demo](docs/assets/dashboard-flow.gif)
+
+### 2. Job Intelligence
+
+Save jobs from pasted descriptions or URLs, extract structured details, flag duplicates, and run AI-assisted analysis for resume fit, company research, interview prep, asset recommendations, skill gaps, and study plans.
+
+![Job intelligence flow demo](docs/assets/job-intelligence-flow.gif)
+
+### 3. Interview Practice
+
+Generate role-specific practice questions, answer them in a guided session, and review feedback, follow-up prompts, score trends, and weak-point insights.
+
+![Interview Practice flow demo](docs/assets/interview-practice-flow.gif)
+
+### 4. Skill Gap Study Planning
+
+Review major skill gaps from saved job analyses, prioritize the highest-impact gaps, and generate study plans tied to target roles.
+
+![Study Plan creation demo](docs/assets/study-plan-demo.gif)
+
+
+### 5. Interview Practice
+
+Generate role-specific practice questions, answer them in a guided session, and review feedback, follow-up prompts, score trends, and weak-point insights.
+
+![Interview Practice demo](docs/assets/interview-practice.gif)
 
 ## Technical Architecture
 
@@ -150,7 +168,3 @@ alembic revision --autogenerate -m "describe change"
 ```
 
 Review the generated migration before committing it. The backend test suite checks that a fresh migrated database matches the SQLAlchemy models and that legacy migration states are handled correctly.
-
-## Public Repo Notes
-
-Local environment files, editor settings, agent skills, generated databases, logs, caches, dependency folders, and build outputs are intentionally ignored. Keep demo recordings under `docs/assets/` and avoid committing private job search data.

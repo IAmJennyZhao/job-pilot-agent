@@ -1,27 +1,31 @@
+# Local environment
 .env
 scope.md
-.agents/
-.claude/
 .vscode/
-skills-lock.json
+
+# Local databases and generated storage
 *.db
 *.db.bak*
 *.sqlite
 *.sqlite3
+storage/
+
+# Python
 __pycache__/
 .pytest_cache/
 pytest-cache-files-*/
 .mypy_cache/
 .ruff_cache/
 .venv/
+*.egg-info/
+
+# Node / Next.js
 node_modules/
 .next/
+*.tsbuildinfo
+
+# Logs, builds, and coverage
 logs/
 dist/
 build/
 coverage/
-*.egg-info/
-*.tsbuildinfo
-storage/
-.claude.design/*
-PUSH_ELSEWHERE_CHAT_PROMPT.md

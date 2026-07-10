@@ -10,34 +10,29 @@ Job Pilot Agent is organized around three main job-search workflows:
 
 Use the dashboard to track active opportunities, spot stale applications, monitor pipeline movement, and surface missing data, active risks, and priority skill gaps.
 
-Planned demo asset: `docs/assets/dashboard-flow.gif`
-
-![Dashboard demo](docs/assets/dashboard-flow.gif)
+[![Dashboard demo](docs/assets/dashboard-flow-quick.gif)](docs/assets/dashboard-flow.mp4)
+[Watch Full Dashboard demo](docs/assets/dashboard-flow.mp4)
 
 ### 2. Job Intelligence
 
 Save jobs from pasted descriptions or URLs, extract structured details, flag duplicates, and run AI-assisted analysis for resume fit, company research, interview prep, asset recommendations, skill gaps, and study plans.
 
-![Job intelligence flow demo](docs/assets/job-intelligence-flow.gif)
+[![Job Intelligence Flow Demo](docs/assets/job-intelligence-flow-quick.gif)](docs/assets/job-intelligence-flow.mp4)
+[Watch Full Job Intelligence Flow Demo](docs/assets/job-intelligence-flow.mp4)
 
 ### 3. Interview Practice
 
 Generate role-specific practice questions, answer them in a guided session, and review feedback, follow-up prompts, score trends, and weak-point insights.
 
-![Interview Practice flow demo](docs/assets/interview-practice-flow.gif)
+[![Interview Practice demo](docs/assets/interview-practiced-flow-quick.gif)](docs/assets/interview-practiced-flow.mp4)
+[Watch Full Interview Practice demo](docs/assets/interview-practiced-flow.mp4)
+
 
 ### 4. Skill Gap Study Planning
 
 Review major skill gaps from saved job analyses, prioritize the highest-impact gaps, and generate study plans tied to target roles.
 
 ![Study Plan creation demo](docs/assets/study-plan-demo.gif)
-
-
-### 5. Interview Practice
-
-Generate role-specific practice questions, answer them in a guided session, and review feedback, follow-up prompts, score trends, and weak-point insights.
-
-![Interview Practice demo](docs/assets/interview-practice.gif)
 
 ## Technical Architecture
 

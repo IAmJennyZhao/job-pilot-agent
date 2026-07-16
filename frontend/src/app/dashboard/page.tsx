@@ -349,12 +349,23 @@ function SankeyNode({
   const height = Math.max(24, Math.min(96, (node.count / maxCount) * 96));
   const color = stageColors[node.id] ?? fallbackStageColor;
   const labelY = node.kind === "terminal" ? y + 44 : y + 72;
+  const labelWidth = Math.max(64, node.label.length * 6.5 + 16);
   return (
-    <g filter="url(#sankeyShadow)">
-      <rect x={x - 24} y={y - height / 2} width="48" height={height} rx="7" fill={color} opacity={node.count ? 0.95 : 0.28} />
+    <g>
+      <rect
+        x={x - 24}
+        y={y - height / 2}
+        width="48"
+        height={height}
+        rx="7"
+        fill={color}
+        opacity={node.count ? 0.95 : 0.28}
+        filter="url(#sankeyShadow)"
+      />
       <text x={x} y={y + 5} textAnchor="middle" fill="hsl(var(--primary-foreground))" className="text-sm font-semibold">
         {node.count}
       </text>
+      <rect x={x - labelWidth / 2} y={labelY - 17} width={labelWidth} height="24" rx="4" fill="hsl(var(--card))" />
       <text x={x} y={labelY} textAnchor="middle" fill="hsl(var(--foreground))" className="text-[11px] font-medium">
         {node.label}
       </text>

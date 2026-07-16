@@ -78,12 +78,12 @@ function toApiHealthFilter(value: HealthFilter): "stale" | "missing_data" | "" {
 }
 
 function isHiddenStatus(status: JobStatus | "") {
-  return status === "Archived" || status === "Ghosted";
+  return status === "Archived" || status === "Ghosted" || status === "Rejected";
 }
 
 export default function JobsPage() {
   const queryClient = useQueryClient();
-  const [showArchived, setShowArchived] = useState(false);
+  const [showHidden, setShowHidden] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<JobStatus | "">("");
   const [healthFilter, setHealthFilter] = useState<HealthFilter>("");
@@ -98,14 +98,14 @@ export default function JobsPage() {
     const nextStatus = statusFromUrl(params.get("status"));
     setStatusFilter(nextStatus);
     setHealthFilter(healthFromUrl(params.get("health")));
-    if (isHiddenStatus(nextStatus)) setShowArchived(true);
+    setShowHidden(isHiddenStatus(nextStatus));
   }, []);
 
   const { data: jobs = [], isLoading, error } = useQuery({
-    queryKey: ["jobs", showArchived, search, statusFilter, healthFilter, categoryFilter],
+    queryKey: ["jobs", showHidden, search, statusFilter, healthFilter, categoryFilter],
     queryFn: () =>
       api.jobs({
-        includeArchived: showArchived || isHiddenStatus(statusFilter),
+        includeArchived: showHidden,
         search: search.trim() || undefined,
         status: statusFilter,
         category: categoryFilter,
@@ -129,6 +129,7 @@ export default function JobsPage() {
       setReview(null);
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      window.scrollTo({ top: 0, behavior: "smooth" });
     }
   });
 
@@ -157,6 +158,18 @@ export default function JobsPage() {
     if (!review) return;
     createMutation.mutate(cleanReview(review, intake.source_url));
   };
+
+  const changeStatusFilter = (nextStatus: JobStatus | "") => {
+    setStatusFilter(nextStatus);
+    if (isHiddenStatus(nextStatus)) setShowHidden(true);
+  };
+
+  const changeShowHidden = (nextShowHidden: boolean) => {
+    setShowHidden(nextShowHidden);
+    if (!nextShowHidden && isHiddenStatus(statusFilter)) setStatusFilter("");
+  };
+
+  const saveReviewDisabled = createMutation.isPending || !review?.company.trim() || !review?.role_title.trim();
 
   return (
     <div className="grid gap-6">
@@ -218,12 +231,13 @@ export default function JobsPage() {
 
           {review ? (
             <div className="mt-6 border-t border-border pt-5">
-              <ReviewEditor review={review} onChange={setReview} preview={preview} />
+              <SaveReviewedJobButton onClick={saveReview} isPending={createMutation.isPending} disabled={saveReviewDisabled} />
               {createMutation.error ? <p className="mt-3 text-sm text-destructive">{(createMutation.error as Error).message}</p> : null}
-              <Button className="mt-4 w-full" onClick={saveReview} disabled={createMutation.isPending || !review.company.trim() || !review.role_title.trim()}>
-                <Save className="h-4 w-4" />
-                {createMutation.isPending ? "Saving..." : "Save reviewed job"}
-              </Button>
+              <div className="mt-5">
+                <ReviewEditor review={review} onChange={setReview} preview={preview} />
+              </div>
+              {createMutation.error ? <p className="mt-3 text-sm text-destructive">{(createMutation.error as Error).message}</p> : null}
+              <SaveReviewedJobButton className="mt-4" onClick={saveReview} isPending={createMutation.isPending} disabled={saveReviewDisabled} />
             </div>
           ) : null}
         </Panel>
@@ -239,8 +253,8 @@ export default function JobsPage() {
                 <input
                   type="checkbox"
                   className="h-4 w-4 rounded border-border text-primary"
-                  checked={showArchived}
-                  onChange={(event) => setShowArchived(event.target.checked)}
+                  checked={showHidden}
+                  onChange={(event) => changeShowHidden(event.target.checked)}
                 />
                 Show hidden
               </label>
@@ -255,7 +269,7 @@ export default function JobsPage() {
                   placeholder="Search company, role, notes, status, URL..."
                 />
               </div>
-              <Select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as JobStatus | "")}>
+              <Select value={statusFilter} onChange={(event) => changeStatusFilter(event.target.value as JobStatus | "")}>
                 <option value="">All statuses</option>
                 {jobStatuses.map((status) => (
                   <option key={status} value={status}>
@@ -287,7 +301,7 @@ export default function JobsPage() {
                   <th className="py-2 pr-4">Company</th>
                   <th className="py-2 pr-4">Role</th>
                   <th className="py-2 pr-4">Category</th>
-                  <th className="py-2 pr-4">Status</th>
+                  <th className="min-w-44 py-2 pr-4">Status</th>
                   <th className="py-2 pr-4">Location</th>
                   <th className="py-2 pr-4">Pay</th>
                   <th className="py-2 pr-4">Source</th>
@@ -316,6 +330,25 @@ export default function JobsPage() {
 
       {selectedJob ? <JobDrawer job={selectedJob} onClose={() => setSelectedJob(null)} /> : null}
     </div>
+  );
+}
+
+function SaveReviewedJobButton({
+  className,
+  onClick,
+  isPending,
+  disabled
+}: {
+  className?: string;
+  onClick: () => void;
+  isPending: boolean;
+  disabled: boolean;
+}) {
+  return (
+    <Button className={cn("w-full", className)} onClick={onClick} disabled={disabled}>
+      <Save className="h-4 w-4" />
+      {isPending ? "Saving..." : "Save reviewed job"}
+    </Button>
   );
 }
 
@@ -598,7 +631,7 @@ function JobRow({
         </Select>
       </td>
       <td className="py-3 pr-4 align-top">
-        <Select value={job.status} onChange={(event) => onStatus(event.target.value as JobStatus)}>
+        <Select value={job.status} onChange={(event) => onStatus(event.target.value as JobStatus)} className="min-w-44">
           {jobStatuses.map((status) => (
             <option key={status} value={status}>
               {status}

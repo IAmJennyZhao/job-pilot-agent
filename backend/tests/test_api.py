@@ -547,14 +547,26 @@ def test_job_status_history_search_filter_and_archive(client):
         category="Frontend Engineer",
         status="Ghosted",
     )
+    rejected = create_job(
+        client,
+        company="Closed Door Co",
+        role_title="Platform Engineer",
+        category="Product/Platform Engineer",
+        status="Rejected",
+    )
 
     response = client.get("/api/jobs")
-    assert all(item["status"] not in {"Archived", "Ghosted"} for item in response.json())
+    assert all(item["status"] not in {"Archived", "Ghosted", "Rejected"} for item in response.json())
 
     response = client.get("/api/jobs?include_archived=true")
     statuses = {item["id"]: item["status"] for item in response.json()}
     assert statuses[other["id"]] == "Archived"
     assert statuses[ghosted["id"]] == "Ghosted"
+    assert statuses[rejected["id"]] == "Rejected"
+
+    response = client.get("/api/jobs?include_archived=true&status_filter=Rejected")
+    assert response.status_code == 200
+    assert [item["id"] for item in response.json()] == [rejected["id"]]
 
 
 def test_profile_dashboard_and_skill_gap(client):

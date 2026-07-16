@@ -20,6 +20,7 @@ OPEN_OPPORTUNITY_STATUSES = set(FUNNEL_STATUSES)
 HIDDEN_STATUSES = (
     models.JobStatus.archived,
     models.JobStatus.ghosted,
+    models.JobStatus.rejected,
 )
 STALE_DAYS = {
     models.JobStatus.saved: 7,

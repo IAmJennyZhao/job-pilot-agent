@@ -47,5 +47,9 @@ export function useDraft<T>(key: string, initial: T) {
     setState(current => ({ ...current, dirty: false }));
     try { localStorage.removeItem(storageKey); sessionStorage.removeItem(storageKey); } catch { setStorageError(true); }
   };
-  return { value: state.key === storageKey ? state.value : initial, setValue: update, clear, dirty: state.key === storageKey && state.dirty, ready: state.key === storageKey && state.ready, storageError };
+  const discard = () => {
+    clear();
+    setState(current => ({ ...current, value: JSON.parse(initialJson) as T, dirty: false, base: initialJson }));
+  };
+  return { value: state.key === storageKey ? state.value : initial, setValue: update, clear, discard, dirty: state.key === storageKey && state.dirty, ready: state.key === storageKey && state.ready, storageError };
 }

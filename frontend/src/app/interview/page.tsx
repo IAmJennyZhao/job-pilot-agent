@@ -1,5 +1,7 @@
 "use client";
 
+import { useConfirm } from "@/components/ui/confirm-provider";
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BarChart3, Brain, ChevronDown, ClipboardList, ExternalLink, MessageSquareText, Play, RotateCcw, Sparkles, Target, X } from "lucide-react";
 import Link from "next/link";
@@ -64,6 +66,7 @@ function InterviewPageFallback() {
 }
 
 function InterviewPageContent() {
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -242,7 +245,7 @@ function InterviewPageContent() {
                 <Sparkles className="h-4 w-4" />
                 {evaluateAnswer.isPending ? "Evaluating..." : "Evaluate answer"}
               </Button>
-              <Button variant="secondary" onClick={() => { if (window.confirm("Clear this answer draft?")) setAnswer(""); }} disabled={!answer.trim() || evaluateAnswer.isPending}>
+              <Button variant="secondary" onClick={async () => { if (await confirm("Clear this answer draft?")) setAnswer(""); }} disabled={!answer.trim() || evaluateAnswer.isPending}>
                 <RotateCcw className="h-4 w-4" />
                 Clear
               </Button>

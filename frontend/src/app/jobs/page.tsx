@@ -1,5 +1,8 @@
 "use client";
 
+import { validateJobFields } from "@/lib/job-validation";
+import { useConfirm } from "@/components/ui/confirm-provider";
+
 import { keepPreviousData, useMutation, useMutationState, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, ExternalLink, FileText, Plus, Save, Search, Sparkles, X } from "lucide-react";
 import Link from "next/link";
@@ -88,6 +91,7 @@ export default function JobsPage() {
   return <Suspense fallback={<Panel>Loading tracker...</Panel>}><JobsContent /></Suspense>;
 }
 function JobsContent() {
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const params = useSearchParams();
   const setFilter = (updates: Record<string, string>) => {
@@ -102,6 +106,7 @@ function JobsContent() {
   const statusFilter = statusFromUrl(params.get("status"));
   const healthFilter = healthFromUrl(params.get("health"));
   const categoryFilter = params.get("category") as JobCategory | "" || "";
+  const savedSince = params.get("since") ?? "";
   const funnelStage = params.get("funnel") ?? "";
   const funnelFrom = params.get("from") ?? "";
   const showHidden = params.get("hidden") === "true" || isHiddenStatus(statusFilter) || Boolean(funnelStage);
@@ -117,8 +122,8 @@ function JobsContent() {
   const { value: review, setValue: setReview } = reviewDraft;
 
   const { data: rawJobs = [], isLoading, error, isFetching, refetch } = useQuery({
-    queryKey: ["jobs", showHidden, debouncedSearch, statusFilter, healthFilter, categoryFilter, funnelStage, funnelFrom],
-    queryFn: () => api.jobs({ includeArchived: showHidden, search: debouncedSearch.trim() || undefined, status: statusFilter, category: categoryFilter, healthFilter: toApiHealthFilter(healthFilter), funnelStage, funnelFrom }),
+    queryKey: ["jobs", showHidden, debouncedSearch, statusFilter, healthFilter, categoryFilter, funnelStage, funnelFrom, savedSince],
+    queryFn: () => api.jobs({ includeArchived: showHidden, search: debouncedSearch.trim() || undefined, status: statusFilter, category: categoryFilter, healthFilter: toApiHealthFilter(healthFilter), funnelStage, funnelFrom, savedSince }),
     placeholderData: keepPreviousData
   });
   const jobs = [...rawJobs].sort((a, b) => sort === "company" ? a.company.localeCompare(b.company) : sort === "pay" ? (a.pay_currency ?? "Unknown").localeCompare(b.pay_currency ?? "Unknown") || (b.pay_annual_max ?? b.pay_annual_min ?? -1) - (a.pay_annual_max ?? a.pay_annual_min ?? -1) : Date.parse(b.updated_at) - Date.parse(a.updated_at));
@@ -170,13 +175,13 @@ function JobsContent() {
   };
 
   const saveReview = () => {
-    if (!review) return;
+    if (!review || Object.keys(validateJobFields(review)).length) return;
     createMutation.mutate(cleanReview(review, intake.source_url));
   };
 
   const changeStatusFilter = (status: JobStatus | "") => setFilter({ status, hidden: isHiddenStatus(status) ? "true" : params.get("hidden") ?? "" });
   const changeShowHidden = (value: boolean) => setFilter({ hidden: value ? "true" : "", status: !value && isHiddenStatus(statusFilter) ? "" : statusFilter, funnel: "", from: "" });
-  const saveReviewDisabled = createMutation.isPending || !review?.company.trim() || !review?.role_title.trim();
+  const saveReviewDisabled = Boolean(review && Object.keys(validateJobFields(review)).length) || createMutation.isPending || !review?.company.trim() || !review?.role_title.trim();
 
   return (
     <div className="grid gap-6">
@@ -214,14 +219,14 @@ function JobsContent() {
             {extractMutation.error ? (
               <div className="rounded-md border border-warning-foreground/20 bg-warning p-3 text-sm text-warning-foreground">
                 <div>{(extractMutation.error as Error).message}</div>
-                <Button className="mt-3" size="sm" variant="secondary" onClick={() => { if (!review || window.confirm("Replace the current review with a blank manual entry?")) startManualFallback(); }}>
+                <Button className="mt-3" size="sm" variant="secondary" onClick={async () => { if (!review || await confirm("Replace the current review with a blank manual entry?")) startManualFallback(); }}>
                   Use manual fallback
                 </Button>
               </div>
             ) : null}
             <div className="flex flex-wrap gap-2">
               <Button
-                onClick={() => { if (review && !window.confirm("Replace the current review with newly extracted fields?")) return;
+                onClick={async () => { if (review && !await confirm("Replace the current review with newly extracted fields?")) return;
                   extractMutation.mutate({
                     source_url: intake.source_url || null,
                     source_content: intake.source_content || null
@@ -231,7 +236,7 @@ function JobsContent() {
                 <Sparkles className="h-4 w-4" />
                 {extractMutation.isPending ? "Extracting..." : "Extract fields"}
               </Button>
-              <Button variant="secondary" onClick={() => { if (!review || window.confirm("Replace the current review with a blank manual entry?")) startManualFallback(); }}>
+              <Button variant="secondary" onClick={async () => { if (!review || await confirm("Replace the current review with a blank manual entry?")) startManualFallback(); }}>
                 Manual entry
               </Button>
             </div>
@@ -302,7 +307,7 @@ function JobsContent() {
           </div>
           <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
             {funnelStage ? <Badge>{funnelFrom ? `${funnelFrom} → ${funnelStage}` : `Reached ${funnelStage}`} · excludes archived</Badge> : null}
-            {[...params.entries()].filter(([key]) => ["search", "status", "health", "category", "funnel"].includes(key)).map(([key, value]) => <button key={key} className="rounded-full border border-border px-3 py-1" onClick={() => setFilter(key === "funnel" ? { funnel: "", from: "", hidden: "" } : { [key]: "" })} aria-label={`Remove ${key} filter`}>{healthLabels[value] ?? value} ×</button>)}
+            {[...params.entries()].filter(([key]) => ["search", "status", "health", "category", "funnel", "since"].includes(key)).map(([key, value]) => <button key={key} className="rounded-full border border-border px-3 py-1" onClick={() => setFilter(key === "funnel" ? { funnel: "", from: "", hidden: "" } : { [key]: "" })} aria-label={`Remove ${key} filter`}>{key === "since" ? `Saved since ${value}` : healthLabels[value] ?? value} ×</button>)}
             {[...params.keys()].some(key => key !== "sort") ? <Button variant="ghost" size="sm" onClick={() => window.history.replaceState(null, "", `/jobs${sort !== "updated" ? `?sort=${encodeURIComponent(sort)}` : ""}`)}>Clear filters</Button> : null}
             <label className="ml-auto flex items-center gap-2 whitespace-nowrap">Sort by <Select aria-label="Sort jobs" value={sort} onChange={event => setFilter({ sort: event.target.value })}><option value="updated">Recently updated</option><option value="company">Company A–Z</option><option value="pay">Pay by currency, highest first</option></Select></label>
           </div>
@@ -318,7 +323,7 @@ function JobsContent() {
               {job.links[0] ? <a className="text-sm text-primary underline" href={(job.links.find(link => link.kind === "source") ?? job.links[0]).url} target="_blank" rel="noreferrer">Open job posting</a> : null}
               <p className="text-sm text-muted-foreground">{job.location || "Location not listed"}</p>
               <label className="grid gap-1 text-sm">Status<Select aria-label={`Status for ${job.company} ${job.role_title}`} value={job.status} disabled={pendingJobIds.includes(job.id)} onChange={event => updateMutation.mutate({ id: job.id, payload: { status: event.target.value as JobStatus } })}>{jobStatuses.map(status => <option key={status} value={status}>{status}</option>)}</Select></label>
-              <PayEditor job={job} onSave={payload => updateMutation.mutateAsync({ id: job.id, payload })} />
+              <PayEditor job={job} disabled={pendingJobIds.includes(job.id)} onSave={payload => updateMutation.mutateAsync({ id: job.id, payload })} />
               <div className="flex items-center justify-between gap-2"><span className="text-xs text-muted-foreground">Updated {formatDate(job.updated_at)}</span><Button size="sm" variant="secondary" onClick={() => setSelectedJob(job)}>Preview</Button></div>
             </article>)}
             {!jobs.length && !isLoading && !error ? <p className="py-6 text-sm">No jobs match. Clear filters or add a job.</p> : null}
@@ -491,6 +496,7 @@ function ReviewEditor({
   onChange: (next: ReviewState) => void;
   preview: JobExtractPreview | null;
 }) {
+  const errors = validateJobFields(review);
   const set = <K extends keyof ReviewState>(key: K, value: ReviewState[K]) => onChange({ ...review, [key]: value });
   const setLink = (index: number, patch: Partial<JobLinkInput>) => {
     const nextPatch = patch.kind ? { ...patch, label: patch.label ?? linkKindLabels[patch.kind] } : patch;
@@ -563,11 +569,11 @@ function ReviewEditor({
       <ListEditor label="Main responsibilities" value={review.responsibilities ?? []} onChange={value => set("responsibilities", value)} />
       <ListEditor label="Skills" value={review.required_skills ?? []} onChange={value => set("required_skills", value)} />
       <div className="grid gap-3 md:grid-cols-2">
-        <Field label="Pay minimum">
-          <Input type="number" value={review.pay_min ?? ""} onChange={(event) => set("pay_min", event.target.value ? Number(event.target.value) : null)} />
+        <Field label="Pay minimum" error={errors.pay_min}>
+          <Input type="number" min={0} value={review.pay_min ?? ""} onChange={(event) => set("pay_min", event.target.value ? Number(event.target.value) : null)} />
         </Field>
-        <Field label="Pay maximum">
-          <Input type="number" value={review.pay_max ?? ""} onChange={(event) => set("pay_max", event.target.value ? Number(event.target.value) : null)} />
+        <Field label="Pay maximum" error={errors.pay_max}>
+          <Input type="number" min={0} value={review.pay_max ?? ""} onChange={(event) => set("pay_max", event.target.value ? Number(event.target.value) : null)} />
         </Field>
         <Field label="Pay currency">
           <Input value={review.pay_currency ?? ""} onChange={(event) => set("pay_currency", event.target.value)} placeholder="USD" />
@@ -610,7 +616,7 @@ function ReviewEditor({
               ))}
             </Select>
             <Input aria-label={`Link ${index + 1} label`} value={link.label} onChange={(event) => setLink(index, { label: event.target.value })} />
-            <Input aria-label={`Link ${index + 1} URL`} value={link.url} onChange={(event) => setLink(index, { url: event.target.value })} placeholder="https://..." />
+            <Field label={`Link ${index + 1} URL`} error={errors[`link_${index}`]}><Input type="url" value={link.url} onChange={(event) => setLink(index, { url: event.target.value })} placeholder="https://..." /></Field>
             <Button variant="ghost" size="icon" onClick={() => removeLink(index)} title="Remove link">
               <X className="h-4 w-4" />
             </Button>
@@ -640,6 +646,7 @@ function JobRow({
   returnTo: string;
   busy: boolean;
 }) {
+  const confirm = useConfirm();
   const source = job.links.find((link) => link.kind === "source") ?? job.links[0];
   return (
     <tr className="border-b border-border last:border-0">
@@ -672,7 +679,7 @@ function JobRow({
         <div className="text-xs">{job.remote_type || "Unknown"}</div>
       </td>
       <td className="py-3 pr-4 align-top text-muted-foreground">
-        <PayEditor job={job} onSave={onPay} />
+        <PayEditor job={job} disabled={busy} onSave={onPay} />
       </td>
       <td className="py-3 pr-4 align-top">
         {source ? (
@@ -688,7 +695,7 @@ function JobRow({
             Preview
           </Button>
           {job.status !== "Archived" && job.status !== "Ghosted" ? (
-            <Button variant="secondary" size="icon" disabled={busy} onClick={() => { if (window.confirm(`Archive ${job.company} - ${job.role_title}? You can restore it using the status filter.`)) onArchive(); }} aria-label={`Archive ${job.company} ${job.role_title}`} title="Archive job">
+            <Button variant="secondary" size="icon" disabled={busy} onClick={async () => { if (await confirm(`Archive ${job.company} - ${job.role_title}? You can restore it using the status filter.`)) onArchive(); }} aria-label={`Archive ${job.company} ${job.role_title}`} title="Archive job">
               <Archive className="h-4 w-4" />
             </Button>
           ) : null}
@@ -698,7 +705,7 @@ function JobRow({
   );
 }
 
-function PayEditor({ job, onSave }: { job: JobListItem; onSave: (payload: Partial<JobCreatePayload>) => Promise<unknown> }) {
+function PayEditor({ job, onSave, disabled = false }: { job: JobListItem; disabled?: boolean; onSave: (payload: Partial<JobCreatePayload>) => Promise<unknown> }) {
   const [isOpen, setIsOpen] = useState(false);
   const [draft, setDraft] = useState({
     pay_min: job.pay_min,
@@ -720,7 +727,9 @@ function PayEditor({ job, onSave }: { job: JobListItem; onSave: (payload: Partia
 
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const payErrors = validateJobFields(draft);
   const save = async () => {
+    if (Object.keys(payErrors).length) return;
     if (draft.pay_min !== null && draft.pay_max !== null && draft.pay_min > draft.pay_max) { setSaveError("Minimum pay must not exceed maximum pay."); return; }
     setSaving(true);
     setSaveError("");
@@ -737,7 +746,7 @@ function PayEditor({ job, onSave }: { job: JobListItem; onSave: (payload: Partia
 
   return (
     <div className="relative min-w-48">
-      <button className="text-left" onClick={() => setIsOpen((current) => !current)}>
+      <button disabled={disabled} className="text-left disabled:opacity-55" onClick={() => setIsOpen((current) => !current)}>
         <div className="font-medium text-foreground">{formatPay(job)}</div>
         <div className="text-xs text-muted-foreground">{formatAnnualPay(job)}</div><span className="text-xs text-primary underline">Edit compensation</span>
       </button>
@@ -745,10 +754,10 @@ function PayEditor({ job, onSave }: { job: JobListItem; onSave: (payload: Partia
         <Dialog title="Edit compensation" onClose={() => { if (!saving) setIsOpen(false); }}>
           <fieldset disabled={saving} className="grid min-w-0 gap-3">
             <div className="grid grid-cols-2 gap-2">
-              <Field label="Min">
+              <Field label="Min" error={payErrors.pay_min}>
                 <Input type="number" value={draft.pay_min ?? ""} onChange={(event) => setDraft((current) => ({ ...current, pay_min: event.target.value ? Number(event.target.value) : null }))} />
               </Field>
-              <Field label="Max">
+              <Field label="Max" error={payErrors.pay_max}>
                 <Input type="number" value={draft.pay_max ?? ""} onChange={(event) => setDraft((current) => ({ ...current, pay_max: event.target.value ? Number(event.target.value) : null }))} />
               </Field>
             </div>
@@ -774,7 +783,7 @@ function PayEditor({ job, onSave }: { job: JobListItem; onSave: (payload: Partia
               <Button variant="secondary" size="sm" onClick={() => setIsOpen(false)}>
                 Cancel
               </Button>
-              <Button size="sm" onClick={save} disabled={saving}>
+              <Button size="sm" onClick={save} disabled={saving || Boolean(Object.keys(payErrors).length)}>
                 <Save className="h-4 w-4" />
                 Save
               </Button>
@@ -826,7 +835,7 @@ function JobDrawer({ job, onClose, returnTo }: { job: JobListItem; onClose: () =
 }
 
 function ProcessSteps({ active }: { active: boolean; steps: string[] }) {
-  return active ? <p role="status" className="text-sm text-muted-foreground">Extracting job details. This can take a minute; keep this page open.</p> : null;
+  return active ? <p role="status" className="text-sm text-muted-foreground">Extracting job details. Keep this page open while it runs. If extraction fails, retry or use manual entry; your source draft is kept.</p> : null;
 }
 
 function formatPay(job: { pay_min: number | null; pay_max: number | null; pay_currency: string | null; pay_period: string | null; pay_raw: string | null }) {

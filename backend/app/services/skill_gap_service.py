@@ -3,7 +3,8 @@ from collections.abc import Iterable
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app import models
+from app import models, schemas
+from app.services import job_service
 
 SOURCE_PRECEDENCE = {
     models.SkillGapSource.resume_match: 0,
@@ -79,11 +80,27 @@ def upsert_skill_gaps(
     db.commit()
 
 
-def list_skill_gaps(db: Session, profile_id: str | None = None) -> list[models.SkillGap]:
-    statement = select(models.SkillGap).order_by(
-        models.SkillGap.count.desc(),
-        models.SkillGap.updated_at.desc(),
-    )
+def list_skill_gaps(db: Session, profile_id: str | None = None) -> list[schemas.SkillGapRead]:
+    statement = select(models.SkillGap)
     if profile_id:
         statement = statement.where(models.SkillGap.resume_profile_id == profile_id)
-    return list(db.scalars(statement).all())
+    gaps = list(db.scalars(statement).all())
+    jobs = list(db.scalars(select(models.Job).where(models.Job.status.in_(job_service.OPEN_OPPORTUNITY_STATUSES))))
+    latest_suggestions = {}
+    for suggestion in db.scalars(select(models.ResumeSuggestion).order_by(models.ResumeSuggestion.created_at.desc())):
+        latest_suggestions.setdefault((suggestion.resume_profile_id, suggestion.job_id), suggestion)
+    evidence = {}
+    for owner in {gap.resume_profile_id for gap in gaps}:
+        for job in jobs:
+            suggestion = latest_suggestions.get((owner, job.id))
+            skills = ([*suggestion.missing_skills, *suggestion.weak_skills] if suggestion else
+                      [*job.analysis.required_skills, *job.analysis.technologies] if job.analysis else job.required_skills)
+            for skill in skills:
+                evidence.setdefault((owner, skill.strip().casefold()), set()).add(job.id)
+    rows = []
+    for gap in gaps:
+        count = len(evidence.get((gap.resume_profile_id, gap.skill_name.strip().casefold()), set()))
+        rows.append(schemas.SkillGapRead.model_validate(gap).model_copy(update={
+            "active_job_count": count, "priority": _priority_for_count(count),
+        }))
+    return sorted(rows, key=lambda row: (-row.active_job_count, row.skill_name.casefold()))

@@ -338,6 +338,7 @@ export type CoverageGapResponse = {
 export type SkillGapSource = "job_analysis" | "resume_match" | "interview_feedback";
 
 export type SkillGap = {
+  active_job_count: number;
   id: string;
   resume_profile_id: string;
   skill_name: string;
@@ -404,6 +405,7 @@ export type DashboardJobInsight = {
 };
 
 export type DashboardSankeyNode = {
+  recorded_count: number;
   id: string;
   label: string;
   count: number;

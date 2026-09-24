@@ -1,10 +1,10 @@
 # UI/UX audit verification
 
-Scope: the 32 findings from the September 24, 2026 review, plus regressions found while exercising the fixes. Verification uses the production Next.js build and a synthetic database. No production records were changed.
+Scope: the original 32 findings, the subsequent 30-point review, and regressions found while exercising the fixes. Verification uses the production Next.js build and a synthetic database. No production records were changed.
 
 ## Automated checks
 
-- `cd backend; py -3.13 -m pytest -q -p no:cacheprovider`: 52 passing tests, including migration tests.
+- `cd backend; py -3.13 -m pytest -q -p no:cacheprovider`: 56 passing tests, including migration tests.
 - `cd frontend; npm run typecheck`: passing.
 - `cd frontend; npm run build`: passing.
 - `git diff --check`: passing.
@@ -64,7 +64,7 @@ Desktop and 390px mobile views were checked for the dashboard, tracker, assets, 
 
 ## Follow-up review: checkpoint 1
 
-The subsequent 30-point review adds scope beyond the original audit. Completion of that follow-up is still in progress.
+The subsequent 30-point review adds scope beyond the original audit. The following final checklist records the completed follow-up.
 
 Verified in this checkpoint:
 - Funnel cohort heading and archived exclusion replace the contradictory hidden-record checkbox. Synthetic rejection-after-Tech drill-down shows exactly one matching job.
@@ -78,4 +78,43 @@ Verified in this checkpoint:
 - Missing-session browser check shows an error and recovery link without unrelated question/answer UI.
 - Production build and frontend typecheck pass.
 
-Remaining follow-up work includes dashboard cohort periods, recorded/inferred stage counts, conversion rates, a unified action queue, unique-job skill prioritization, inline validation, consistent confirmations/recovery, and final integrated verification.
+The remaining dashboard, validation and recovery work was completed in the final checkpoint below.
+
+## Follow-up review: final checklist
+
+| # | Requirement | Final behavior and evidence |
+|---|---|---|
+| 1 | Historical filter context | Cohort heading distinguishes reaching a stage from current status. Browser rejection-after-Tech example returns one job. |
+| 2 | Consistent archived scope | Funnel mode replaces the hidden-record checkbox with an explicit historical-scope explanation; archived jobs stay excluded. |
+| 3 | Stage conversion | Every stage shows conversion from its predecessor as well as share of total. Browser verified 75% Applied-to-Recruiter in the synthetic cohort. |
+| 4 | Recorded versus inferred | API counts explicit history/current status separately. Regression test covers a directly created Tech Screen job with inferred Recruiter Screen. Both values appear in the visual card and accessible link name. |
+| 5 | Timeframe selection | All-time, last-30/90-day shortcuts and an absolute saved-since date. Dashboard and job APIs share the saved-date boundary. API regression verifies old jobs are excluded; browser verifies date survives a branch drill-down. |
+| 6 | Prioritized action queue | One deduplicated queue of up to five jobs; stale, analysis, then missing-data priority. Coverage details are collapsed. Browser inspected the queue and its links. |
+| 7 | Laptop tracker layout | Cards remain in use below the wide-desktop breakpoint; checked at 1280px and 390px with no document overflow. |
+| 8 | Search behavior | 250ms debounce, previous results retained with visible updating status, URL remains authoritative. Source checked alongside browser filter navigation. |
+| 9 | Pending row scope | Mutation identities disable the affected row, including compensation. Delayed fixture showed the changed row disabled and a different row enabled. |
+| 10 | Mobile quick actions | Category editor and source link included in each card; visible in browser and responsive screenshots. |
+| 11 | Compensation affordance | Explicit Edit compensation text; browser opened the editor through this action. |
+| 12 | Currency-safe sorting | Salaries sort within currency groups; UI explains that exchange-rate conversion is not performed. Comparator and labels inspected. |
+| 13 | Clear filters preserves sort | Browser verified the resulting URL remains `?sort=company`. |
+| 14 | List item integrity | Explicit item controls for job responsibilities/skills/benefits, newline-only profile lists, multiline target roles. Regression test preserves punctuation; browser saved and reloaded “Design, build, and test APIs” as one item. |
+| 15 | Inline validation | Negative amounts, reversed ranges and malformed posting URLs show field errors and disable saving. Tests cover boundary values and protocols. Browser verified invalid amount and URL states; correction re-enables save. |
+| 16 | Analysis recovery guidance | Pending UI explains keeping the page open, retained saved jobs/source drafts and retry/manual-entry recovery. No simulated progress or unsupported cancellation claims. |
+| 17 | Consistent confirmations | Shared native modal for archive/delete/discard/replace actions. Browser verified cancelling preserves the draft and restores focus to the trigger. |
+| 18 | Content-based readiness | Requires actual profile/resume/template content. Browser saved whitespace-only synthetic letter and saw “Needs assets” with the missing requirement; restored content afterward. Letter body is directly visible in the editor. |
+| 19 | Durable drafts | Browser-local persistence with migration from existing session drafts. Browser closed/reopened a tab and recovered exact content. Asset editors also offer confirmed Discard draft; browser verified saved profile restored after discard and reload. |
+| 20 | Shareable asset tabs | URL-backed tab selection, verified through navigation and reload. |
+| 21 | Readiness navigation | Readiness selects the correct tab and scrolls/focuses the field or section. Browser verified Skills focus before and after field-label changes. |
+| 22 | Generation target locking | Disabled setup fieldset while generation runs. Delayed fixture confirmed role/stage controls disabled, followed by usable generated practice. |
+| 23 | Searchable saved-job choices | Search by company/role, active versus closed groups, selected job retained. Loaded option grouping and implementation inspected. |
+| 24 | Interview mode state | Saved job / General role buttons use aria-pressed; confirmed in the accessibility tree. |
+| 25 | Error versus empty states | Skills loading error suppresses No gaps yet and supplies Retry. Conditional rendering checked. |
+| 26 | Unique-job skill priority | API and study-plan input prioritize current unique active jobs, retaining historical mentions separately. Repeated-analysis regression and manual-requirement evidence regression pass; browser shows both counts. |
+| 27 | Optional projects | Study-task and optional-project completion are separate. Browser completed a project and verified required-task progress stayed at 1 of 2. |
+| 28 | Consistent query recovery | Retry actions for jobs, profile/assets, skills/evidence, detail/readiness/analysis and interview queries. Detail asset controls wait for successful loading; failures do not masquerade as empty choices. |
+| 29 | Disclosure accessibility | Expanded state and controlled-region IDs on saved plans, known skills, advanced details, interview insights and research sources. Native details used for funnel/coverage. Shared field errors have separate descriptions without changing control names. |
+| 30 | Unambiguous dates | Shared timestamps include the year; inspected in browser job history, tracker and assets. |
+
+Final checks: 56 backend tests, both frontend regression scripts, TypeScript checking, production build, whitespace check, desktop/laptop/mobile browser checks and browser console inspection. Browser checks used synthetic databases only; the user’s normal database was not modified. Existing `.gitignore` changes are excluded from commits.
+
+For pending-state verification, start the fixture with `UI_FIXTURE_DELAY=3`; only synthetic POST/PATCH requests are delayed after fixture setup. AI responses are deterministic. This verifies UI loading and recovery behavior, not external AI content quality.

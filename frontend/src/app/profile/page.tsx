@@ -1,5 +1,7 @@
 "use client";
 
+import { useConfirm } from "@/components/ui/confirm-provider";
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
@@ -60,7 +62,7 @@ function ProfileContent() {
       const field = Array.from(section?.querySelectorAll("label") ?? []).find(label => label.textContent?.startsWith(target));
       const element = field ?? section;
       element?.scrollIntoView({ block: "start", behavior: "smooth" });
-      (field?.querySelector("input, textarea, select") as HTMLElement | null)?.focus({ preventScroll: true });
+      (field instanceof HTMLLabelElement ? document.getElementById(field.htmlFor) : section)?.focus({ preventScroll: true });
     });
     return () => cancelAnimationFrame(frame);
   }, [params, isLoading, resumesLoading, templatesLoading]);
@@ -102,7 +104,7 @@ function ProfileContent() {
           );
         })}
       </div>
-      <section id="asset-content" className="scroll-mt-36">{activeTab === "base" && !isLoading && !error ? <BaseProfileTab profile={profile ?? null} onSaved={invalidateProfileAssets} /> : null}
+      <section id="asset-content" tabIndex={-1} className="scroll-mt-36">{activeTab === "base" && !isLoading && !error ? <BaseProfileTab profile={profile ?? null} onSaved={invalidateProfileAssets} /> : null}
       {activeTab === "resumes" && !resumesLoading && !resumesError ? <ResumeVariantsTab resumeOptions={resumeOptions} onChanged={invalidateProfileAssets} /> : null}
       {activeTab === "templates" && !templatesLoading && !templatesError ? <CoverLetterTemplatesTab templates={templates} onChanged={invalidateProfileAssets} /> : null}
       {activeTab === "coverage" ? <CoverageAuditTab /> : null}
@@ -123,7 +125,7 @@ function ReadinessStrip({
   onSelect: (tab: TabKey, focus?: string) => void;
 }) {
   const checks = [
-    { tab: "base" as TabKey, label: "Base profile", focus: "Resume text", ready: Boolean(profile?.resume_text.trim() || profile?.summary?.trim()) },
+    { tab: "base" as TabKey, label: "Base profile", focus: "Summary", ready: Boolean(profile?.resume_text.trim() || profile?.summary?.trim()) },
     { tab: "base" as TabKey, label: "Skills", focus: "Skills", ready: Boolean(profile?.skills.some(skill => skill.trim())) },
     { tab: "resumes" as TabKey, label: "Ready resume", focus: "Resume Variants", ready: resumeOptions.some((option) => option.status === "ready" && Boolean(option.parsed_text.trim() || option.summary?.trim() || option.experience.length)) },
     { tab: "templates" as TabKey, label: "Cover template", focus: "Cover Letters", ready: templates.some(template => Boolean(template.body.trim())) }
@@ -136,7 +138,7 @@ function ReadinessStrip({
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex items-center gap-2">
           <StatusIcon className={cn("h-4 w-4", ready ? "text-success-foreground" : "text-warning-foreground")} />
-          <span className="text-sm font-semibold">{ready ? "Ready for job review" : "Needs assets"}</span>
+          <span className="text-sm font-semibold">{ready ? "Ready for job review" : "Needs assets"}</span>{!ready ? <p className="text-xs text-muted-foreground">Add saved content for: {checks.filter(item => !item.ready).map(item => item.label).join(", ")}. Select a check to open its section.</p> : null}
         </div>
         <div className="flex flex-wrap gap-2">
           {checks.map((item) => (
@@ -188,7 +190,7 @@ function BaseProfileTab({ profile, onSaved }: { profile: ResumeProfile | null; o
             <Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
           </Field>
           <Field label="Target roles (one per line)">
-            <Input value={form.target_roles} onChange={(event) => setForm({ ...form, target_roles: event.target.value })} />
+            <Textarea value={form.target_roles} onChange={(event) => setForm({ ...form, target_roles: event.target.value })} />
           </Field>
         </div>
         <Field label="Summary">
@@ -215,7 +217,7 @@ function BaseProfileTab({ profile, onSaved }: { profile: ResumeProfile | null; o
             <Textarea className="min-h-48" value={form.resume_text} onChange={(event) => setForm({ ...form, resume_text: event.target.value })} />
           </Field>
         </AdvancedDetails>
-        <DraftNotice dirty={draft.dirty} storageError={draft.storageError} saved={mutation.isSuccess} />
+        <DraftNotice onDiscard={draft.discard} dirty={draft.dirty} storageError={draft.storageError} saved={mutation.isSuccess} />
         {mutation.error ? <p className="text-sm text-destructive">{(mutation.error as Error).message}</p> : null}
         <Button className="justify-self-start" onClick={() => mutation.mutate()} disabled={mutation.isPending}>
           <Save className="h-4 w-4" />
@@ -343,6 +345,7 @@ function ResumeOptionCard({
   onEdit: () => void;
   onChanged: () => void;
 }) {
+  const confirm = useConfirm();
   const draft = useDraft(`resume-${option.id}`, resumeFormFromOption(option));
   const confirmMutation = useMutation({
     mutationFn: () => api.confirmResumeOption(option.id, false),
@@ -350,8 +353,8 @@ function ResumeOptionCard({
   });
   const deleteMutation = useMutation({ mutationFn: () => api.deleteResumeOption(option.id), onSuccess: onChanged });
 
-  const deleteOption = () => {
-    if (window.confirm(`Delete ${option.title}? This cannot be undone.`)) {
+  const deleteOption = async () => {
+    if (await confirm(`Delete ${option.title}? This cannot be undone.`)) {
       deleteMutation.mutate();
     }
   };
@@ -409,6 +412,7 @@ function ResumeOptionEditor({
   onChanged: () => void;
   onDeleted: () => void;
 }) {
+  const confirm = useConfirm();
   const draft = useDraft(`resume-${option.id}`, resumeFormFromOption(option));
   const { value: form, setValue: setForm } = draft;
   const saveMutation = useMutation({
@@ -445,8 +449,8 @@ function ResumeOptionEditor({
     }
   });
 
-  const deleteOption = () => {
-    if (window.confirm(`Delete ${option.title}? This cannot be undone.`)) {
+  const deleteOption = async () => {
+    if (await confirm(`Delete ${option.title}? This cannot be undone.`)) {
       deleteMutation.mutate();
     }
   };
@@ -528,7 +532,7 @@ function ResumeOptionEditor({
           </Field>
         </AdvancedDetails>
         {confirmMutation.error || deleteMutation.error ? <p role="alert" className="text-sm text-destructive">{((confirmMutation.error || deleteMutation.error) as Error).message}</p> : null}
-        <DraftNotice dirty={draft.dirty} storageError={draft.storageError} saved={saveMutation.isSuccess} />
+        <DraftNotice onDiscard={draft.discard} dirty={draft.dirty} storageError={draft.storageError} saved={saveMutation.isSuccess} />
         {saveMutation.error ? <p className="text-sm text-destructive">{(saveMutation.error as Error).message}</p> : null}
         <Button className="justify-self-start" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending || confirmMutation.isPending}>
           <Save className="h-4 w-4" />
@@ -611,10 +615,11 @@ function CoverLetterTemplateCard({
   onEdit: () => void;
   onChanged: () => void;
 }) {
+  const confirm = useConfirm();
   const deleteMutation = useMutation({ mutationFn: () => api.deleteCoverLetterTemplate(template.id), onSuccess: onChanged });
 
-  const deleteTemplate = () => {
-    if (window.confirm(`Delete ${template.title}? This cannot be undone.`)) {
+  const deleteTemplate = async () => {
+    if (await confirm(`Delete ${template.title}? This cannot be undone.`)) {
       deleteMutation.mutate();
     }
   };
@@ -652,6 +657,7 @@ function CoverLetterTemplateEditor({
   onChanged: () => void;
   onDeleted: () => void;
 }) {
+  const confirm = useConfirm();
   const draft = useDraft(`template-${template.id}`, {
     title: template.title,
     target_roles: listToLines(template.target_roles),
@@ -679,8 +685,8 @@ function CoverLetterTemplateEditor({
     }
   });
 
-  const deleteTemplate = () => {
-    if (window.confirm(`Delete ${template.title}? This cannot be undone.`)) {
+  const deleteTemplate = async () => {
+    if (await confirm(`Delete ${template.title}? This cannot be undone.`)) {
       deleteMutation.mutate();
     }
   };
@@ -706,16 +712,16 @@ function CoverLetterTemplateEditor({
             <Textarea value={form.target_keywords} onChange={(event) => setForm({ ...form, target_keywords: event.target.value })} />
           </Field>
         </div>
+        <Field label="Body">
+          <Textarea className="min-h-56" value={form.body} onChange={(event) => setForm({ ...form, body: event.target.value })} />
+        </Field>
         <AdvancedDetails>
-          <Field label="Body">
-            <Textarea className="min-h-56" value={form.body} onChange={(event) => setForm({ ...form, body: event.target.value })} />
-          </Field>
           <Field label="Notes">
             <Textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} />
           </Field>
         </AdvancedDetails>
         {deleteMutation.error ? <p role="alert" className="text-destructive">{deleteMutation.error.message}</p> : null}
-        <DraftNotice dirty={draft.dirty} storageError={draft.storageError} saved={saveMutation.isSuccess} />
+        <DraftNotice onDiscard={draft.discard} dirty={draft.dirty} storageError={draft.storageError} saved={saveMutation.isSuccess} />
         {saveMutation.error ? <p className="text-sm text-destructive">{(saveMutation.error as Error).message}</p> : null}
         <Button className="justify-self-start" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
           <Save className="h-4 w-4" />
@@ -795,14 +801,15 @@ function AssetHeading({
 
 function AdvancedDetails({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = React.useState(false);
+  const contentId = React.useId();
   const Icon = open ? ChevronDown : ChevronRight;
   return (
     <div className="grid gap-4 border-t border-border pt-4">
-      <Button className="justify-self-start px-0" variant="ghost" size="sm" onClick={() => setOpen((value) => !value)}>
+      <Button className="justify-self-start px-0" variant="ghost" size="sm" aria-expanded={open} aria-controls={contentId} onClick={() => setOpen((value) => !value)}>
         <Icon className="h-4 w-4" />
         Advanced details
       </Button>
-      {open ? <div className="grid gap-4">{children}</div> : null}
+      {open ? <div id={contentId} className="grid gap-4">{children}</div> : null}
     </div>
   );
 }
@@ -912,6 +919,7 @@ function parseSkillGroups(value: string) {
     .filter((group) => group.skills.length);
 }
 
-function DraftNotice({ dirty, storageError, saved }: { dirty: boolean; storageError: boolean; saved: boolean }) {
-  return <p role="status" className="text-sm text-muted-foreground">{dirty ? storageError ? "Unsaved changes. Draft recovery is unavailable in this browser; save before leaving." : "Unsaved changes. Your draft is kept on this browser, including after closing the tab, including after a refresh." : saved ? "Saved successfully." : ""}</p>;
+function DraftNotice({ dirty, storageError, saved, onDiscard }: { dirty: boolean; storageError: boolean; saved: boolean; onDiscard: () => void }) {
+  const confirm = useConfirm();
+  return <div className="flex flex-wrap items-center gap-3"><p role="status" className="text-sm text-muted-foreground">{dirty ? storageError ? "Unsaved changes. Draft recovery is unavailable in this browser; save before leaving." : "Unsaved changes. Your draft is kept on this browser after refresh or closing the tab." : saved ? "Saved successfully." : ""}</p>{dirty ? <Button variant="ghost" size="sm" onClick={async () => { if (await confirm("Discard these unsaved asset edits? Your last saved version will be restored.")) onDiscard(); }}>Discard draft</Button> : null}</div>;
 }

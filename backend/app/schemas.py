@@ -592,6 +592,7 @@ class SkillGapUpdate(BaseModel):
 
 
 class SkillGapRead(CareerPilotModel):
+    active_job_count: int = 0
     id: str
     resume_profile_id: str
     skill_name: str
@@ -893,6 +894,7 @@ class DashboardJobInsight(BaseModel):
 
 
 class DashboardSankeyNode(BaseModel):
+    recorded_count: int = 0
     id: str
     label: str
     count: int

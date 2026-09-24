@@ -1,5 +1,7 @@
 "use client";
 
+import { useConfirm } from "@/components/ui/confirm-provider";
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BookOpen, ChevronRight, Pencil, RefreshCw, Trash2 } from "lucide-react";
 import Link from "next/link";
@@ -115,7 +117,7 @@ export default function SkillsPage() {
     <div className="grid gap-6">
       <PageHeader
         title="Skill Gaps"
-        description="Review recurring missing skills and generate a study plan from the current gap list. Set your level to high to mark a skill as known - it moves out of the gap list and study plans."
+        description="Prioritized by unique active jobs affected, using the latest resume match or job requirements. Generate a study plan from the current gap list. Set your level to high to mark a skill as known - it moves out of the gap list and study plans."
         action={
           <Button variant="secondary" onClick={() => queryClient.invalidateQueries({ queryKey: ["skill-gaps"] })}>
             <RefreshCw className="h-4 w-4" />
@@ -234,7 +236,7 @@ export default function SkillsPage() {
               </Select>
             </label>
             {planMutation.error ? <p className="text-sm text-destructive">{(planMutation.error as Error).message}</p> : null}
-            {profileLoading ? <p role="status">Loading profile...</p> : profileError ? <p role="alert">Could not load your profile: {(profileError as Error).message}</p> : !profile ? <p className="text-sm">Create a <Link href="/profile" className="underline">base profile in Application Assets</Link> before generating a plan.</p> : null}
+            {profileLoading ? <p role="status">Loading profile...</p> : profileError ? <p role="alert">Could not load your profile: {(profileError as Error).message}<Button variant="secondary" onClick={() => queryClient.invalidateQueries({ queryKey: ["profile"] })}>Retry loading profile</Button></p> : !profile ? <p className="text-sm">Create a <Link href="/profile" className="underline">base profile in Application Assets</Link> before generating a plan.</p> : null}
             <Button onClick={() => planMutation.mutate()} disabled={planMutation.isPending || !profile}>
               {planMutation.isPending ? "Generating..." : "Generate study plan"}
             </Button>
@@ -267,6 +269,7 @@ export default function SkillsPage() {
 }
 
 function SavedPlansPanel({ plans }: { plans: SavedStudyPlan[] }) {
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const [expandedId, setExpandedId] = React.useState<string | null>(null);
   const [renamingId, setRenamingId] = React.useState<string | null>(null);
@@ -320,7 +323,7 @@ function SavedPlansPanel({ plans }: { plans: SavedStudyPlan[] }) {
                   ) : (
                     <button
                       type="button"
-                      onClick={() => setExpandedId(expanded ? null : plan.id)}
+                      aria-expanded={expanded} aria-controls={`plan-${plan.id}`} onClick={() => setExpandedId(expanded ? null : plan.id)}
                       className="flex min-w-0 flex-1 items-center gap-1.5 text-left text-sm font-medium"
                     >
                       <ChevronRight className={cn("h-4 w-4 shrink-0 transition-transform", expanded && "rotate-90")} />
@@ -347,14 +350,14 @@ function SavedPlansPanel({ plans }: { plans: SavedStudyPlan[] }) {
                   <button
                     type="button"
                     aria-label="Delete plan"
-                    disabled={deleteMutation.isPending} onClick={() => { if (window.confirm(`Delete study plan "${plan.title}"? This cannot be undone.`)) deleteMutation.mutate(plan.id); }}
+                    disabled={deleteMutation.isPending} onClick={async () => { if (await confirm(`Delete study plan "${plan.title}"? This cannot be undone.`)) deleteMutation.mutate(plan.id); }}
                     className="text-muted-foreground transition-colors hover:text-destructive"
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
                 </div>
                 {expanded ? (
-                  <div className="grid gap-4 border-t border-border p-3 text-sm">
+                  <div id={`plan-${plan.id}`} className="grid gap-4 border-t border-border p-3 text-sm">
                     {plan.focus_skills.length ? (
                       <div>
                         <h3 className="font-medium">Focused on</h3>
@@ -431,7 +434,7 @@ function GapTable({
           {selectable ? <th className="w-8 py-2 pr-2" aria-label="Select for study plan" /> : null}
           <th className="py-2 pr-4">Skill</th>
           <th className="py-2 pr-4">Sources</th>
-          <th className="py-2 pr-4">Mentions</th>
+          <th className="py-2 pr-4">Active jobs</th>
           <th className="py-2 pr-4">Priority</th>
           <th className="py-2 pr-4">Level</th>
           <th className="py-2 pr-4">Suggested Action</th>
@@ -459,7 +462,7 @@ function GapTable({
                 ))}
               </div>
             </td>
-            <td className="py-3 pr-4">{gap.count}</td>
+            <td className="py-3 pr-4">{gap.active_job_count}<span className="block text-xs text-muted-foreground">{gap.count} historical mentions</span></td>
             <td className="py-3 pr-4">
               <Badge tone={priorityTone[gap.priority]}>{gap.priority}</Badge>
             </td>
@@ -513,5 +516,5 @@ function SavedPlanProgress({ saved }: { saved: SavedStudyPlan }) {
 function SkillEvidence({ gap }: { gap: SkillGap }) {
   const [open, setOpen] = React.useState(false);
   const query = useQuery({ queryKey: ["skill-evidence", gap.id], queryFn: () => api.skillEvidence(gap.id), enabled: open });
-  return <><button className="text-left text-primary underline" onClick={() => setOpen(true)} aria-label={`View evidence for ${gap.skill_name}`}>{gap.skill_name}</button>{open ? <Dialog title={`Evidence for ${gap.skill_name}`} onClose={() => setOpen(false)}><p className="mb-3 text-sm text-muted-foreground">{gap.count} recorded mentions, including repeat analyses. These are the matching sources still available; mentions are not a count of unique jobs.</p>{query.isLoading ? <p role="status">Loading evidence...</p> : query.error ? <p role="alert">{query.error.message}</p> : query.data?.length ? <ul className="grid gap-3">{query.data.map(item => <li key={`${item.href}-${item.source}`}><Link className="underline" href={item.href}>{item.label}</Link><div className="text-xs text-muted-foreground">{item.source}</div></li>)}</ul> : <p>No matching source records remain. This skill may come from an older analysis.</p>}</Dialog> : null}</>;
+  return <><button className="text-left text-primary underline" onClick={() => setOpen(true)} aria-label={`View evidence for ${gap.skill_name}`}>{gap.skill_name}</button>{open ? <Dialog title={`Evidence for ${gap.skill_name}`} onClose={() => setOpen(false)}><p className="mb-3 text-sm text-muted-foreground">{gap.active_job_count} unique active jobs affected. {gap.count} recorded mentions, including repeat analyses. These are the matching sources still available; mentions are not a count of unique jobs.</p>{query.isLoading ? <p role="status">Loading evidence...</p> : query.error ? <div role="alert">{query.error.message}<Button variant="secondary" onClick={() => query.refetch()}>Retry loading evidence</Button></div> : query.data?.length ? <ul className="grid gap-3">{query.data.map(item => <li key={`${item.href}-${item.source}`}><Link className="underline" href={item.href}>{item.label}</Link><div className="text-xs text-muted-foreground">{item.source}</div></li>)}</ul> : <p>No matching source records remain. This skill may come from an older analysis.</p>}</Dialog> : null}</>;
 }

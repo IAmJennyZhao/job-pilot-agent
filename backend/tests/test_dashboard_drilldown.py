@@ -1,4 +1,31 @@
 from test_api import create_job
+from datetime import datetime, timezone
+from app import models
+from app.main import app
+from app.database import get_db
+
+
+def test_saved_cohort_matches_every_dashboard_drilldown(client):
+    old = create_job(client, company="Old", status="Tech Screen")
+    create_job(client, company="Recent", status="Tech Screen")
+    db = next(app.dependency_overrides[get_db]())
+    job = db.get(models.Job, old["id"])
+    job.created_at = datetime(2000, 1, 1, tzinfo=timezone.utc)
+    db.commit()
+    summary = client.get('/api/dashboard/summary?saved_since=2020-01-01').json()
+    for node in summary['sankey']['nodes']:
+        rows = client.get('/api/jobs', params={'funnel_stage': node['id'], 'saved_since': '2020-01-01'}).json()
+        assert len(rows) == node['count']
+        assert all(row['id'] != old['id'] for row in rows)
+    assert summary['health']['active_jobs'] == 1
+
+
+def test_funnel_distinguishes_recorded_and_inferred_stages(client):
+    create_job(client, status="Tech Screen")
+    nodes = {node['id']: node for node in client.get('/api/dashboard/summary').json()['sankey']['nodes']}
+    assert nodes['Tech Screen']['recorded_count'] == 1
+    assert nodes['Recruiter Screen']['recorded_count'] == 0
+    assert nodes['Recruiter Screen']['count'] == 1
 
 
 def test_every_funnel_node_and_link_opens_exact_population(client):

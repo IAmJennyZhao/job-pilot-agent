@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, time, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -288,6 +288,7 @@ def list_jobs(
     health_filter: str | None = None,
     funnel_stage: str | None = None,
     funnel_from: str | None = None,
+    saved_since: date | None = None,
 ) -> list[models.Job]:
     stages = [stage.value for stage in FUNNEL_STATUSES]
     terminals = ["Rejected", "Withdrawn", "Ghosted"]
@@ -298,6 +299,8 @@ def list_jobs(
     if funnel_from and funnel_stage in stages and stages.index(funnel_stage) != stages.index(funnel_from) + 1:
         raise ValueError("Funnel stages must be consecutive")
     statement = select(models.Job).order_by(models.Job.updated_at.desc())
+    if saved_since:
+        statement = statement.where(models.Job.created_at >= datetime.combine(saved_since, time.min, tzinfo=timezone.utc))
     if funnel_stage:
         statement = statement.where(models.Job.status != models.JobStatus.archived)
     elif not include_archived:
@@ -356,6 +359,7 @@ def list_job_items(
     health_filter: str | None = None,
     funnel_stage: str | None = None,
     funnel_from: str | None = None,
+    saved_since: date | None = None,
 ) -> list[schemas.JobListItem]:
     return [
         to_job_list_item(db, job)
@@ -368,6 +372,7 @@ def list_job_items(
             health_filter=health_filter,
             funnel_stage=funnel_stage,
             funnel_from=funnel_from,
+            saved_since=saved_since,
         )
     ]
 

@@ -1,3 +1,4 @@
+from datetime import date, datetime, time, timezone
 from collections import Counter, defaultdict
 
 from fastapi import APIRouter, Depends
@@ -50,12 +51,15 @@ def _unique_nonempty(values: list[str]) -> list[str]:
 
 def _build_sankey(jobs: list[models.Job]) -> schemas.DashboardSankey:
     node_counts: Counter[str] = Counter()
+    recorded_counts: Counter[str] = Counter()
     link_counts: Counter[tuple[str, str]] = Counter()
 
     for job in jobs:
         if job.status == models.JobStatus.archived:
             continue
 
+        for recorded in {job.status, *(event.to_status for event in job.status_events)}:
+            recorded_counts[recorded.value] += 1
         rank = job_service.furthest_stage_rank(job)
         reached = job_service.FUNNEL_STATUSES[: rank + 1]
         for status in reached:
@@ -73,6 +77,7 @@ def _build_sankey(jobs: list[models.Job]) -> schemas.DashboardSankey:
             id=status.value,
             label=status.value,
             count=node_counts.get(status.value, 0),
+            recorded_count=recorded_counts.get(status.value, 0),
             kind="stage",
         )
         for status in job_service.FUNNEL_STATUSES
@@ -82,6 +87,7 @@ def _build_sankey(jobs: list[models.Job]) -> schemas.DashboardSankey:
             id=status.value,
             label=status.value,
             count=node_counts.get(status.value, 0),
+            recorded_count=recorded_counts.get(status.value, 0),
             kind="terminal",
         )
         for status in [models.JobStatus.rejected, models.JobStatus.withdrawn, models.JobStatus.ghosted]
@@ -257,8 +263,11 @@ def _build_top_skill_gaps(
 
 
 @router.get("/summary", response_model=schemas.DashboardSummary)
-def get_dashboard_summary(db: Session = Depends(get_db)):
-    jobs = list(db.scalars(select(models.Job)).all())
+def get_dashboard_summary(saved_since: date | None = None, db: Session = Depends(get_db)):
+    statement = select(models.Job)
+    if saved_since:
+        statement = statement.where(models.Job.created_at >= datetime.combine(saved_since, time.min, tzinfo=timezone.utc))
+    jobs = list(db.scalars(statement).all())
     active_jobs = [job for job in jobs if job_service.is_open_opportunity(job)]
     open_jobs = [job for job in jobs if job_service.is_open_opportunity(job)]
     archived_jobs = sum(1 for job in jobs if job.status == models.JobStatus.archived)
@@ -306,8 +315,12 @@ def get_dashboard_summary(db: Session = Depends(get_db)):
         next_action = "Review stale applications."
     elif search_health.needs_analysis:
         next_action = "Run job intelligence for active roles."
+    elif search_health.missing_data:
+        next_action = "Complete missing opportunity details."
     elif top_skill_gaps:
         next_action = f"Study or prove {top_skill_gaps[0].skill_name}."
+    elif open_jobs:
+        next_action = "Your tracked opportunities are up to date."
     else:
         next_action = "Add a job description to start tracking your search."
 

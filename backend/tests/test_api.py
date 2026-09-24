@@ -822,7 +822,9 @@ def test_skill_gaps_merge_sources_and_derive_priority(client, monkeypatch):
     fastapi = gaps["FastAPI"]
     assert fastapi["count"] == 2
     assert fastapi["sources"] == ["resume_match", "job_analysis"]
-    assert fastapi["priority"] == "medium"
+    # Both sources refer to one active job; repeated evidence does not raise priority.
+    assert fastapi["active_job_count"] == 1
+    assert fastapi["priority"] == "low"
     assert fastapi["suggested_action"] == "Build proof or study plan for: FastAPI"
     assert gaps["Python"]["sources"] == ["job_analysis"]
     assert gaps["Python"]["count"] == 1

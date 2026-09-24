@@ -10,12 +10,17 @@ export function Field({
   children: React.ReactNode;
   error?: string;
 }) {
+  const fieldId = React.useId();
+  const errorId = `${fieldId}-error`;
+  const content = React.isValidElement(children)
+    ? React.cloneElement(children as React.ReactElement<React.InputHTMLAttributes<HTMLInputElement>>, { id: fieldId, "aria-invalid": Boolean(error), "aria-describedby": error ? errorId : undefined })
+    : children;
   return (
-    <label className="grid gap-1.5 text-sm font-medium text-foreground">
-      <span>{label}</span>
-      {children}
-      {error ? <span className="text-xs font-normal text-destructive">{error}</span> : null}
-    </label>
+    <div className="grid gap-1.5 text-sm font-medium text-foreground">
+      <label htmlFor={fieldId}>{label}</label>
+      {content}
+      {error ? <span id={errorId} className="text-xs font-normal text-destructive">{error}</span> : null}
+    </div>
   );
 }
 

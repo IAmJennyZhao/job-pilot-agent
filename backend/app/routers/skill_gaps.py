@@ -4,7 +4,7 @@ from sqlalchemy import select
 
 from app import models, schemas
 from app.database import get_db
-from app.services import skill_gap_service
+from app.services import skill_gap_service, job_service
 
 router = APIRouter(prefix="/api/skill-gaps", tags=["skill gaps"])
 
@@ -34,6 +34,14 @@ def get_skill_evidence(skill_gap_id: str, db: Session = Depends(get_db)):
     for session in db.scalars(select(models.InterviewSession).where(models.InterviewSession.resume_profile_id == gap.resume_profile_id)):
         if any(matches((message.feedback or {}).get("missing_skill_names", [])) for message in session.messages):
             evidence[(session.id, "Interview feedback")] = {"label": session.title or session.target_role or "Interview practice", "href": f"/interview/sessions/{session.id}", "source": "Interview feedback"}
+    # Include the current open-job evidence used by active_job_count, including
+    # manually captured requirements without an AI analysis record.
+    for job in db.scalars(select(models.Job).where(models.Job.status.in_(job_service.OPEN_OPPORTUNITY_STATUSES))):
+        suggestion = db.scalars(select(models.ResumeSuggestion).where(models.ResumeSuggestion.job_id == job.id, models.ResumeSuggestion.resume_profile_id == gap.resume_profile_id).order_by(models.ResumeSuggestion.created_at.desc())).first()
+        values = ([*suggestion.missing_skills, *suggestion.weak_skills] if suggestion else
+                  [*job.analysis.required_skills, *job.analysis.technologies] if job.analysis else job.required_skills)
+        if matches(values) and not any(identity[0] == job.id for identity in evidence):
+            evidence[(job.id, "Current job requirements")] = {"label": f"{job.company} — {job.role_title}", "href": f"/jobs/{job.id}", "source": "Current job requirements"}
     return list(evidence.values())
 
 
@@ -51,5 +59,5 @@ def update_skill_gap(
     db.add(gap)
     db.commit()
     db.refresh(gap)
-    return gap
+    return next(row for row in skill_gap_service.list_skill_gaps(db, gap.resume_profile_id) if row.id == gap.id)
 

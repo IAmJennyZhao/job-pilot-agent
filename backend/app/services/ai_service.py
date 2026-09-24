@@ -234,20 +234,15 @@ def generate_study_plan(
     if not profile:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resume profile not found")
 
-    gap_query = select(models.SkillGap).where(
-        models.SkillGap.resume_profile_id == profile.id,
-        models.SkillGap.user_level != models.UserLevel.high,
-    )
     focus_skills = [skill.strip() for skill in request.focus_skills if skill and skill.strip()]
-    if focus_skills:
-        gap_query = gap_query.where(
-            func.lower(models.SkillGap.skill_name).in_([skill.lower() for skill in focus_skills])
-        )
-    gaps = list(db.scalars(gap_query.order_by(models.SkillGap.count.desc()).limit(20)).all())
+    focus_keys = {skill.casefold() for skill in focus_skills}
+    gaps = [gap for gap in skill_gap_service.list_skill_gaps(db, profile.id)
+            if gap.user_level != models.UserLevel.high and (not focus_keys or gap.skill_name.casefold() in focus_keys)][:20]
     gap_payload = [
         {
             "skill_name": gap.skill_name,
-            "count": gap.count,
+            "active_jobs_affected": gap.active_job_count,
+            "historical_mentions": gap.count,
             "priority": gap.priority.value,
             "user_level": gap.user_level.value,
             "suggested_action": gap.suggested_action,

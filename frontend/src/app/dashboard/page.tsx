@@ -12,6 +12,9 @@ import {
   TimerReset
 } from "lucide-react";
 import Link from "next/link";
+import { Suspense } from "react";
+import { useSearchParams } from "next/navigation";
+import { Input } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { Badge, PageHeader, Panel } from "@/components/ui/panel";
 import { api } from "@/lib/api";
@@ -33,8 +36,8 @@ const stageColors: Record<string, string> = {
 };
 const fallbackStageColor = "hsl(var(--chart-saved))";
 
-function jobsStatusHref(status: string, source?: string) {
-  return `/jobs?funnel=${encodeURIComponent(status)}${source ? `&from=${encodeURIComponent(source)}` : ""}`;
+function jobsStatusHref(status: string, source?: string, since?: string) {
+  return `/jobs?funnel=${encodeURIComponent(status)}${source ? `&from=${encodeURIComponent(source)}` : ""}${since ? `&since=${encodeURIComponent(since)}` : ""}`;
 }
 
 function uniqueInsightItems(items: DashboardJobInsight[]) {
@@ -46,23 +49,17 @@ function uniqueInsightItems(items: DashboardJobInsight[]) {
   });
 }
 
-export default function DashboardPage() {
+export default function DashboardPage() { return <Suspense fallback={<Panel>Loading dashboard...</Panel>}><DashboardContent /></Suspense>; }
+
+function DashboardContent() {
+  const params = useSearchParams();
+  const since = params.get("since") ?? "";
+  const cohortHref = (href: string) => since ? `${href}${href.includes("?") ? "&" : "?"}since=${encodeURIComponent(since)}` : href;
+  const setSince = (date: string) => window.history.replaceState(null, "", date ? `/dashboard?since=${encodeURIComponent(date)}` : "/dashboard");
   const queryClient = useQueryClient();
   const { data, isLoading, error, refetch, isFetching } = useQuery({
-    queryKey: ["dashboard"],
-    queryFn: api.dashboard
-  });
-
-  const markGhostedMutation = useMutation({
-    mutationFn: (jobId: string) =>
-      api.updateJob(jobId, {
-        status: "Ghosted",
-        status_note: "Marked ghosted from dashboard."
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-      queryClient.invalidateQueries({ queryKey: ["jobs"] });
-    }
+    queryKey: ["dashboard", since],
+    queryFn: () => api.dashboard(since)
   });
 
   const runAnalysisMutation = useMutation({
@@ -80,6 +77,7 @@ export default function DashboardPage() {
   const staleItems = data?.search_health?.stale_jobs ?? [];
   const missingDataItems = data?.search_health?.missing_data ?? uniqueInsightItems([...missingPayItems, ...missingFitItems, ...lowConfidenceItems]);
   const needsAnalysisItems = (data?.search_health?.needs_analysis ?? []).slice(0, 3);
+  const actionQueue = uniqueInsightItems([...staleItems, ...needsAnalysisItems, ...missingDataItems]).slice(0, 5);
   const recurringRisks = data?.coverage_risk?.recurring_risks ?? [];
   const activeJobs = data?.health?.active_jobs ?? data?.total_jobs ?? 0;
   const staleJobs = data?.health?.stale_jobs ?? staleItems.length;
@@ -100,17 +98,24 @@ export default function DashboardPage() {
         }
       />
 
+      <Panel className="flex flex-wrap items-end gap-3">
+        <label className="grid gap-1 text-sm">Jobs saved on or after (UTC)<Input type="date" value={since} onChange={event => setSince(event.target.value)} /></label>
+        <Button variant="secondary" onClick={() => { const date = new Date(); date.setUTCDate(date.getUTCDate() - 30); setSince(date.toISOString().slice(0, 10)); }}>Last 30 days</Button>
+        <Button variant="secondary" onClick={() => { const date = new Date(); date.setUTCDate(date.getUTCDate() - 90); setSince(date.toISOString().slice(0, 10)); }}>Last 90 days</Button>
+        <Button variant="ghost" onClick={() => setSince("")}>All time</Button>
+        <p className="basis-full text-xs text-muted-foreground">{since ? `Showing jobs first saved since ${since}, with their full progression history.` : "Showing all saved jobs and their full progression history."} This cohort applies to every dashboard metric and job drill-down.</p>
+      </Panel>
       {error ? <Panel className="border-destructive/25 bg-destructive/10 text-sm text-destructive">{(error as Error).message}</Panel> : null}
       {isLoading ? <Panel>Loading dashboard...</Panel> : null}
-      {markGhostedMutation.error ? <Panel className="border-destructive/25 bg-destructive/10 text-sm text-destructive">{(markGhostedMutation.error as Error).message}</Panel> : null}
+      {runAnalysisMutation.isPending ? <p role="status" className="text-sm">Analysis is running. Keep this page open. If it fails, use Run analysis to retry; the saved job remains available.</p> : null}
       {runAnalysisMutation.error ? <Panel className="border-destructive/25 bg-destructive/10 text-sm text-destructive">{(runAnalysisMutation.error as Error).message}</Panel> : null}
 
       {data ? (
         <>
           <div className="grid gap-4 md:grid-cols-3">
-            <Metric href="/jobs?health=active" title="Active" value={activeJobs} detail={`${archivedJobs} archived, ${ghostedJobs} ghosted`} icon={<BriefcaseBusiness className="h-4 w-4" />} />
-            <Metric href="/jobs?health=stale" title="Stale" value={staleJobs} detail="Needs review" icon={<TimerReset className="h-4 w-4" />} tone="warn" />
-            <Metric href="/jobs?health=missing-data" title="Missing Data" value={missingDataCount} detail="Core coverage gaps" icon={<AlertTriangle className="h-4 w-4" />} tone="warn" />
+            <Metric href={cohortHref("/jobs?health=active")} title="Active" value={activeJobs} detail={`${archivedJobs} archived, ${ghostedJobs} ghosted`} icon={<BriefcaseBusiness className="h-4 w-4" />} />
+            <Metric href={cohortHref("/jobs?health=stale")} title="Stale" value={staleJobs} detail="Needs review" icon={<TimerReset className="h-4 w-4" />} tone="warn" />
+            <Metric href={cohortHref("/jobs?health=missing-data")} title="Missing Data" value={missingDataCount} detail="Core coverage gaps" icon={<AlertTriangle className="h-4 w-4" />} tone="warn" />
           </div>
 
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,0.65fr)]">
@@ -119,14 +124,14 @@ export default function DashboardPage() {
                 <div>
                   <h2 className="text-base font-semibold">Application Funnel</h2>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Counts include every job that reached each stage, including later outcomes. Earlier stages are inferred; archived jobs are excluded.
+                    Counts include later outcomes. Recorded stages appear in job history or current status; skipped earlier stages are inferred. Archived jobs are excluded.
                   </p>
                 </div>
-                <Link href="/jobs" className="text-sm font-medium text-primary">
+                <Link href={cohortHref("/jobs?funnel=Saved")} className="text-sm font-medium text-primary">
                   Open jobs
                 </Link>
               </div>
-              <SankeyChart sankey={data.sankey} />
+              <SankeyChart sankey={data.sankey} since={since} />
             </Panel>
 
             <Panel>
@@ -137,47 +142,19 @@ export default function DashboardPage() {
                 </div>
                 <Badge tone={staleJobs || missingDataCount || needsAnalysisItems.length ? "warn" : "good"}>{staleJobs || missingDataCount || needsAnalysisItems.length ? "Needs attention" : "Up to date"}</Badge>
               </div>
-              <div className="mt-5 grid gap-5">
-                <InsightList
-                  title="Stale Jobs"
-                  href="/jobs?health=stale"
-                  items={staleItems}
-                  empty="No stage-based stale jobs."
-                  action={(item) => (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => markGhostedMutation.mutate(item.id)}
-                      disabled={markGhostedMutation.isPending && markGhostedMutation.variables === item.id}
-                    >
-                      {markGhostedMutation.isPending && markGhostedMutation.variables === item.id ? "Saving..." : "Mark Ghosted"}
-                    </Button>
-                  )}
-                />
-                <InsightList
-                  title="Needs Analysis"
-                  href="/jobs?health=needs-analysis"
-                  items={needsAnalysisItems}
-                  empty="Every active opportunity has fit/job analysis."
-                  action={(item) => (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => runAnalysisMutation.mutate(item.id)}
-                      disabled={runAnalysisMutation.isPending && runAnalysisMutation.variables === item.id}
-                    >
-                      <Sparkles className="h-4 w-4" />
-                      {runAnalysisMutation.isPending && runAnalysisMutation.variables === item.id ? "Running..." : "Run"}
-                    </Button>
-                  )}
-                />
+              <div className="mt-5 grid gap-3">
+                <h3 className="text-sm font-semibold">Next actions</h3>
+                <p className="text-xs text-muted-foreground">Up to five jobs, prioritized by overdue follow-up, missing analysis, then missing details. Each job appears once.</p>
+                {actionQueue.map(item => <DashboardJobTile key={item.id} item={item} action={() => needsAnalysisItems.some(job => job.id === item.id) && !staleItems.some(job => job.id === item.id) ? <Button size="sm" variant="secondary" disabled={runAnalysisMutation.isPending} onClick={() => runAnalysisMutation.mutate(item.id)}>{runAnalysisMutation.isPending && runAnalysisMutation.variables === item.id ? "Running..." : "Run analysis"}</Button> : <Link className="text-sm font-medium underline" href={`/jobs/${item.id}`}>Review job</Link>} />)}
+                {!actionQueue.length ? <p className="text-sm text-muted-foreground">No follow-up or data tasks in this cohort.</p> : null}
+                <div className="flex flex-wrap gap-3 text-sm"><Link className="underline" href={cohortHref("/jobs?health=stale")}>All stale jobs</Link><Link className="underline" href={cohortHref("/jobs?health=needs-analysis")}>All needing analysis</Link><Link className="underline" href={cohortHref("/jobs?health=missing-data")}>All missing data</Link></div>
               </div>
             </Panel>
           </div>
 
           <div className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-            <Panel>
-              <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+            <Panel><details><summary className="cursor-pointer text-base font-semibold">Coverage details and recurring risks</summary>
+              <div className="mb-5 mt-4 flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h2 className="text-base font-semibold">Opportunity Coverage And Risk</h2>
                   <p className="mt-1 text-sm text-muted-foreground">Data quality and recurring risk signals across open opportunities.</p>
@@ -187,21 +164,21 @@ export default function DashboardPage() {
               <div className="grid gap-5">
                 <CoverageBlock
                   title="Missing Pay"
-                  href="/jobs?health=missing-pay"
+                  href={cohortHref("/jobs?health=missing-pay")}
                   icon={<DollarSign className="h-4 w-4" />}
                   items={missingPayItems}
                   empty="Pay coverage is complete."
                 />
                 <CoverageBlock
                   title="Missing Fit"
-                  href="/jobs?health=missing-fit"
+                  href={cohortHref("/jobs?health=missing-fit")}
                   icon={<FileSearch className="h-4 w-4" />}
                   items={missingFitItems}
                   empty="Fit scores are complete."
                 />
                 <CoverageBlock
                   title="Low Confidence"
-                  href="/jobs?health=low-confidence"
+                  href={cohortHref("/jobs?health=low-confidence")}
                   icon={<AlertTriangle className="h-4 w-4" />}
                   items={lowConfidenceItems}
                   empty="Extraction confidence looks healthy."
@@ -224,7 +201,7 @@ export default function DashboardPage() {
                   )}
                 </div>
               </div>
-            </Panel>
+            </details></Panel>
 
             <Panel>
               <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -279,7 +256,7 @@ function Metric({
   );
 }
 
-function SankeyChart({ sankey }: { sankey?: DashboardSankey }) {
+function SankeyChart({ sankey, since }: { sankey?: DashboardSankey; since: string }) {
   const nodes = sankey?.nodes ?? [];
   const links = sankey?.links ?? [];
   const total = nodes.find(node => node.id === "Saved")?.count ?? 0;
@@ -291,10 +268,12 @@ function SankeyChart({ sankey }: { sankey?: DashboardSankey }) {
         const node = nodes.find(node => node.id === stage);
         const count = node?.count ?? 0;
         const percent = Math.round(count / total * 100);
-        return <li key={stage}><Link href={jobsStatusHref(stage)} aria-label={`${stage}: ${count} jobs reached this stage, ${percent}% of tracked jobs`} className="block rounded-md border border-border p-3 transition hover:border-primary hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring">
+        const previous = index ? nodes.find(node => node.id === stageOrder[index - 1])?.count ?? 0 : total;
+        const conversion = previous ? `${Math.round(count / previous * 100)}% from ${index ? stageOrder[index - 1] : "saved jobs"}` : "No previous-stage jobs";
+        return <li key={stage}><Link href={jobsStatusHref(stage, undefined, since)} aria-label={`${stage}: ${count} jobs reached this stage, ${percent}% of tracked jobs; ${conversion}; ${node?.recorded_count ?? 0} recorded, ${count - (node?.recorded_count ?? 0)} inferred`} className="block rounded-md border border-border p-3 transition hover:border-primary hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring">
           <div className="text-xs text-muted-foreground">{index + 1}. {stage}</div>
           <div className="my-2 flex items-baseline justify-between"><strong className="text-xl">{count}</strong><span className="text-xs">{percent}%</span></div>
-          <div aria-hidden="true" className="h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full" style={{ width: `${percent}%`, background: stageColors[stage] }} /></div>
+          <p className="mb-2 text-xs text-muted-foreground">{conversion}</p><p className="mb-2 text-xs text-muted-foreground">{node?.recorded_count ?? 0} recorded · {count - (node?.recorded_count ?? 0)} inferred</p><div aria-hidden="true" className="h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full" style={{ width: `${percent}%`, background: stageColors[stage] }} /></div>
         </Link></li>;
       })}
     </ol>
@@ -302,44 +281,14 @@ function SankeyChart({ sankey }: { sankey?: DashboardSankey }) {
       <div className="grid gap-3 sm:grid-cols-3">{terminalOrder.map(status => {
         const count = nodes.find(node => node.id === status)?.count ?? 0;
         return <div key={status} className="min-w-0 rounded-md border border-border p-3">
-          <Link href={jobsStatusHref(status)} className="font-semibold underline-offset-2 hover:underline">{status} ({count})</Link>
-          <ul className="mt-2 grid gap-1 text-sm">{links.filter(link => link.target === status).map(link => <li key={link.source}><Link href={jobsStatusHref(status, link.source)} className="block rounded px-1 py-2 hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring" aria-label={`${link.value} jobs ${status.toLowerCase()} after ${link.source}`}><span className="block">After {link.source}</span><span className="text-muted-foreground">{link.value} jobs · {Math.round(link.value / total * 100)}% of total</span></Link></li>)}</ul>
+          <Link href={jobsStatusHref(status, undefined, since)} className="font-semibold underline-offset-2 hover:underline">{status} ({count})</Link>
+          <ul className="mt-2 grid gap-1 text-sm">{links.filter(link => link.target === status).map(link => <li key={link.source}><Link href={jobsStatusHref(status, link.source, since)} className="block rounded px-1 py-2 hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring" aria-label={`${link.value} jobs ${status.toLowerCase()} after ${link.source}`}><span className="block">After {link.source}</span><span className="text-muted-foreground">{link.value} jobs · {Math.round(link.value / total * 100)}% of total</span></Link></li>)}</ul>
           {!count ? <p className="mt-2 text-xs text-muted-foreground">No outcomes yet</p> : null}
         </div>;
       })}</div>
     </div>
-    <details className="text-sm"><summary className="cursor-pointer font-medium">Stage transitions and counts</summary><table className="mt-3 w-full text-left"><caption className="sr-only">All inferred transitions; each link opens the exact jobs counted.</caption><thead><tr><th scope="col">Transition</th><th scope="col">Jobs</th></tr></thead><tbody>{links.map(link => <tr key={`${link.source}-${link.target}`} className="border-t border-border"><td className="py-2"><Link className="underline" href={jobsStatusHref(link.target, link.source)}>{link.source} → {link.target}</Link></td><td>{link.value}</td></tr>)}</tbody></table></details>
+    <details className="text-sm"><summary className="cursor-pointer font-medium">Stage transitions and counts</summary><table className="mt-3 w-full text-left"><caption className="sr-only">All inferred transitions; each link opens the exact jobs counted.</caption><thead><tr><th scope="col">Transition</th><th scope="col">Jobs</th></tr></thead><tbody>{links.map(link => <tr key={`${link.source}-${link.target}`} className="border-t border-border"><td className="py-2"><Link className="underline" href={jobsStatusHref(link.target, link.source, since)}>{link.source} → {link.target}</Link></td><td>{link.value}</td></tr>)}</tbody></table></details>
   </div>;
-}
-
-function InsightList({
-  title,
-  href,
-  items,
-  empty,
-  action
-}: {
-  title: string;
-  href: string;
-  items?: DashboardJobInsight[];
-  empty: string;
-  action?: (item: DashboardJobInsight) => React.ReactNode;
-}) {
-  const safeItems = items ?? [];
-  return (
-    <div>
-      <div className="mb-3 flex items-center justify-between gap-2 text-sm font-semibold">{title}<Link href={href} className="text-primary underline">View all</Link></div>
-      {safeItems.length ? (
-        <div className="grid gap-3">
-          {safeItems.map((item) => (
-            <DashboardJobTile key={`${title}-${item.id}`} item={item} action={action} />
-          ))}
-        </div>
-      ) : (
-        <p className="text-sm text-muted-foreground">{empty}</p>
-      )}
-    </div>
-  );
 }
 
 function CoverageBlock({

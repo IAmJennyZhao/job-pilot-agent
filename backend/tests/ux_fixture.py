@@ -6,6 +6,7 @@ AI responses are deterministic fixtures; no external AI requests are made.
 import os
 import sys
 import tempfile
+import asyncio
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -19,6 +20,15 @@ from app.database import Base, get_engine
 from app.main import app
 from app.services import ai_service
 from test_api import create_job, fake_analysis_output, fake_resume_suggestion_output
+
+ready_for_ui = False
+
+
+@app.middleware("http")
+async def optional_ui_latency(request, call_next):
+    if ready_for_ui and request.method in {"POST", "PATCH"}:
+        await asyncio.sleep(float(os.environ.get("UI_FIXTURE_DELAY", "0")))
+    return await call_next(request)
 
 
 def fake_output(output_model, *_args):
@@ -54,6 +64,7 @@ with TestClient(app) as client:
     assert client.post('/api/interview/practice-sets', json={'target_category': 'Backend Engineer', 'target_role': 'Synthetic Platform Engineer', 'count': 3}).status_code == 201
 
 print(f"Synthetic UI verification database: {directory}", flush=True)
+ready_for_ui = True
 if __name__ == '__main__':
     import uvicorn
     uvicorn.run(app, host='127.0.0.1', port=8000)

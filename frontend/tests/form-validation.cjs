@@ -1,0 +1,16 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const ts = require('typescript');
+const Module = require('node:module');
+const path = require('node:path');
+const filename = path.resolve(__dirname, '../src/lib/job-validation.ts');
+const compiled = new Module(filename, module);
+compiled.filename = filename; compiled.paths = module.paths;
+compiled._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, filename);
+const { validateJobFields } = compiled.exports;
+assert.deepEqual(validateJobFields({pay_min: 0, pay_max: 100, links: [{url: 'https://example.com/job'}, {url: ''}]}), {});
+assert.ok(validateJobFields({pay_min: -1}).pay_min);
+assert.ok(validateJobFields({pay_min: 150, pay_max: 100}).pay_max);
+assert.ok(validateJobFields({links: [{url: 'example.com'}]}).link_0);
+assert.ok(validateJobFields({links: [{url: 'javascript:alert(1)'}]}).link_0);
+console.log('Job validation covers amounts, ranges, and posting URLs.');

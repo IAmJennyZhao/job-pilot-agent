@@ -90,7 +90,7 @@ async function requestForm<T>(path: string, formData: FormData): Promise<T> {
 }
 
 export const api = {
-  dashboard: () => request<DashboardSummary>("/api/dashboard/summary"),
+  dashboard: (savedSince?: string) => request<DashboardSummary>(`/api/dashboard/summary${savedSince ? `?saved_since=${encodeURIComponent(savedSince)}` : ""}`),
   jobs: (params?: {
     includeArchived?: boolean;
     search?: string;
@@ -99,6 +99,7 @@ export const api = {
     healthFilter?: string;
     funnelStage?: string;
     funnelFrom?: string;
+    savedSince?: string;
   }) => {
     const query = new URLSearchParams();
     if (params?.includeArchived) query.set("include_archived", "true");
@@ -107,6 +108,7 @@ export const api = {
     if (params?.category) query.set("category", params.category);
     if (params?.healthFilter) query.set("health_filter", params.healthFilter);
     if (params?.funnelStage) query.set("funnel_stage", params.funnelStage);
+    if (params?.savedSince) query.set("saved_since", params.savedSince);
     if (params?.funnelFrom) query.set("funnel_from", params.funnelFrom);
     const suffix = query.toString() ? `?${query}` : "";
     return request<JobListItem[]>(`/api/jobs${suffix}`);

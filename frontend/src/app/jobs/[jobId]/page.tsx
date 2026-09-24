@@ -1,10 +1,13 @@
 "use client";
 
+import { validateJobFields } from "@/lib/job-validation";
+import { useConfirm } from "@/components/ui/confirm-provider";
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, CheckCircle2, ChevronDown, ClipboardList, ExternalLink, FileText, Mail, Pencil, RefreshCw, Save, Sparkles, X } from "lucide-react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ListEditor } from "@/components/ui/list-editor";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
@@ -120,6 +123,7 @@ function compactItems(
 }
 
 export default function JobDetailPage() {
+  const confirm = useConfirm();
   const params = useParams<{ jobId: string }>();
   const jobId = params.jobId;
   const queryClient = useQueryClient();
@@ -137,16 +141,16 @@ export default function JobDetailPage() {
     queryFn: () => api.aiReadiness(jobId),
     enabled: Boolean(jobId)
   });
-  const { data: advancedResponse } = useQuery({
+  const { data: advancedResponse, error: advancedLoadError } = useQuery({
     queryKey: ["advanced-analysis", jobId],
     queryFn: () => api.advancedAnalysis(jobId),
     enabled: Boolean(jobId)
   });
-  const { data: resumeOptions = [] } = useQuery({
+  const { data: resumeOptions = [], isLoading: resumesLoading, error: resumesError } = useQuery({
     queryKey: ["resume-options"],
     queryFn: api.resumeOptions
   });
-  const { data: coverLetterTemplates = [] } = useQuery({
+  const { data: coverLetterTemplates = [], isLoading: lettersLoading, error: lettersError } = useQuery({
     queryKey: ["cover-letter-templates"],
     queryFn: api.coverLetterTemplates
   });
@@ -194,8 +198,8 @@ export default function JobDetailPage() {
     onSuccess: invalidateJob
   });
 
-  const cancelEdit = () => {
-    if (editDraft.dirty && !window.confirm("Discard these unsaved job edits?")) return;
+  const cancelEdit = async () => {
+    if (editDraft.dirty && !await confirm("Discard these unsaved job edits?")) return;
     if (job) setForm(formFromJob(job));
     editDraft.clear();
     setIsEditing(false);
@@ -232,13 +236,13 @@ export default function JobDetailPage() {
             {job && !isEditing ? (
               <Button variant="secondary" size="sm" onClick={() => setIsEditing(true)}>
                 <Pencil className="h-4 w-4" />
-                {editDraft.dirty ? "Resume editing draft" : "Edit"}
+                {editDraft.dirty ? "Resume editing draft" : "Edit job"}
               </Button>
             ) : null}
           </div>
         }
       />
-      {error ? <Panel className="border-destructive/25 bg-destructive/10 text-sm text-destructive">{(error as Error).message}</Panel> : null}
+      {[{ error, key: ["job", jobId], label: "job" }, { error: readinessError, key: ["ai-readiness", jobId], label: "analysis readiness" }, { error: advancedLoadError, key: ["advanced-analysis", jobId], label: "saved analysis" }, { error: resumesError, key: ["resume-options"], label: "resumes" }, { error: lettersError, key: ["cover-letter-templates"], label: "cover letters" }].map(item => item.error ? <Panel key={item.label}><p role="alert">Could not load {item.label}: {(item.error as Error).message}</p><Button variant="secondary" onClick={() => queryClient.invalidateQueries({ queryKey: item.key })}>Retry loading {item.label}</Button></Panel> : null)}
       {isLoading ? <Panel>Loading job...</Panel> : null}
       {editDraft.dirty ? <p role="status" className="text-sm text-muted-foreground">Unsaved job edits are kept on this browser, including after closing the tab. Resume editing to save or discard them.</p> : null}
       {job && !isEditing ? <nav aria-label="Job sections" className="flex flex-wrap gap-3 text-sm font-medium">{["Role Snapshot", ...(advancedAnalysis ? ["Fit And Gaps", ...(advancedAnalysis.company_sentiment || companyResearch ? ["Company Signals"] : []), "Interview Prep"] : []), "Application Assets", "Status History"].map(label => <a className="rounded border border-border px-3 py-2 hover:bg-accent" key={label} href={`#${label.toLowerCase().replaceAll(" ", "-")}`}>{label}</a>)}</nav> : null}
@@ -292,7 +296,7 @@ export default function JobDetailPage() {
               <MergedJobDetail job={job} analysis={advancedAnalysis} companyResearch={companyResearch} errors={advancedErrors} />
               <div className="grid content-start gap-4">
                 <Panel>
-                  <ApplicationAssetsPanel
+                  {resumesLoading || lettersLoading ? <p role="status">Loading application assets...</p> : resumesError || lettersError ? <p>Application asset choices are unavailable. Retry loading them above.</p> : <ApplicationAssetsPanel
                     job={job}
                     recommendation={assetRecommendation}
                     resumeOptions={resumeOptions}
@@ -305,7 +309,7 @@ export default function JobDetailPage() {
                     onSelectResume={(id) => assetSelectionMutation.mutate({ selected_resume_option_id: id })}
                     onSelectCoverLetter={(id) => assetSelectionMutation.mutate({ selected_cover_letter_template_id: id })}
                     error={(reviewMutation.error || aiAssetRankMutation.error || assetSelectionMutation.error) as Error | null}
-                  />
+                  />}
                 </Panel>
                 <Panel>
                   <JobLinks links={job.links} />
@@ -754,6 +758,7 @@ function JobEditFormView({
   isSaving: boolean;
   error: Error | null;
 }) {
+  const errors = validateJobFields(form);
   const set = <K extends keyof JobEditForm>(key: K, value: JobEditForm[K]) => onChange({ ...form, [key]: value });
   const setLink = (index: number, patch: Partial<JobLinkInput>) => {
     const nextPatch = patch.kind ? { ...patch, label: patch.label ?? linkKindLabels[patch.kind] } : patch;
@@ -764,7 +769,7 @@ function JobEditFormView({
   const removeLink = (index: number) => onChange({ ...form, links: form.links.filter((_link, currentIndex) => currentIndex !== index) });
 
   return (
-    <form className="grid gap-4" onSubmit={(event) => { event.preventDefault(); onSubmit(); }}>
+    <form className="grid gap-4" onSubmit={(event) => { event.preventDefault(); if (!Object.keys(errors).length) onSubmit(); }}>
       <fieldset disabled={isSaving} className="grid min-w-0 gap-4">
       <div className="grid gap-4 md:grid-cols-2">
         <Field label="Company">
@@ -808,11 +813,11 @@ function JobEditFormView({
         <Textarea value={form.summary ?? ""} onChange={(event) => set("summary", event.target.value)} />
       </Field>
       <div className="grid gap-3 md:grid-cols-2">
-        <Field label="Pay minimum">
-          <Input type="number" value={form.pay_min ?? ""} onChange={(event) => set("pay_min", event.target.value ? Number(event.target.value) : null)} />
+        <Field label="Pay minimum" error={errors.pay_min}>
+          <Input type="number" min={0} value={form.pay_min ?? ""} onChange={(event) => set("pay_min", event.target.value ? Number(event.target.value) : null)} />
         </Field>
-        <Field label="Pay maximum">
-          <Input type="number" value={form.pay_max ?? ""} onChange={(event) => set("pay_max", event.target.value ? Number(event.target.value) : null)} />
+        <Field label="Pay maximum" error={errors.pay_max}>
+          <Input type="number" min={0} value={form.pay_max ?? ""} onChange={(event) => set("pay_max", event.target.value ? Number(event.target.value) : null)} />
         </Field>
         <Field label="Pay currency">
           <Input value={form.pay_currency ?? ""} onChange={(event) => set("pay_currency", event.target.value)} placeholder="USD" />
@@ -844,7 +849,7 @@ function JobEditFormView({
           </Button>
         </div>
         {form.links.map((link, index) => (
-          <div key={`${link.kind}-${index}`} className="grid gap-2 md:grid-cols-[120px_minmax(140px,0.8fr)_minmax(240px,1.4fr)_40px]">
+          <div key={`${link.kind}-${index}`} className="grid gap-2 xl:grid-cols-[100px_minmax(0,0.8fr)_minmax(0,1.4fr)_40px]">
             <Select aria-label={`Link ${index + 1} type`} value={link.kind} onChange={(event) => setLink(index, { kind: event.target.value as JobLinkInput["kind"] })}>
               {editableLinkKinds.map((kind) => (
                 <option key={kind} value={kind}>
@@ -853,7 +858,7 @@ function JobEditFormView({
               ))}
             </Select>
             <Input aria-label={`Link ${index + 1} label`} value={link.label} onChange={(event) => setLink(index, { label: event.target.value })} />
-            <Input aria-label={`Link ${index + 1} URL`} value={link.url} onChange={(event) => setLink(index, { url: event.target.value })} placeholder="https://..." />
+            <Field label={`Link ${index + 1} URL`} error={errors[`link_${index}`]}><Input type="url" value={link.url} onChange={(event) => setLink(index, { url: event.target.value })} placeholder="https://..." /></Field>
             <Button variant="ghost" size="icon" onClick={() => removeLink(index)} title="Remove link">
               <X className="h-4 w-4" />
             </Button>
@@ -862,7 +867,7 @@ function JobEditFormView({
       </div>
       {error ? <p className="text-sm text-destructive">{error.message}</p> : null}
       <div className="flex flex-wrap gap-2">
-        <Button type="submit" disabled={isSaving || !form.company.trim() || !form.role_title.trim()}>
+        <Button type="submit" disabled={isSaving || Boolean(Object.keys(errors).length) || !form.company.trim() || !form.role_title.trim()}>
           <Save className="h-4 w-4" />
           {isSaving ? "Saving..." : "Save changes"}
         </Button>
@@ -886,6 +891,7 @@ function StatusHistoryEditor({
   onStatusChange: (status: JobStatus) => void;
   isSavingStatus: boolean;
 }) {
+  const confirm = useConfirm();
   const sortedEvents = [...job.status_events].sort((a, b) => new Date(a.changed_at).getTime() - new Date(b.changed_at).getTime());
   const [isEditing, setIsEditing] = useState(false);
   const [newEvent, setNewEvent] = useState<JobStatusEventPayload>({
@@ -919,9 +925,9 @@ function StatusHistoryEditor({
         </div>
         <div className="ml-auto flex items-center gap-2">
           <QuickStatusSelect value={job.status} onChange={onStatusChange} disabled={isSavingStatus} />
-          <Button variant="secondary" size="sm" onClick={() => setIsEditing((current) => !current)}>
+          <Button variant="secondary" size="sm" aria-pressed={isEditing} onClick={() => setIsEditing((current) => !current)}>
             {isEditing ? <X className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
-            {isEditing ? "Done" : "Edit"}
+            {isEditing ? "Done editing history" : "Edit history"}
           </Button>
         </div>
       </div>
@@ -943,7 +949,7 @@ function StatusHistoryEditor({
                 isSaving={updateMutation.isPending}
                 isDeleting={deleteMutation.isPending}
                 onSave={(payload) => updateMutation.mutate({ eventId: event.id, payload })}
-                onDelete={() => { if (window.confirm("Delete this history step? This can change the current status and funnel history.")) deleteMutation.mutate(event.id); }}
+                onDelete={async () => { if (await confirm("Delete this history step? This can change the current status and funnel history.")) deleteMutation.mutate(event.id); }}
               />
             ))}
           </div>
@@ -1130,7 +1136,7 @@ function AdvancedAnalysisControl({
 }
 
 function ProcessSteps({ active }: { active: boolean; steps: string[] }) {
-  return active ? <p role="status" className="mt-3 text-sm text-muted-foreground">Analyzing this opportunity. This can take a minute; keep this page open.</p> : null;
+  return active ? <p role="status" className="mt-3 text-sm text-muted-foreground">Analyzing this opportunity. Keep this page open while it runs. If it fails, your saved job remains available and you can retry the analysis.</p> : null;
 }
 
 function Section({
@@ -1151,20 +1157,21 @@ function Section({
 }
 
 function SourceLinks({ links }: { links: Array<{ title?: string; url?: string }> }) {
+  const contentId = useId();
   const [open, setOpen] = useState(false);
   const valid = links.filter((l) => l.url);
   if (!valid.length) return null;
   return (
     <div className="mt-4">
       <button
-        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open} aria-controls={contentId} onClick={() => setOpen((v) => !v)}
         className="flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
       >
         <ChevronDown className={cn("h-4 w-4 transition-transform duration-200", open && "rotate-180")} />
         Sources ({valid.length})
       </button>
       {open && (
-        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        <div id={contentId} className="mt-2 grid gap-2 sm:grid-cols-2">
           {valid.map((link, index) => (
             <a key={`${link.url}-${index}`} href={link.url} target="_blank" rel="noreferrer" className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2 text-sm">
               <span className="line-clamp-1">{link.title || link.url}</span>

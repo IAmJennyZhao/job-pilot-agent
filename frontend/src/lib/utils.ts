@@ -8,6 +8,7 @@ export function cn(...inputs: ClassValue[]) {
 export function formatDate(value: string | null | undefined) {
   if (!value) return "";
   return new Intl.DateTimeFormat("en", {
+    year: "numeric",
     month: "short",
     day: "numeric",
     hour: "numeric",
@@ -24,5 +25,13 @@ export function csvToList(value: string) {
 
 export function listToCsv(value: string[] | undefined) {
   return value?.join(", ") ?? "";
+}
+
+export function linesToList(value: string) {
+  return value.split(/\r?\n/).map(item => item.trim()).filter(Boolean);
+}
+
+export function listToLines(value: string[] | undefined) {
+  return value?.join("\n") ?? "";
 }
 

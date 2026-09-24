@@ -88,6 +88,7 @@ function InterviewPageContent() {
 
   const resumeData = resumeQuery.data;
   const [targetMode, setTargetMode] = React.useState<"job" | "role">(requestedJobId ? "job" : "role");
+  const [jobSearch, setJobSearch] = React.useState("");
   const [jobId, setJobId] = React.useState(requestedJobId);
   const [targetCategory, setTargetCategory] = React.useState<JobCategory>("AI/ML Engineer");
   const [targetRole, setTargetRole] = React.useState("");
@@ -190,7 +191,7 @@ function InterviewPageContent() {
     }
   });
 
-  const canStart = targetMode === "job" ? Boolean(jobId) : Boolean(targetCategory || targetRole.trim());
+  const canStart = targetMode === "job" ? Boolean(jobs.some(job => job.id === jobId) && !jobsQuery.isLoading && !jobsQuery.error) : Boolean(targetCategory || targetRole.trim());
   const resetPracticeSet = () => {
     setPracticeSet(null);
     setQueue([]);
@@ -203,7 +204,7 @@ function InterviewPageContent() {
       <PageHeader title="Interview Practice" description="Focused answer reps for saved jobs and role targets." />
       {[jobsQuery, sessionsQuery, insightsQuery, ...(resumeSessionId ? [resumeQuery] : [])].map((query, index) => query.error ? <Panel key={index}><p role="alert">Could not load {["job choices", "session history", "interview insights", "the requested session"][index]}: {(query.error as Error).message}</p><Button variant="secondary" onClick={() => query.refetch()}>Retry</Button></Panel> : query.isLoading ? <Panel key={index}>Loading {["job choices", "session history", "interview insights", "the requested session"][index]}...</Panel> : null)}
       {resumeSessionId && resumeQuery.error ? <Link href="/interview" className="text-sm font-medium underline">Return to saved practice draft</Link> : null}
-      {practiceDraft.dirty ? <p role="status" className="text-sm text-muted-foreground">{practiceDraft.storageError ? "Draft recovery is unavailable. Keep this page open until you submit your answer." : "Each question keeps its own draft. This practice set and your drafts recover after a refresh in this browser tab."}</p> : null}
+      {practiceDraft.dirty ? <p role="status" className="text-sm text-muted-foreground">{practiceDraft.storageError ? "Draft recovery is unavailable. Keep this page open until you submit your answer." : "Each question keeps its own draft. This practice set and your drafts recover after a refresh on this browser, including after closing the tab."}</p> : null}
       {isActive && practiceSet && activeQuestion ? (
         <Panel>
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -256,18 +257,18 @@ function InterviewPageContent() {
               <Target className="h-4 w-4 text-primary" />
               <h2 className="text-base font-semibold">Practice Target</h2>
             </div>
-            <div className="grid gap-4">
+            <fieldset disabled={createPracticeSet.isPending} className="grid min-w-0 gap-4">
               <div className="grid grid-cols-2 gap-2 rounded-md border border-border bg-muted p-1">
                 <button
                   className={cn("rounded px-3 py-2 text-sm font-medium", targetMode === "job" ? "bg-card-strong text-primary shadow-sm" : "text-muted-foreground")}
-                  onClick={() => setTargetMode("job")}
+                  aria-pressed={targetMode === "job"} onClick={() => setTargetMode("job")}
                   type="button"
                 >
                   Saved job
                 </button>
                 <button
                   className={cn("rounded px-3 py-2 text-sm font-medium", targetMode === "role" ? "bg-card-strong text-primary shadow-sm" : "text-muted-foreground")}
-                  onClick={() => setTargetMode("role")}
+                  aria-pressed={targetMode === "role"} onClick={() => setTargetMode("role")}
                   type="button"
                 >
                   General role
@@ -275,16 +276,12 @@ function InterviewPageContent() {
               </div>
 
               {targetMode === "job" ? (
-                <Field label="Saved job">
+                <div className="grid gap-3"><Field label="Find a saved job"><Input value={jobSearch} onChange={event => setJobSearch(event.target.value)} placeholder="Company or role" /></Field><Field label="Saved job">
                   <Select aria-label="Saved job" value={jobId} onChange={(event) => setJobId(event.target.value)}>
                     {!jobs.length ? <option value="">No saved jobs - add one in Jobs or practice a general role</option> : null}
-                    {jobs.map((job) => (
-                      <option key={job.id} value={job.id}>
-                        {job.company} - {job.role_title}
-                      </option>
-                    ))}
+                    {[{ label: "Active opportunities", closed: false }, { label: "Closed and archived", closed: true }].map(group => <optgroup key={group.label} label={group.label}>{jobs.filter(job => ["Archived", "Rejected", "Withdrawn", "Ghosted"].includes(job.status) === group.closed && (job.id === jobId || `${job.company} ${job.role_title}`.toLowerCase().includes(jobSearch.toLowerCase()))).map(job => <option key={job.id} value={job.id}>{job.company} — {job.role_title} ({job.status})</option>)}</optgroup>)}
                   </Select>
-                </Field>
+                </Field><p className="text-xs text-muted-foreground">The selected job stays visible while searching.</p></div>
               ) : (
                 <div className="grid gap-4">
                   <Field label="Category">
@@ -334,7 +331,7 @@ function InterviewPageContent() {
                 <Play className="h-4 w-4" />
                 {createPracticeSet.isPending ? "Starting..." : "Start practice"}
               </Button>
-            </div>
+            </fieldset>
           </Panel>
           {!sessionsQuery.isLoading && !insightsQuery.isLoading && !sessionsQuery.error && !insightsQuery.error ? <CommandCenterPanel
             insights={insights}
@@ -348,14 +345,14 @@ function InterviewPageContent() {
         <div>
           <button
             type="button"
-            onClick={() => setShowInsightsHistory((value) => !value)}
+            aria-expanded={showInsightsHistory} aria-controls="practice-insights" onClick={() => setShowInsightsHistory((value) => !value)}
             className="flex items-center gap-2 text-sm font-medium text-muted-foreground transition hover:text-foreground"
           >
             <ChevronDown className={cn("h-4 w-4 transition-transform", showInsightsHistory && "rotate-180")} />
             {showInsightsHistory ? "Hide insights & history" : "Show insights & history"}
           </button>
           {showInsightsHistory ? (
-            <div className="mt-4 grid gap-4 xl:grid-cols-[1fr_420px]">
+            <div id="practice-insights" className="mt-4 grid gap-4 xl:grid-cols-[1fr_420px]">
               {!insightsQuery.isLoading && !insightsQuery.error ? <InsightsPanel insights={insights} /> : null}
               {!sessionsQuery.isLoading && !sessionsQuery.error ? <SessionHistoryPanel sessions={sessions} jobsById={jobsById} /> : null}
             </div>

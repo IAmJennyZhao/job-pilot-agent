@@ -18,6 +18,7 @@ import {
   UserRound
 } from "lucide-react";
 import * as React from "react";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { Badge, PageHeader, Panel } from "@/components/ui/panel";
@@ -25,7 +26,7 @@ import { api } from "@/lib/api";
 import type { CoverLetterTemplate, CoverageGapResponse, ResumeOption, ResumeProfile } from "@/lib/types";
 import { useDraft } from "@/lib/use-draft";
 import { RecordEditor } from "@/components/ui/record-editor";
-import { cn, csvToList, formatDate, listToCsv } from "@/lib/utils";
+import { cn, csvToList, linesToList, formatDate, listToLines } from "@/lib/utils";
 
 type TabKey = "base" | "resumes" | "templates" | "coverage";
 
@@ -36,13 +37,33 @@ const tabs: Array<{ key: TabKey; label: string; icon: React.ElementType }> = [
   { key: "coverage", label: "Coverage Audit", icon: Search }
 ];
 
-export default function ProfilePage() {
+export default function ProfilePage() { return <React.Suspense fallback={<Panel>Loading assets...</Panel>}><ProfileContent /></React.Suspense>; }
+
+function ProfileContent() {
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = React.useState<TabKey>("base");
+  const params = useSearchParams();
+  const activeTab = tabs.find(tab => tab.key === params.get("tab"))?.key ?? "base";
+  const setActiveTab = (tab: TabKey, focus?: string) => {
+    const next = new URLSearchParams({ tab });
+    if (focus) next.set("focus", focus);
+    window.history.replaceState(null, "", `/profile?${next}`);
+  };
   const { data: profile, isLoading, error } = useQuery({ queryKey: ["profile"], queryFn: api.profile });
   const { data: resumeOptions = [], isLoading: resumesLoading, error: resumesError } = useQuery({ queryKey: ["resume-options"], queryFn: api.resumeOptions });
   const { data: templates = [], isLoading: templatesLoading, error: templatesError } = useQuery({ queryKey: ["cover-letter-templates"], queryFn: api.coverLetterTemplates });
 
+  React.useEffect(() => {
+    const target = params.get("focus");
+    if (!target || isLoading || resumesLoading || templatesLoading) return;
+    const frame = requestAnimationFrame(() => {
+      const section = document.getElementById("asset-content");
+      const field = Array.from(section?.querySelectorAll("label") ?? []).find(label => label.textContent?.startsWith(target));
+      const element = field ?? section;
+      element?.scrollIntoView({ block: "start", behavior: "smooth" });
+      (field?.querySelector("input, textarea, select") as HTMLElement | null)?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [params, isLoading, resumesLoading, templatesLoading]);
   const invalidateProfileAssets = () => {
     queryClient.invalidateQueries({ queryKey: ["profile"] });
     queryClient.invalidateQueries({ queryKey: ["resume-options"] });
@@ -56,9 +77,9 @@ export default function ProfilePage() {
         title="Application Assets"
         description="Base profile, resume variants, cover letter templates, and coverage audit."
       />
-      {error ? <Panel className="border-destructive/25 bg-destructive/10 text-sm text-destructive">{(error as Error).message}</Panel> : null}
+      {error ? <Panel className="border-destructive/25 bg-destructive/10 text-sm text-destructive">{(error as Error).message}<Button variant="secondary" onClick={invalidateProfileAssets}>Retry loading profile</Button></Panel> : null}
       {isLoading ? <Panel>Loading application assets...</Panel> : null}
-      {resumesError || templatesError ? <Panel><div role="alert">Could not load assets: {((resumesError || templatesError) as Error).message}</div></Panel> : null}
+      {resumesError || templatesError ? <Panel><div role="alert">Could not load assets: {((resumesError || templatesError) as Error).message}</div><Button variant="secondary" onClick={invalidateProfileAssets}>Retry loading assets</Button></Panel> : null}
       {!isLoading && !resumesLoading && !templatesLoading && !error && !resumesError && !templatesError ? <ReadinessStrip profile={profile ?? null} resumeOptions={resumeOptions} templates={templates} onSelect={setActiveTab} /> : null}
       <div className="flex flex-wrap gap-2 border-b border-border pb-2">
         {tabs.map((tab) => {
@@ -81,10 +102,11 @@ export default function ProfilePage() {
           );
         })}
       </div>
-      {activeTab === "base" && !isLoading && !error ? <BaseProfileTab profile={profile ?? null} onSaved={invalidateProfileAssets} /> : null}
+      <section id="asset-content" className="scroll-mt-36">{activeTab === "base" && !isLoading && !error ? <BaseProfileTab profile={profile ?? null} onSaved={invalidateProfileAssets} /> : null}
       {activeTab === "resumes" && !resumesLoading && !resumesError ? <ResumeVariantsTab resumeOptions={resumeOptions} onChanged={invalidateProfileAssets} /> : null}
       {activeTab === "templates" && !templatesLoading && !templatesError ? <CoverLetterTemplatesTab templates={templates} onChanged={invalidateProfileAssets} /> : null}
       {activeTab === "coverage" ? <CoverageAuditTab /> : null}
+    </section>
     </div>
   );
 }
@@ -98,13 +120,13 @@ function ReadinessStrip({
   profile: ResumeProfile | null;
   resumeOptions: ResumeOption[];
   templates: CoverLetterTemplate[];
-  onSelect: (tab: TabKey) => void;
+  onSelect: (tab: TabKey, focus?: string) => void;
 }) {
   const checks = [
-    { tab: "base" as TabKey, label: "Base profile", ready: Boolean(profile) },
-    { tab: "base" as TabKey, label: "Skills", ready: Boolean(profile?.skills.length) },
-    { tab: "resumes" as TabKey, label: "Ready resume", ready: resumeOptions.some((option) => option.status === "ready") },
-    { tab: "templates" as TabKey, label: "Cover template", ready: Boolean(templates.length) }
+    { tab: "base" as TabKey, label: "Base profile", focus: "Resume text", ready: Boolean(profile?.resume_text.trim() || profile?.summary?.trim()) },
+    { tab: "base" as TabKey, label: "Skills", focus: "Skills", ready: Boolean(profile?.skills.some(skill => skill.trim())) },
+    { tab: "resumes" as TabKey, label: "Ready resume", focus: "Resume Variants", ready: resumeOptions.some((option) => option.status === "ready" && Boolean(option.parsed_text.trim() || option.summary?.trim() || option.experience.length)) },
+    { tab: "templates" as TabKey, label: "Cover template", focus: "Cover Letters", ready: templates.some(template => Boolean(template.body.trim())) }
   ];
   const ready = checks.every((item) => item.ready);
   const StatusIcon = ready ? CheckCircle2 : AlertCircle;
@@ -118,7 +140,7 @@ function ReadinessStrip({
         </div>
         <div className="flex flex-wrap gap-2">
           {checks.map((item) => (
-            <button type="button" onClick={() => onSelect(item.tab)}
+            <button type="button" onClick={() => onSelect(item.tab, item.focus)} title={item.ready ? `${item.label} has saved content` : `Add content to ${item.label.toLowerCase()}`}
               key={item.label}
               className={cn(
                 "inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium",
@@ -142,11 +164,11 @@ function BaseProfileTab({ profile, onSaved }: { profile: ResumeProfile | null; o
     mutationFn: () => {
       const payload = {
         name: form.name || null,
-        target_roles: csvToList(form.target_roles),
+        target_roles: linesToList(form.target_roles),
         summary: form.summary || null,
-        skills: csvToList(form.skills),
+        skills: linesToList(form.skills),
         skill_groups: parseSkillGroups(form.skill_groups),
-        certifications: csvToList(form.certifications),
+        certifications: linesToList(form.certifications),
         resume_text: form.resume_text,
         experience: parseJsonList(form.experience_json, profile?.experience ?? []),
         projects: parseJsonList(form.projects_json, profile?.projects ?? []),
@@ -165,7 +187,7 @@ function BaseProfileTab({ profile, onSaved }: { profile: ResumeProfile | null; o
           <Field label="Name">
             <Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
           </Field>
-          <Field label="Target roles">
+          <Field label="Target roles (one per line)">
             <Input value={form.target_roles} onChange={(event) => setForm({ ...form, target_roles: event.target.value })} />
           </Field>
         </div>
@@ -173,10 +195,10 @@ function BaseProfileTab({ profile, onSaved }: { profile: ResumeProfile | null; o
           <Textarea value={form.summary} onChange={(event) => setForm({ ...form, summary: event.target.value })} />
         </Field>
         <div className="grid gap-4 lg:grid-cols-2">
-          <Field label="Skills">
+          <Field label="Skills (one per line)">
             <Textarea value={form.skills} onChange={(event) => setForm({ ...form, skills: event.target.value })} />
           </Field>
-          <Field label="Certifications">
+          <Field label="Certifications (one per line)">
             <Textarea value={form.certifications} onChange={(event) => setForm({ ...form, certifications: event.target.value })} />
           </Field>
         </div>
@@ -396,11 +418,11 @@ function ResumeOptionEditor({
         candidate_name: form.candidate_name || null,
         status: form.status,
         summary: form.summary || null,
-        target_roles: csvToList(form.target_roles),
-        target_keywords: csvToList(form.target_keywords),
-        skills: csvToList(form.skills),
+        target_roles: linesToList(form.target_roles),
+        target_keywords: linesToList(form.target_keywords),
+        skills: linesToList(form.skills),
         skill_groups: parseSkillGroups(form.skill_groups),
-        certifications: csvToList(form.certifications),
+        certifications: linesToList(form.certifications),
         experience: parseJsonList(form.experience_json, option.experience),
         projects: parseJsonList(form.projects_json, option.projects),
         education: parseJsonList(form.education_json, option.education),
@@ -477,14 +499,14 @@ function ResumeOptionEditor({
           <Textarea value={form.summary} onChange={(event) => setForm({ ...form, summary: event.target.value })} />
         </Field>
         <div className="grid gap-4 lg:grid-cols-2">
-          <Field label="Target roles">
+          <Field label="Target roles (one per line)">
             <Textarea value={form.target_roles} onChange={(event) => setForm({ ...form, target_roles: event.target.value })} />
           </Field>
-          <Field label="Target keywords">
+          <Field label="Target keywords (one per line)">
             <Textarea value={form.target_keywords} onChange={(event) => setForm({ ...form, target_keywords: event.target.value })} />
           </Field>
         </div>
-        <Field label="Skills">
+        <Field label="Skills (one per line)">
           <Textarea value={form.skills} onChange={(event) => setForm({ ...form, skills: event.target.value })} />
         </Field>
         <AdvancedDetails>
@@ -492,7 +514,7 @@ function ResumeOptionEditor({
             <Field label="Skill groups">
               <Textarea value={form.skill_groups} onChange={(event) => setForm({ ...form, skill_groups: event.target.value })} />
             </Field>
-            <Field label="Certifications">
+            <Field label="Certifications (one per line)">
               <Textarea value={form.certifications} onChange={(event) => setForm({ ...form, certifications: event.target.value })} />
             </Field>
           </div>
@@ -632,8 +654,8 @@ function CoverLetterTemplateEditor({
 }) {
   const draft = useDraft(`template-${template.id}`, {
     title: template.title,
-    target_roles: listToCsv(template.target_roles),
-    target_keywords: listToCsv(template.target_keywords),
+    target_roles: listToLines(template.target_roles),
+    target_keywords: listToLines(template.target_keywords),
     body: template.body,
     notes: template.notes ?? ""
   });
@@ -642,8 +664,8 @@ function CoverLetterTemplateEditor({
     mutationFn: () =>
       api.updateCoverLetterTemplate(template.id, {
         title: form.title,
-        target_roles: csvToList(form.target_roles),
-        target_keywords: csvToList(form.target_keywords),
+        target_roles: linesToList(form.target_roles),
+        target_keywords: linesToList(form.target_keywords),
         body: form.body,
         notes: form.notes || null
       }),
@@ -677,10 +699,10 @@ function CoverLetterTemplateEditor({
           <Input value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} />
         </Field>
         <div className="grid gap-4 lg:grid-cols-2">
-          <Field label="Target roles">
+          <Field label="Target roles (one per line)">
             <Textarea value={form.target_roles} onChange={(event) => setForm({ ...form, target_roles: event.target.value })} />
           </Field>
-          <Field label="Target keywords">
+          <Field label="Target keywords (one per line)">
             <Textarea value={form.target_keywords} onChange={(event) => setForm({ ...form, target_keywords: event.target.value })} />
           </Field>
         </div>
@@ -832,11 +854,11 @@ function uniqueStrings(items: string[]) {
 function profileFormFromProfile(profile: ResumeProfile | null) {
   return {
     name: profile?.name ?? "",
-    target_roles: listToCsv(profile?.target_roles),
+    target_roles: listToLines(profile?.target_roles),
     summary: profile?.summary ?? "",
-    skills: listToCsv(profile?.skills),
+    skills: listToLines(profile?.skills),
     skill_groups: formatSkillGroups(profile?.skill_groups ?? []),
-    certifications: listToCsv(profile?.certifications),
+    certifications: listToLines(profile?.certifications),
     experience_json: formatJson(profile?.experience ?? []),
     projects_json: formatJson(profile?.projects ?? []),
     education_json: formatJson(profile?.education ?? []),
@@ -850,11 +872,11 @@ function resumeFormFromOption(option: ResumeOption) {
     candidate_name: option.candidate_name ?? "",
     status: option.status,
     summary: option.summary ?? "",
-    target_roles: listToCsv(option.target_roles),
-    target_keywords: listToCsv(option.target_keywords),
-    skills: listToCsv(option.skills),
+    target_roles: listToLines(option.target_roles),
+    target_keywords: listToLines(option.target_keywords),
+    skills: listToLines(option.skills),
     skill_groups: formatSkillGroups(option.skill_groups),
-    certifications: listToCsv(option.certifications),
+    certifications: listToLines(option.certifications),
     experience_json: formatJson(option.experience),
     projects_json: formatJson(option.projects),
     education_json: formatJson(option.education),
@@ -891,5 +913,5 @@ function parseSkillGroups(value: string) {
 }
 
 function DraftNotice({ dirty, storageError, saved }: { dirty: boolean; storageError: boolean; saved: boolean }) {
-  return <p role="status" className="text-sm text-muted-foreground">{dirty ? storageError ? "Unsaved changes. Draft recovery is unavailable in this browser; save before leaving." : "Unsaved changes. Your draft is kept in this browser tab, including after a refresh." : saved ? "Saved successfully." : ""}</p>;
+  return <p role="status" className="text-sm text-muted-foreground">{dirty ? storageError ? "Unsaved changes. Draft recovery is unavailable in this browser; save before leaving." : "Unsaved changes. Your draft is kept on this browser, including after closing the tab, including after a refresh." : saved ? "Saved successfully." : ""}</p>;
 }

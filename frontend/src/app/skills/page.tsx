@@ -132,7 +132,7 @@ export default function SkillsPage() {
               <h2 className="text-base font-semibold">Gap Table</h2>
               <Badge>{activeGaps.length} tracked</Badge>
             </div>
-            {error ? <p className="text-sm text-destructive">{(error as Error).message}</p> : null}
+            {error ? <p className="text-sm text-destructive">{(error as Error).message}<Button variant="secondary" onClick={() => queryClient.invalidateQueries({ queryKey: ["skill-gaps"] })}>Retry loading skills</Button></p> : null}
             {isLoading ? <p className="text-sm text-muted-foreground">Loading gaps...</p> : null}
             <div className="overflow-x-auto">
               <GapTable
@@ -142,7 +142,7 @@ export default function SkillsPage() {
                 selectedSkills={selectedSkills}
                 onToggleSkill={toggleSkill}
               />
-              {!activeGaps.length && !isLoading ? (
+              {!activeGaps.length && !isLoading && !error ? (
                 <p className="py-8 text-sm text-muted-foreground">
                   {knownGaps.length
                     ? "No active gaps - everything tracked is marked as known."
@@ -154,14 +154,14 @@ export default function SkillsPage() {
               <div className="mt-4 border-t border-border pt-4">
                 <button
                   type="button"
-                  onClick={() => setShowKnown((value) => !value)}
+                  aria-expanded={showKnown} aria-controls="known-skills" onClick={() => setShowKnown((value) => !value)}
                   className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
                 >
                   <ChevronRight className={cn("h-4 w-4 transition-transform", showKnown && "rotate-90")} />
                   Known skills ({knownGaps.length})
                 </button>
                 {showKnown ? (
-                  <div className="mt-3 overflow-x-auto">
+                  <div id="known-skills" className="mt-3 overflow-x-auto">
                     <GapTable gaps={knownGaps} onLevelChange={setLevel} busy={updateMutation.isPending} muted />
                   </div>
                 ) : null}
@@ -399,7 +399,7 @@ function StudyPlanView({ plan, onToggle, busy = false }: { plan: StudyPlan; onTo
           </div>
         </div>
       ) : null}
-      {plan.project_ideas.length ? <div><h3 className="font-medium">Project ideas</h3><ul className="mt-2 grid gap-2">{plan.project_ideas.map((project, index) => <li key={index}>{onToggle ? <label className="flex items-start gap-2"><input className="mt-1" type="checkbox" checked={plan.completed_tasks?.includes(`project:${index}`) ?? false} disabled={busy} onChange={() => onToggle(`project:${index}`)} /><span>{project}</span></label> : project}</li>)}</ul></div> : null}
+      {plan.project_ideas.length ? <div><h3 className="font-medium">Optional project ideas</h3><p className="text-xs text-muted-foreground">Projects are tracked separately from study tasks.</p><ul className="mt-2 grid gap-2">{plan.project_ideas.map((project, index) => <li key={index}>{onToggle ? <label className="flex items-start gap-2"><input className="mt-1" type="checkbox" checked={plan.completed_tasks?.includes(`project:${index}`) ?? false} disabled={busy} onChange={() => onToggle(`project:${index}`)} /><span>{project}</span></label> : project}</li>)}</ul></div> : null}
     </div>
   );
 }
@@ -504,8 +504,10 @@ function SavedPlanProgress({ saved }: { saved: SavedStudyPlan }) {
     onSuccess: updated => queryClient.setQueryData<SavedStudyPlan[]>(["study-plans"], old => old?.map(plan => plan.id === updated.id ? updated : plan))
   });
   const completed = saved.plan.completed_tasks ?? [];
-  const total = saved.plan.study_plan.reduce((count, period) => count + period.tasks.length, 0) + saved.plan.project_ideas.length;
-  return <div className="grid gap-3"><p role="status" className="text-sm">{completed.length} of {total} tasks completed{mutation.isPending ? " · Saving..." : ""}</p><progress className="h-2 w-full accent-primary" aria-label="Study plan progress" value={completed.length} max={Math.max(1, total)} />{mutation.error ? <p role="alert" className="text-destructive">Progress was not saved: {mutation.error.message}. Try again.</p> : null}<StudyPlanView plan={saved.plan} busy={mutation.isPending} onToggle={id => mutation.mutate(completed.includes(id) ? completed.filter(value => value !== id) : [...completed, id])} /></div>;
+  const total = saved.plan.study_plan.reduce((count, period) => count + period.tasks.length, 0);
+  const completedTasks = completed.filter(id => id.startsWith("task:")).length;
+  const completedProjects = completed.filter(id => id.startsWith("project:")).length;
+  return <div className="grid gap-3"><p role="status" className="text-sm">{completedTasks} of {total} study tasks completed · {completedProjects} of {saved.plan.project_ideas.length} optional projects completed{mutation.isPending ? " · Saving..." : ""}</p><progress className="h-2 w-full accent-primary" aria-label="Study plan progress" value={completedTasks} max={Math.max(1, total)} />{mutation.error ? <p role="alert" className="text-destructive">Progress was not saved: {mutation.error.message}. Try again.</p> : null}<StudyPlanView plan={saved.plan} busy={mutation.isPending} onToggle={id => mutation.mutate(completed.includes(id) ? completed.filter(value => value !== id) : [...completed, id])} /></div>;
 }
 
 function SkillEvidence({ gap }: { gap: SkillGap }) {

@@ -61,3 +61,21 @@ Scope: the 32 findings from the September 24, 2026 review, plus regressions foun
 `cd backend; py tests/ux_fixture.py` starts a fresh temporary synthetic database on port 8000. It does not read or overwrite the normal database. Start the built frontend with `npm run start` from `frontend`. The fixture includes synthetic jobs, two resumes, a cover letter, skill evidence, a study plan and interview questions. Its AI outputs are fixtures rather than live model calls.
 
 Desktop and 390px mobile views were checked for the dashboard, tracker, assets, skills and interview practice. Existing broad skill tables retain horizontal scrolling inside their panel; the document itself does not overflow. External AI quality and third-party job-posting availability are outside this UI verification; their loading and error paths remain explicit.
+
+## Follow-up review: checkpoint 1
+
+The subsequent 30-point review adds scope beyond the original audit. Completion of that follow-up is still in progress.
+
+Verified in this checkpoint:
+- Funnel cohort heading and archived exclusion replace the contradictory hidden-record checkbox. Synthetic rejection-after-Tech drill-down shows exactly one matching job.
+- Clear filters preserves sorting (browser URL remains `?sort=company`). Search is debounced and retains visible results while loading.
+- Laptop tracker uses cards with category editing and posting links. Screenshots at 1280px and 390px show no document overflow.
+- Row pending state uses mutation identities; compensation has an explicit edit affordance and salary sorting groups currencies.
+- Responsibilities, skills and benefits use item editors. Profile lists use one item per line. `node frontend/tests/list-editing.cjs` reproduces the old comma split and passes with the new parser.
+- Browser drafts survive closing the tab: a synthetic profile draft reopened with the exact edited name. Readiness Skills focuses its field. Asset tabs persist in the URL.
+- Readiness requires content, interview generation locks setup, job selection supports search and active/closed groups, and mode buttons announce selection.
+- Skills errors suppress false empty states; optional project completion is separate from required study tasks. Dates include years.
+- Missing-session browser check shows an error and recovery link without unrelated question/answer UI.
+- Production build and frontend typecheck pass.
+
+Remaining follow-up work includes dashboard cohort periods, recorded/inferred stage counts, conversion rates, a unified action queue, unique-job skill prioritization, inline validation, consistent confirmations/recovery, and final integrated verification.

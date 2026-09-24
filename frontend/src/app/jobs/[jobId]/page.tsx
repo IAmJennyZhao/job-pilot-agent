@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { ListEditor } from "@/components/ui/list-editor";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { Badge, PageHeader, Panel } from "@/components/ui/panel";
 import { useDraft } from "@/lib/use-draft";
@@ -29,7 +30,7 @@ import {
   type RemoteType,
   type ResumeOption
 } from "@/lib/types";
-import { cn, csvToList, formatDate, listToCsv } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 
 type JobEditForm = Omit<JobCreatePayload, "source_content" | "extraction_confidence" | "extraction_warnings" | "status_note">;
 
@@ -239,7 +240,7 @@ export default function JobDetailPage() {
       />
       {error ? <Panel className="border-destructive/25 bg-destructive/10 text-sm text-destructive">{(error as Error).message}</Panel> : null}
       {isLoading ? <Panel>Loading job...</Panel> : null}
-      {editDraft.dirty ? <p role="status" className="text-sm text-muted-foreground">Unsaved job edits are kept in this browser tab. Resume editing to save or discard them.</p> : null}
+      {editDraft.dirty ? <p role="status" className="text-sm text-muted-foreground">Unsaved job edits are kept on this browser, including after closing the tab. Resume editing to save or discard them.</p> : null}
       {job && !isEditing ? <nav aria-label="Job sections" className="flex flex-wrap gap-3 text-sm font-medium">{["Role Snapshot", ...(advancedAnalysis ? ["Fit And Gaps", ...(advancedAnalysis.company_sentiment || companyResearch ? ["Company Signals"] : []), "Interview Prep"] : []), "Application Assets", "Status History"].map(label => <a className="rounded border border-border px-3 py-2 hover:bg-accent" key={label} href={`#${label.toLowerCase().replaceAll(" ", "-")}`}>{label}</a>)}</nav> : null}
 
       {job ? (
@@ -829,15 +830,9 @@ function JobEditFormView({
       <Field label="Raw pay text">
         <Input value={form.pay_raw ?? ""} onChange={(event) => set("pay_raw", event.target.value)} />
       </Field>
-      <Field label="Benefits">
-        <Textarea value={listToCsv(form.benefits ?? [])} onChange={(event) => set("benefits", csvToList(event.target.value))} />
-      </Field>
-      <Field label="Responsibilities">
-        <Textarea value={listToCsv(form.responsibilities)} onChange={(event) => set("responsibilities", csvToList(event.target.value))} />
-      </Field>
-      <Field label="Required skills">
-        <Textarea value={listToCsv(form.required_skills)} onChange={(event) => set("required_skills", csvToList(event.target.value))} />
-      </Field>
+      <ListEditor label="Benefits" value={form.benefits ?? []} onChange={value => set("benefits", value)} />
+      <ListEditor label="Responsibilities" value={form.responsibilities ?? []} onChange={value => set("responsibilities", value)} />
+      <ListEditor label="Required skills" value={form.required_skills ?? []} onChange={value => set("required_skills", value)} />
       <Field label="Notes">
         <Textarea value={form.notes ?? ""} onChange={(event) => set("notes", event.target.value)} className="min-h-28" />
       </Field>

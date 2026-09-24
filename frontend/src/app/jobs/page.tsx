@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useMutationState, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, ExternalLink, FileText, Plus, Save, Search, Sparkles, X } from "lucide-react";
 import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
@@ -8,6 +8,7 @@ import { useSearchParams } from "next/navigation";
 import { useDraft } from "@/lib/use-draft";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { ListEditor } from "@/components/ui/list-editor";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { Badge, PageHeader, Panel } from "@/components/ui/panel";
 import { api } from "@/lib/api";
@@ -23,7 +24,7 @@ import {
   type JobStatus,
   type RemoteType
 } from "@/lib/types";
-import { cn, csvToList, formatDate, listToCsv } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 
 type IntakeState = {
   source_url: string;
@@ -95,6 +96,9 @@ function JobsContent() {
     window.history.replaceState(null, "", `/jobs${next.size ? `?${next}` : ""}`);
   };
   const search = params.get("search") ?? "";
+  const [debouncedSearch, setDebouncedSearch] = useState(search);
+  useEffect(() => { const timer = window.setTimeout(() => setDebouncedSearch(search), 250); return () => window.clearTimeout(timer); }, [search]);
+  const pendingJobIds = useMutationState({ filters: { mutationKey: ["jobs-write"], status: "pending" }, select: mutation => (mutation.state.variables as { id: string }).id });
   const statusFilter = statusFromUrl(params.get("status"));
   const healthFilter = healthFromUrl(params.get("health"));
   const categoryFilter = params.get("category") as JobCategory | "" || "";
@@ -112,11 +116,12 @@ function JobsContent() {
   const reviewDraft = useDraft<ReviewState | null>("job-review", null);
   const { value: review, setValue: setReview } = reviewDraft;
 
-  const { data: rawJobs = [], isLoading, error, isFetching } = useQuery({
-    queryKey: ["jobs", showHidden, search, statusFilter, healthFilter, categoryFilter, funnelStage, funnelFrom],
-    queryFn: () => api.jobs({ includeArchived: showHidden, search: search.trim() || undefined, status: statusFilter, category: categoryFilter, healthFilter: toApiHealthFilter(healthFilter), funnelStage, funnelFrom })
+  const { data: rawJobs = [], isLoading, error, isFetching, refetch } = useQuery({
+    queryKey: ["jobs", showHidden, debouncedSearch, statusFilter, healthFilter, categoryFilter, funnelStage, funnelFrom],
+    queryFn: () => api.jobs({ includeArchived: showHidden, search: debouncedSearch.trim() || undefined, status: statusFilter, category: categoryFilter, healthFilter: toApiHealthFilter(healthFilter), funnelStage, funnelFrom }),
+    placeholderData: keepPreviousData
   });
-  const jobs = [...rawJobs].sort((a, b) => sort === "company" ? a.company.localeCompare(b.company) : sort === "pay" ? (b.pay_annual_max ?? b.pay_annual_min ?? -1) - (a.pay_annual_max ?? a.pay_annual_min ?? -1) : Date.parse(b.updated_at) - Date.parse(a.updated_at));
+  const jobs = [...rawJobs].sort((a, b) => sort === "company" ? a.company.localeCompare(b.company) : sort === "pay" ? (a.pay_currency ?? "Unknown").localeCompare(b.pay_currency ?? "Unknown") || (b.pay_annual_max ?? b.pay_annual_min ?? -1) - (a.pay_annual_max ?? a.pay_annual_min ?? -1) : Date.parse(b.updated_at) - Date.parse(a.updated_at));
   const extractMutation = useMutation({
     mutationFn: api.extractJobPreview,
     onSuccess: (data) => {
@@ -142,6 +147,7 @@ function JobsContent() {
   });
 
   const updateMutation = useMutation({
+    mutationKey: ["jobs-write"],
     mutationFn: ({ id, payload }: { id: string; payload: Partial<JobCreatePayload> & { status?: JobStatus } }) => api.updateJob(id, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
@@ -150,6 +156,7 @@ function JobsContent() {
   });
 
   const archiveMutation = useMutation({
+    mutationKey: ["jobs-write"],
     mutationFn: (id: string) => api.updateJob(id, { status: "Archived" }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
@@ -187,7 +194,7 @@ function JobsContent() {
             <h2 className="text-base font-semibold">Add Job</h2>
           </div>
 
-          {(intakeDraft.dirty || reviewDraft.dirty) ? <p role="status" className="mb-3 text-sm">Draft restored or kept in this browser tab. Save the reviewed job to add it to your tracker.</p> : null}
+          {(intakeDraft.dirty || reviewDraft.dirty) ? <p role="status" className="mb-3 text-sm">Draft restored or kept on this browser, including after closing the tab. Save the reviewed job to add it to your tracker.</p> : null}
           <div className="grid gap-4">
             <Field label="Job URL">
               <Input
@@ -248,10 +255,10 @@ function JobsContent() {
           <div className="mb-4 grid gap-3">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex items-center gap-3">
-                <h2 className="text-base font-semibold">Applications</h2>
+                <h2 className="text-base font-semibold">{funnelStage ? funnelFrom ? `Jobs ${funnelStage.toLowerCase()} after ${funnelFrom}` : `Jobs that ${["Rejected", "Withdrawn", "Ghosted"].includes(funnelStage) ? "ended as" : "reached"} ${funnelStage}` : "Applications"}</h2>
                 <Badge>{jobs.length} shown</Badge>
               </div>
-              <label className="flex items-center gap-2 text-sm text-muted-foreground">
+              {funnelStage ? <p className="text-sm text-muted-foreground">Historical cohort · includes closed outcomes · excludes archived jobs</p> : <label className="flex items-center gap-2 text-sm text-muted-foreground">
                 <input
                   type="checkbox"
                   className="h-4 w-4 rounded border-border text-primary"
@@ -259,9 +266,9 @@ function JobsContent() {
                   onChange={(event) => changeShowHidden(event.target.checked)}
                 />
                 Include archived, rejected & ghosted
-              </label>
+              </label>}
             </div>
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(180px,1fr)_180px_190px_220px]">
+            <div className="grid gap-2 sm:grid-cols-2 2xl:grid-cols-[minmax(180px,1fr)_180px_190px_220px]">
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -272,7 +279,7 @@ function JobsContent() {
                 />
               </div>
               <Select aria-label="Current status" value={statusFilter} onChange={(event) => changeStatusFilter(event.target.value as JobStatus | "")}>
-                <option value="">All statuses</option>
+                <option value="">Any current status</option>
                 {jobStatuses.map((status) => (
                   <option key={status} value={status}>
                     {status}
@@ -296,25 +303,27 @@ function JobsContent() {
           <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
             {funnelStage ? <Badge>{funnelFrom ? `${funnelFrom} → ${funnelStage}` : `Reached ${funnelStage}`} · excludes archived</Badge> : null}
             {[...params.entries()].filter(([key]) => ["search", "status", "health", "category", "funnel"].includes(key)).map(([key, value]) => <button key={key} className="rounded-full border border-border px-3 py-1" onClick={() => setFilter(key === "funnel" ? { funnel: "", from: "", hidden: "" } : { [key]: "" })} aria-label={`Remove ${key} filter`}>{healthLabels[value] ?? value} ×</button>)}
-            {params.size > 0 ? <Button variant="ghost" size="sm" onClick={() => window.history.replaceState(null, "", "/jobs")}>Clear all</Button> : null}
-            <label className="ml-auto flex items-center gap-2 whitespace-nowrap">Sort by <Select aria-label="Sort jobs" value={sort} onChange={event => setFilter({ sort: event.target.value })}><option value="updated">Recently updated</option><option value="company">Company A–Z</option><option value="pay">Annual pay, highest first</option></Select></label>
+            {[...params.keys()].some(key => key !== "sort") ? <Button variant="ghost" size="sm" onClick={() => window.history.replaceState(null, "", `/jobs${sort !== "updated" ? `?sort=${encodeURIComponent(sort)}` : ""}`)}>Clear filters</Button> : null}
+            <label className="ml-auto flex items-center gap-2 whitespace-nowrap">Sort by <Select aria-label="Sort jobs" value={sort} onChange={event => setFilter({ sort: event.target.value })}><option value="updated">Recently updated</option><option value="company">Company A–Z</option><option value="pay">Pay by currency, highest first</option></Select></label>
           </div>
           {updateMutation.error || archiveMutation.error ? <p role="alert" className="mb-3 text-sm text-destructive">Could not save: {((updateMutation.error || archiveMutation.error) as Error).message}. Your previous saved values are shown; try again.</p> : null}
-          <p role="status" className="sr-only">{isFetching ? "Updating results" : `${jobs.length} jobs shown`}</p>
-          {error ? <p className="text-sm text-destructive">{(error as Error).message}</p> : null}
+          <p role="status" className="mb-2 text-xs text-muted-foreground">{isFetching || search !== debouncedSearch ? "Updating results… Previous results remain visible." : `${jobs.length} jobs shown`}{sort === "pay" ? " · Grouped by currency; no exchange-rate conversion." : ""}</p>
+          {error ? <div role="alert"><p className="text-sm text-destructive">{(error as Error).message}</p><Button variant="secondary" onClick={() => refetch()}>Retry loading jobs</Button></div> : null}
           {isLoading ? <p className="text-sm text-muted-foreground">Loading jobs...</p> : null}
-          <div className="grid gap-3 lg:hidden">
+          <div className="grid gap-3 md:grid-cols-2 2xl:hidden">
             {jobs.map(job => <article key={job.id} className="grid min-w-0 gap-3 rounded-md border border-border p-3">
               <div><div className="text-sm font-semibold">{job.company}</div><Link className="font-medium text-primary underline" href={`/jobs/${job.id}?returnTo=${encodeURIComponent(returnTo)}`}>{job.role_title}</Link></div>
-              <div className="flex flex-wrap gap-2"><Badge>{job.category}</Badge><Badge>{job.remote_type}</Badge></div>
+              <div className="flex flex-wrap gap-2"><Badge>{job.remote_type}</Badge></div>
+              <label className="grid gap-1 text-sm">Category<Select aria-label={`Category for ${job.company} ${job.role_title}`} value={job.category} disabled={pendingJobIds.includes(job.id)} onChange={event => updateMutation.mutate({ id: job.id, payload: { category: event.target.value as JobCategory } })}>{jobCategories.map(category => <option key={category} value={category}>{category}</option>)}</Select></label>
+              {job.links[0] ? <a className="text-sm text-primary underline" href={(job.links.find(link => link.kind === "source") ?? job.links[0]).url} target="_blank" rel="noreferrer">Open job posting</a> : null}
               <p className="text-sm text-muted-foreground">{job.location || "Location not listed"}</p>
-              <label className="grid gap-1 text-sm">Status<Select aria-label={`Status for ${job.company} ${job.role_title}`} value={job.status} disabled={updateMutation.isPending} onChange={event => updateMutation.mutate({ id: job.id, payload: { status: event.target.value as JobStatus } })}>{jobStatuses.map(status => <option key={status} value={status}>{status}</option>)}</Select></label>
+              <label className="grid gap-1 text-sm">Status<Select aria-label={`Status for ${job.company} ${job.role_title}`} value={job.status} disabled={pendingJobIds.includes(job.id)} onChange={event => updateMutation.mutate({ id: job.id, payload: { status: event.target.value as JobStatus } })}>{jobStatuses.map(status => <option key={status} value={status}>{status}</option>)}</Select></label>
               <PayEditor job={job} onSave={payload => updateMutation.mutateAsync({ id: job.id, payload })} />
               <div className="flex items-center justify-between gap-2"><span className="text-xs text-muted-foreground">Updated {formatDate(job.updated_at)}</span><Button size="sm" variant="secondary" onClick={() => setSelectedJob(job)}>Preview</Button></div>
             </article>)}
             {!jobs.length && !isLoading && !error ? <p className="py-6 text-sm">No jobs match. Clear filters or add a job.</p> : null}
           </div>
-          <div className="hidden overflow-x-auto lg:block">
+          <div className="hidden overflow-x-auto 2xl:block">
             <table className="w-full min-w-[1050px] text-left text-sm">
               <thead className="border-b border-border text-xs uppercase text-muted-foreground">
                 <tr>
@@ -335,7 +344,7 @@ function JobsContent() {
                     key={job.id}
                     job={job}
                     returnTo={returnTo}
-                    busy={updateMutation.isPending || archiveMutation.isPending}
+                    busy={pendingJobIds.includes(job.id)}
                     onSelect={() => setSelectedJob(job)}
                     onStatus={(nextStatus) => updateMutation.mutate({ id: job.id, payload: { status: nextStatus } })}
                     onCategory={(nextCategory) => updateMutation.mutate({ id: job.id, payload: { category: nextCategory } })}
@@ -551,12 +560,8 @@ function ReviewEditor({
       <Field label="Summary">
         <Textarea value={review.summary ?? ""} onChange={(event) => set("summary", event.target.value)} />
       </Field>
-      <Field label="Main responsibilities">
-        <Textarea value={listToCsv(review.responsibilities)} onChange={(event) => set("responsibilities", csvToList(event.target.value))} />
-      </Field>
-      <Field label="Skills">
-        <Textarea value={listToCsv(review.required_skills)} onChange={(event) => set("required_skills", csvToList(event.target.value))} />
-      </Field>
+      <ListEditor label="Main responsibilities" value={review.responsibilities ?? []} onChange={value => set("responsibilities", value)} />
+      <ListEditor label="Skills" value={review.required_skills ?? []} onChange={value => set("required_skills", value)} />
       <div className="grid gap-3 md:grid-cols-2">
         <Field label="Pay minimum">
           <Input type="number" value={review.pay_min ?? ""} onChange={(event) => set("pay_min", event.target.value ? Number(event.target.value) : null)} />
@@ -580,9 +585,7 @@ function ReviewEditor({
       <Field label="Raw pay text">
         <Input value={review.pay_raw ?? ""} onChange={(event) => set("pay_raw", event.target.value)} placeholder="$120k-$160k, equity, bonus..." />
       </Field>
-      <Field label="Benefits">
-        <Textarea value={listToCsv(review.benefits ?? [])} onChange={(event) => set("benefits", csvToList(event.target.value))} />
-      </Field>
+      <ListEditor label="Benefits" value={review.benefits ?? []} onChange={value => set("benefits", value)} />
       <Field label="Notes">
         <Textarea value={review.notes ?? ""} onChange={(event) => set("notes", event.target.value)} />
       </Field>
@@ -736,7 +739,7 @@ function PayEditor({ job, onSave }: { job: JobListItem; onSave: (payload: Partia
     <div className="relative min-w-48">
       <button className="text-left" onClick={() => setIsOpen((current) => !current)}>
         <div className="font-medium text-foreground">{formatPay(job)}</div>
-        <div className="text-xs text-muted-foreground">{formatAnnualPay(job)}</div>
+        <div className="text-xs text-muted-foreground">{formatAnnualPay(job)}</div><span className="text-xs text-primary underline">Edit compensation</span>
       </button>
       {isOpen ? (
         <Dialog title="Edit compensation" onClose={() => { if (!saving) setIsOpen(false); }}>

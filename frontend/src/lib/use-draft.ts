@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-/** Per-record session drafts survive remounts without leaking edits between records. */
+/** Per-record durable browser drafts survive remounts without leaking edits between records. */
 export function useDraft<T>(key: string, initial: T) {
   const storageKey = `job-pilot:draft:${key}`;
   const initialJson = JSON.stringify(initial);
@@ -12,7 +12,7 @@ export function useDraft<T>(key: string, initial: T) {
     let value = JSON.parse(initialJson) as T;
     let dirty = false;
     try {
-      const saved = sessionStorage.getItem(storageKey);
+      const saved = localStorage.getItem(storageKey) ?? sessionStorage.getItem(storageKey);
       if (saved !== null) { value = JSON.parse(saved) as T; dirty = true; }
     } catch { setStorageError(true); }
     setState({ key: storageKey, value, dirty, ready: true, base: initialJson });
@@ -27,8 +27,9 @@ export function useDraft<T>(key: string, initial: T) {
   useEffect(() => {
     if (!state.ready || state.key !== storageKey) return;
     try {
-      if (state.dirty) sessionStorage.setItem(storageKey, JSON.stringify(state.value));
-      else sessionStorage.removeItem(storageKey);
+      if (state.dirty) localStorage.setItem(storageKey, JSON.stringify(state.value));
+      else localStorage.removeItem(storageKey);
+      sessionStorage.removeItem(storageKey);
     } catch { setStorageError(true); }
   }, [state, storageKey]);
   useEffect(() => {
@@ -44,7 +45,7 @@ export function useDraft<T>(key: string, initial: T) {
   };
   const clear = () => {
     setState(current => ({ ...current, dirty: false }));
-    try { sessionStorage.removeItem(storageKey); } catch { setStorageError(true); }
+    try { localStorage.removeItem(storageKey); sessionStorage.removeItem(storageKey); } catch { setStorageError(true); }
   };
   return { value: state.key === storageKey ? state.value : initial, setValue: update, clear, dirty: state.key === storageKey && state.dirty, ready: state.key === storageKey && state.ready, storageError };
 }

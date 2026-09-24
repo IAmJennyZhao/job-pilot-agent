@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app import models
 from app.database import Base
 from app.migrations import alembic_config, run_migrations
+from alembic import command
 
 
 def _sqlite_url(tmp_path: Path, name: str) -> str:
@@ -38,6 +39,22 @@ def test_fresh_database_is_created_at_head(tmp_path):
         engine.dispose()
     assert set(Base.metadata.tables) <= tables
     assert _current_revision(url) == _head_revision()
+
+
+def test_baseline_upgrade_preserves_jobs_and_adds_actions(tmp_path):
+    url = _sqlite_url(tmp_path, "baseline.db")
+    command.upgrade(alembic_config(url), "0001")
+    engine = create_engine(url)
+    with Session(engine) as session:
+        session.add(models.Job(id="kept", company="Kept company", role_title="Engineer"))
+        session.commit()
+    engine.dispose()
+    run_migrations(url)
+    engine = create_engine(url)
+    with Session(engine) as session:
+        assert session.get(models.Job, "kept").company == "Kept company"
+        assert session.scalars(select(models.JobAction)).all() == []
+    engine.dispose()
 
 
 def test_migrated_schema_matches_models(tmp_path):

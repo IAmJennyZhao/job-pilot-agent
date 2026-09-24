@@ -11,6 +11,7 @@ import type {
   InterviewPracticeSetPayload,
   InterviewSession,
   Job,
+  JobAction,
   JobCategory,
   JobCreatePayload,
   JobDetail,
@@ -90,6 +91,11 @@ async function requestForm<T>(path: string, formData: FormData): Promise<T> {
 }
 
 export const api = {
+  actions: () => request<JobAction[]>("/api/actions"),
+  action: (jobId: string) => request<JobAction | null>(`/api/actions/${jobId}`),
+  saveAction: (jobId: string, payload: { title: string; due_date: string; completed: boolean }) =>
+    request<JobAction>(`/api/actions/${jobId}`, { method: "PUT", body: JSON.stringify(payload) }),
+  deleteAction: (jobId: string) => request<void>(`/api/actions/${jobId}`, { method: "DELETE" }),
   dashboard: (savedSince?: string) => request<DashboardSummary>(`/api/dashboard/summary${savedSince ? `?saved_since=${encodeURIComponent(savedSince)}` : ""}`),
   jobs: (params?: {
     includeArchived?: boolean;

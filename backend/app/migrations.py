@@ -41,11 +41,11 @@ def run_migrations(database_url: str | None = None) -> None:
     if current is None and has_legacy_tables:
         # Schema was fully managed by the old startup patcher; adopt it as-is.
         logger.info("Pre-Alembic database detected; stamping baseline revision before upgrading.")
-        command.stamp(config, "head")
+        command.stamp(config, "0001")
     elif current is not None and current not in known_revisions:
         # Revision from the old migration lineage that was collapsed into the
         # baseline; the legacy startup patcher kept those databases current.
-        logger.warning("Unknown revision %r in alembic_version; re-stamping to head.", current)
-        command.stamp(config, "head", purge=True)
+        logger.warning("Unknown revision %r in alembic_version; re-stamping to baseline.", current)
+        command.stamp(config, "0001", purge=True)
     command.upgrade(config, "head")
     logger.info("Database is at the latest schema revision.")

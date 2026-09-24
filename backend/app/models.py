@@ -1,9 +1,10 @@
 import enum
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import (
     Boolean,
+    Date,
     DateTime,
     Enum,
     ForeignKey,
@@ -226,6 +227,16 @@ class Job(TimestampMixin, Base):
             if link.kind == JobLinkKind.source:
                 return link.url
         return self.links[0].url if self.links else None
+
+
+class JobAction(TimestampMixin, Base):
+    __tablename__ = "job_actions"
+
+    job_id: Mapped[str] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"), primary_key=True)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    due_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    job: Mapped[Job] = relationship()
 
 
 class JobLink(Base):
@@ -729,4 +740,3 @@ class SavedStudyPlan(TimestampMixin, Base):
     plan: Mapped[dict] = mapped_column(JSON, nullable=False)
 
     resume_profile: Mapped[ResumeProfile] = relationship(back_populates="saved_study_plans")
-

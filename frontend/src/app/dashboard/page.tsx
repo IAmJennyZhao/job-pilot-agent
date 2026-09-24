@@ -15,6 +15,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { Input } from "@/components/ui/field";
+import { ActionAgenda } from "@/components/job-action";
 import { Button } from "@/components/ui/button";
 import { Badge, PageHeader, Panel } from "@/components/ui/panel";
 import { api } from "@/lib/api";
@@ -98,6 +99,7 @@ function DashboardContent() {
         }
       />
 
+      <ActionAgenda />
       <Panel className="flex flex-wrap items-end gap-3">
         <label className="grid gap-1 text-sm">Jobs saved on or after (UTC)<Input type="date" value={since} onChange={event => setSince(event.target.value)} /></label>
         <Button variant="secondary" onClick={() => { const date = new Date(); date.setUTCDate(date.getUTCDate() - 30); setSince(date.toISOString().slice(0, 10)); }}>Last 30 days</Button>

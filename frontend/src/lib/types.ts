@@ -60,6 +60,16 @@ export type JobStatusEventPayload = {
   note?: string | null;
 };
 
+export type JobAction = {
+  job_id: string;
+  title: string;
+  due_date: string;
+  completed_at: string | null;
+  company: string;
+  role_title: string;
+  status: JobStatus;
+};
+
 export type Job = {
   id: string;
   company: string;

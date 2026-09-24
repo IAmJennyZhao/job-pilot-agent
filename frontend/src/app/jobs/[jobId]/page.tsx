@@ -1,6 +1,7 @@
 "use client";
 
 import { validateJobFields } from "@/lib/job-validation";
+import { JobActionEditor } from "@/components/job-action";
 import { useConfirm } from "@/components/ui/confirm-provider";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -249,6 +250,7 @@ export default function JobDetailPage() {
 
       {job ? (
         <>
+          <JobActionEditor jobId={job.id} />
           <Panel>
             {isEditing && form ? (
               <JobEditFormView

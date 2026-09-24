@@ -17,7 +17,8 @@ const nav = [
   { href: "/jobs", label: "Jobs", icon: BriefcaseBusiness },
   { href: "/profile", label: "Application Assets", icon: UserRound },
   { href: "/interview", label: "Interview", icon: ClipboardList },
-  { href: "/skills", label: "Skills", icon: GraduationCap }
+  { href: "/skills", label: "Skills", icon: GraduationCap },
+  { href: "/data", label: "Export & backups", icon: ClipboardList }
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {

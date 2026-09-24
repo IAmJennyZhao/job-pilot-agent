@@ -93,6 +93,13 @@ async function requestForm<T>(path: string, formData: FormData): Promise<T> {
 }
 
 export const api = {
+  downloadData: async (path: "backup" | "jobs.csv" | `recovery/${string}`) => {
+    const response = await fetch(`${API_BASE_URL}/api/data/${path}`);
+    if (!response.ok) { const body = await response.json(); throw new Error(typeof body.detail === "string" ? body.detail : "Download failed"); }
+    return response.blob();
+  },
+  previewRestore: (file: File) => { const form = new FormData(); form.append("file", file); return requestForm<{ sha256: string; counts: Record<string, number>; files: number; missing_files: string[] }>("/api/data/restore-preview", form); },
+  restoreData: (file: File, sha256: string, confirmation: string) => { const form = new FormData(); form.append("file", file); form.append("sha256", sha256); form.append("confirmation", confirmation); return requestForm<{ restored: boolean; recovery_id: string; missing_files: string[] }>("/api/data/restore", form); },
   outcomeReport: (since?: string) => request<OutcomeReport>(`/api/reports/outcomes${since ? `?saved_since=${encodeURIComponent(since)}` : ""}`),
   actions: () => request<JobAction[]>("/api/actions"),
   action: (jobId: string) => request<JobAction | null>(`/api/actions/${jobId}`),

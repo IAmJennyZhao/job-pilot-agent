@@ -181,7 +181,7 @@ function JobsContent() {
 
       {savedJob ? <Panel className="text-sm"><div role="status">Saved {savedJob.company}. <Link className="font-semibold underline" href={`/jobs/${savedJob.id}`}>Open saved job</Link></div></Panel> : null}
       <div className="grid min-w-0 gap-4">
-        <section id="job-intake" hidden={!showIntake}><Panel>
+        <section id="job-intake" hidden={!showIntake}><Panel><fieldset disabled={extractMutation.isPending || createMutation.isPending} className="min-w-0">
           <div className="mb-4 flex items-center gap-2">
             <Plus className="h-4 w-4 text-primary" />
             <h2 className="text-base font-semibold">Add Job</h2>
@@ -242,7 +242,7 @@ function JobsContent() {
               <SaveReviewedJobButton className="mt-4" onClick={saveReview} isPending={createMutation.isPending} disabled={saveReviewDisabled} />
             </div>
           ) : null}
-        </Panel></section>
+        </fieldset></Panel></section>
 
         <Panel className="min-w-0 overflow-hidden">
           <div className="mb-4 grid gap-3">
@@ -297,13 +297,24 @@ function JobsContent() {
             {funnelStage ? <Badge>{funnelFrom ? `${funnelFrom} → ${funnelStage}` : `Reached ${funnelStage}`} · excludes archived</Badge> : null}
             {[...params.entries()].filter(([key]) => ["search", "status", "health", "category", "funnel"].includes(key)).map(([key, value]) => <button key={key} className="rounded-full border border-border px-3 py-1" onClick={() => setFilter(key === "funnel" ? { funnel: "", from: "", hidden: "" } : { [key]: "" })} aria-label={`Remove ${key} filter`}>{healthLabels[value] ?? value} ×</button>)}
             {params.size > 0 ? <Button variant="ghost" size="sm" onClick={() => window.history.replaceState(null, "", "/jobs")}>Clear all</Button> : null}
-            <label className="ml-auto flex items-center gap-2">Sort by <Select aria-label="Sort jobs" value={sort} onChange={event => setFilter({ sort: event.target.value })}><option value="updated">Recently updated</option><option value="company">Company A–Z</option><option value="pay">Annual pay, highest first</option></Select></label>
+            <label className="ml-auto flex items-center gap-2 whitespace-nowrap">Sort by <Select aria-label="Sort jobs" value={sort} onChange={event => setFilter({ sort: event.target.value })}><option value="updated">Recently updated</option><option value="company">Company A–Z</option><option value="pay">Annual pay, highest first</option></Select></label>
           </div>
           {updateMutation.error || archiveMutation.error ? <p role="alert" className="mb-3 text-sm text-destructive">Could not save: {((updateMutation.error || archiveMutation.error) as Error).message}. Your previous saved values are shown; try again.</p> : null}
           <p role="status" className="sr-only">{isFetching ? "Updating results" : `${jobs.length} jobs shown`}</p>
           {error ? <p className="text-sm text-destructive">{(error as Error).message}</p> : null}
           {isLoading ? <p className="text-sm text-muted-foreground">Loading jobs...</p> : null}
-          <div className="overflow-x-auto">
+          <div className="grid gap-3 lg:hidden">
+            {jobs.map(job => <article key={job.id} className="grid min-w-0 gap-3 rounded-md border border-border p-3">
+              <div><div className="text-sm font-semibold">{job.company}</div><Link className="font-medium text-primary underline" href={`/jobs/${job.id}?returnTo=${encodeURIComponent(returnTo)}`}>{job.role_title}</Link></div>
+              <div className="flex flex-wrap gap-2"><Badge>{job.category}</Badge><Badge>{job.remote_type}</Badge></div>
+              <p className="text-sm text-muted-foreground">{job.location || "Location not listed"}</p>
+              <label className="grid gap-1 text-sm">Status<Select aria-label={`Status for ${job.company} ${job.role_title}`} value={job.status} disabled={updateMutation.isPending} onChange={event => updateMutation.mutate({ id: job.id, payload: { status: event.target.value as JobStatus } })}>{jobStatuses.map(status => <option key={status} value={status}>{status}</option>)}</Select></label>
+              <PayEditor job={job} onSave={payload => updateMutation.mutateAsync({ id: job.id, payload })} />
+              <div className="flex items-center justify-between gap-2"><span className="text-xs text-muted-foreground">Updated {formatDate(job.updated_at)}</span><Button size="sm" variant="secondary" onClick={() => setSelectedJob(job)}>Preview</Button></div>
+            </article>)}
+            {!jobs.length && !isLoading && !error ? <p className="py-6 text-sm">No jobs match. Clear filters or add a job.</p> : null}
+          </div>
+          <div className="hidden overflow-x-auto lg:block">
             <table className="w-full min-w-[1050px] text-left text-sm">
               <thead className="border-b border-border text-xs uppercase text-muted-foreground">
                 <tr>
@@ -324,7 +335,7 @@ function JobsContent() {
                     key={job.id}
                     job={job}
                     returnTo={returnTo}
-                    busy={(updateMutation.isPending && updateMutation.variables?.id === job.id) || (archiveMutation.isPending && archiveMutation.variables === job.id)}
+                    busy={updateMutation.isPending || archiveMutation.isPending}
                     onSelect={() => setSelectedJob(job)}
                     onStatus={(nextStatus) => updateMutation.mutate({ id: job.id, payload: { status: nextStatus } })}
                     onCategory={(nextCategory) => updateMutation.mutate({ id: job.id, payload: { category: nextCategory } })}
@@ -588,15 +599,15 @@ function ReviewEditor({
         </div>
         {review.links.map((link, index) => (
           <div key={`${link.kind}-${index}`} className="grid gap-2 sm:grid-cols-[100px_minmax(0,0.7fr)_minmax(0,1fr)_36px]">
-            <Select value={link.kind} onChange={(event) => setLink(index, { kind: event.target.value as JobLinkInput["kind"] })}>
+            <Select aria-label={`Link ${index + 1} type`} value={link.kind} onChange={(event) => setLink(index, { kind: event.target.value as JobLinkInput["kind"] })}>
               {editableLinkKinds.map((kind) => (
                 <option key={kind} value={kind}>
                   {linkKindLabels[kind]}
                 </option>
               ))}
             </Select>
-            <Input value={link.label} onChange={(event) => setLink(index, { label: event.target.value })} />
-            <Input value={link.url} onChange={(event) => setLink(index, { url: event.target.value })} placeholder="https://..." />
+            <Input aria-label={`Link ${index + 1} label`} value={link.label} onChange={(event) => setLink(index, { label: event.target.value })} />
+            <Input aria-label={`Link ${index + 1} URL`} value={link.url} onChange={(event) => setLink(index, { url: event.target.value })} placeholder="https://..." />
             <Button variant="ghost" size="icon" onClick={() => removeLink(index)} title="Remove link">
               <X className="h-4 w-4" />
             </Button>
@@ -629,8 +640,8 @@ function JobRow({
   const source = job.links.find((link) => link.kind === "source") ?? job.links[0];
   return (
     <tr className="border-b border-border last:border-0">
-      <td className="py-3 pr-4 align-top font-medium">{job.company}</td>
-      <td className="py-3 pr-4 align-top">
+      <td className="min-w-36 py-3 pr-4 align-top font-medium">{job.company}</td>
+      <td className="min-w-52 py-3 pr-4 align-top">
         <Link className="font-medium text-primary underline-offset-2 hover:underline" href={`/jobs/${job.id}?returnTo=${encodeURIComponent(returnTo)}`}>{job.role_title}</Link>
         {busy ? <span role="status" className="block text-xs">Saving...</span> : null}
         {job.summary ? <div className="mt-1 line-clamp-2 max-w-[300px] text-xs text-muted-foreground">{job.summary}</div> : null}
@@ -662,11 +673,7 @@ function JobRow({
       </td>
       <td className="py-3 pr-4 align-top">
         {source ? (
-          <a href={source.url} target="_blank" rel="noreferrer" title="Open source link">
-            <Button variant="secondary" size="icon">
-              <ExternalLink className="h-4 w-4" />
-            </Button>
-          </a>
+          <a href={source.url} target="_blank" rel="noreferrer" aria-label={`Open posting for ${job.company} ${job.role_title}`} className="inline-flex h-9 w-9 items-center justify-center rounded border border-border hover:bg-accent"><ExternalLink className="h-4 w-4" /></a>
         ) : (
           <span className="text-muted-foreground">None</span>
         )}
@@ -733,7 +740,7 @@ function PayEditor({ job, onSave }: { job: JobListItem; onSave: (payload: Partia
       </button>
       {isOpen ? (
         <Dialog title="Edit compensation" onClose={() => { if (!saving) setIsOpen(false); }}>
-          <div className="grid gap-3">
+          <fieldset disabled={saving} className="grid min-w-0 gap-3">
             <div className="grid grid-cols-2 gap-2">
               <Field label="Min">
                 <Input type="number" value={draft.pay_min ?? ""} onChange={(event) => setDraft((current) => ({ ...current, pay_min: event.target.value ? Number(event.target.value) : null }))} />
@@ -769,7 +776,7 @@ function PayEditor({ job, onSave }: { job: JobListItem; onSave: (payload: Partia
                 Save
               </Button>
             </div>
-          </div>
+          </fieldset>
         </Dialog>
       ) : null}
     </div>
@@ -779,19 +786,10 @@ function PayEditor({ job, onSave }: { job: JobListItem; onSave: (payload: Partia
 function JobDrawer({ job, onClose, returnTo }: { job: JobListItem; onClose: () => void; returnTo: string }) {
   return (
     <Dialog title={`${job.company}: ${job.role_title}`} onClose={onClose}>
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <div className="text-sm text-muted-foreground">{job.company}</div>
-            <h2 className="mt-1 text-xl font-semibold">{job.role_title}</h2>
-          </div>
-          <Button variant="ghost" size="icon" onClick={onClose} title="Close drawer">
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
         <div className="mt-4 flex flex-wrap gap-2">
           <Badge>{job.status}</Badge>
           <Badge>{job.category}</Badge>
-          {job.extraction_confidence !== null ? <Badge tone="good">Confidence {job.extraction_confidence}</Badge> : null}
+          {job.extraction_confidence !== null ? <Badge tone={job.extraction_confidence >= 80 ? "good" : "warn"}>Confidence {job.extraction_confidence}%</Badge> : null}
         </div>
         {job.summary ? <p className="mt-4 text-sm leading-6 text-muted-foreground">{job.summary}</p> : null}
         <div className="mt-4 grid gap-3 rounded-md border border-border bg-muted/40 p-3 text-sm">
@@ -799,11 +797,9 @@ function JobDrawer({ job, onClose, returnTo }: { job: JobListItem; onClose: () =
           <InfoRow label="Pay" value={formatPay(job)} />
           <InfoRow label="Annual" value={formatAnnualPay(job)} />
         </div>
-        <Link href={`/jobs/${job.id}?returnTo=${encodeURIComponent(returnTo)}`} className="mt-4 block">
-          <Button className="h-12 w-full text-sm">
+        <Link href={`/jobs/${job.id}?returnTo=${encodeURIComponent(returnTo)}`} className="mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-md bg-primary text-sm text-primary-foreground">
             <FileText className="h-4 w-4" />
             View Full Details
-          </Button>
         </Link>
         <DrawerList title="Responsibilities" items={job.responsibilities} />
         <DrawerList title="Required Skills" items={job.required_skills} />
@@ -821,11 +817,6 @@ function JobDrawer({ job, onClose, returnTo }: { job: JobListItem; onClose: () =
               <p className="text-sm text-muted-foreground">No links saved.</p>
             )}
           </div>
-        </div>
-        <div className="mt-6 flex gap-2">
-          <Button variant="secondary" onClick={onClose}>
-            Close
-          </Button>
         </div>
     </Dialog>
   );

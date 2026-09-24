@@ -137,7 +137,7 @@ export default function SkillsPage() {
             <div className="overflow-x-auto">
               <GapTable
                 gaps={activeGaps}
-                onLevelChange={setLevel}
+                onLevelChange={setLevel} busy={updateMutation.isPending}
                 selectable
                 selectedSkills={selectedSkills}
                 onToggleSkill={toggleSkill}
@@ -162,7 +162,7 @@ export default function SkillsPage() {
                 </button>
                 {showKnown ? (
                   <div className="mt-3 overflow-x-auto">
-                    <GapTable gaps={knownGaps} onLevelChange={setLevel} muted />
+                    <GapTable gaps={knownGaps} onLevelChange={setLevel} busy={updateMutation.isPending} muted />
                   </div>
                 ) : null}
               </div>
@@ -410,7 +410,8 @@ function GapTable({
   muted = false,
   selectable = false,
   selectedSkills,
-  onToggleSkill
+  onToggleSkill,
+  busy = false
 }: {
   gaps: SkillGap[];
   onLevelChange: (id: string, level: SkillGap["user_level"]) => void;
@@ -418,6 +419,7 @@ function GapTable({
   selectable?: boolean;
   selectedSkills?: Set<string>;
   onToggleSkill?: (skillName: string) => void;
+  busy?: boolean;
 }) {
   if (!gaps.length) {
     return null;
@@ -463,6 +465,7 @@ function GapTable({
             </td>
             <td className="py-3 pr-4">
               <Select
+                disabled={busy}
                 aria-label={`Your level in ${gap.skill_name}`}
                 value={gap.user_level}
                 onChange={(event) => onLevelChange(gap.id, event.target.value as SkillGap["user_level"])}

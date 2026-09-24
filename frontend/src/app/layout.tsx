@@ -4,7 +4,7 @@ import { Providers } from "@/app/providers";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "CareerPilot Agent",
+  title: "Job Pilot",
   description: "AI job search dashboard for tracking applications and skill gaps."
 };
 

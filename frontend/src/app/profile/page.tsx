@@ -158,7 +158,7 @@ function BaseProfileTab({ profile, onSaved }: { profile: ResumeProfile | null; o
   });
 
   return (
-    <Panel>
+    <Panel><fieldset disabled={mutation.isPending} className="min-w-0">
       <SectionHeader icon={UserRound} title={profile ? "Base Profile" : "Create Base Profile"} />
       <div className="mt-4 grid gap-4">
         <div className="grid gap-4 lg:grid-cols-2">
@@ -200,7 +200,7 @@ function BaseProfileTab({ profile, onSaved }: { profile: ResumeProfile | null; o
           {mutation.isPending ? "Saving..." : "Save profile"}
         </Button>
       </div>
-    </Panel>
+    </fieldset></Panel>
   );
 }
 
@@ -268,6 +268,7 @@ function ResumeVariantsTab({ resumeOptions, onChanged }: { resumeOptions: Resume
         <SectionHeader icon={Upload} title="Resume Variants" />
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <Input
+            aria-label="Resume PDF"
             key={fileInputKey}
             className="sm:w-72"
             type="file"
@@ -320,6 +321,7 @@ function ResumeOptionCard({
   onEdit: () => void;
   onChanged: () => void;
 }) {
+  const draft = useDraft(`resume-${option.id}`, resumeFormFromOption(option));
   const confirmMutation = useMutation({
     mutationFn: () => api.confirmResumeOption(option.id, false),
     onSuccess: onChanged
@@ -350,7 +352,7 @@ function ResumeOptionCard({
             variant="secondary"
             size="sm"
             onClick={() => confirmMutation.mutate()}
-            disabled={confirmMutation.isPending || option.status === "ready"}
+            disabled={confirmMutation.isPending || option.status === "ready" || draft.dirty}
           >
             <CheckCircle2 className="h-4 w-4" />
             Ready
@@ -367,6 +369,7 @@ function ResumeOptionCard({
           </Button>
         </div>
       </div>
+      {draft.dirty ? <p className="mt-2 text-sm">Unsaved draft available. Edit and save it before marking ready.</p> : null}
       <div className="mt-3 grid gap-2">
         <PreviewTags label="Roles" items={option.target_roles} />
         <PreviewTags label="Skills/keywords" items={[...option.skills, ...option.target_keywords]} />
@@ -427,7 +430,7 @@ function ResumeOptionEditor({
   };
 
   return (
-    <Panel>
+    <Panel><fieldset disabled={saveMutation.isPending || confirmMutation.isPending || deleteMutation.isPending} className="min-w-0">
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <AssetHeading
           title={option.title}
@@ -510,7 +513,7 @@ function ResumeOptionEditor({
           {saveMutation.isPending ? "Saving..." : "Save resume variant"}
         </Button>
       </div>
-    </Panel>
+    </fieldset></Panel>
   );
 }
 
@@ -596,6 +599,7 @@ function CoverLetterTemplateCard({
 
   return (
     <Panel className="p-4">
+      {deleteMutation.error ? <p role="alert" className="text-destructive">{deleteMutation.error.message}</p> : null}
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <AssetHeading title={template.title} meta={`Updated ${formatDate(template.updated_at)}`} />
         <div className="flex flex-wrap gap-2">
@@ -660,7 +664,7 @@ function CoverLetterTemplateEditor({
   };
 
   return (
-    <Panel>
+    <Panel><fieldset disabled={saveMutation.isPending || deleteMutation.isPending} className="min-w-0">
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <AssetHeading title={template.title} meta={`Updated ${formatDate(template.updated_at)}`} />
         <Button variant="ghost" size="sm" onClick={deleteTemplate} disabled={deleteMutation.isPending}>
@@ -696,7 +700,7 @@ function CoverLetterTemplateEditor({
           {saveMutation.isPending ? "Saving..." : "Save template"}
         </Button>
       </div>
-    </Panel>
+    </fieldset></Panel>
   );
 }
 

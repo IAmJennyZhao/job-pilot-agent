@@ -16,12 +16,12 @@ export default function InterviewSessionDetailPage() {
   const params = useParams<{ sessionId: string }>();
   const sessionId = params.sessionId;
 
-  const { data: session, isLoading } = useQuery({
+  const { data: session, isLoading, error, refetch } = useQuery({
     queryKey: ["interview-session", sessionId],
     queryFn: () => api.interviewSession(sessionId),
     enabled: Boolean(sessionId)
   });
-  const { data: jobs = [] } = useQuery({ queryKey: ["jobs"], queryFn: () => api.jobs() });
+  const { data: jobs = [], error: jobsError } = useQuery({ queryKey: ["jobs", "interview-all"], queryFn: () => api.jobs({ includeArchived: true }) });
 
   const jobsById = React.useMemo(() => new Map(jobs.map((job) => [job.id, job])), [jobs]);
   const entries = React.useMemo(() => (session ? groupSessionEntries(session.messages) : []), [session]);
@@ -31,6 +31,7 @@ export default function InterviewSessionDetailPage() {
   const startAnotherHref = React.useMemo(() => {
     if (!session) return "/interview";
     const params = new URLSearchParams();
+    params.set("new", "1");
     if (session.job_id) {
       params.set("jobId", session.job_id);
     } else {
@@ -49,7 +50,7 @@ export default function InterviewSessionDetailPage() {
         description={
           session
             ? `${session.stage.replace("_", " ")} - ${session.question_type.replace("_", " ")} - ${answeredCount} of ${entries.length} answered - Updated ${formatDate(session.updated_at)}`
-            : "Loading session..."
+            : isLoading ? "Loading session..." : "Session unavailable"
         }
         action={
           <Link href="/interview">
@@ -62,6 +63,8 @@ export default function InterviewSessionDetailPage() {
       />
 
       {isLoading ? <Panel>Loading session...</Panel> : null}
+      {error ? <Panel><p role="alert">Could not load this session: {error.message}</p><Button onClick={() => refetch()}>Retry</Button></Panel> : null}
+      {jobsError ? <p role="alert">Job titles could not be loaded: {jobsError.message}</p> : null}
 
       {session ? (
         <>

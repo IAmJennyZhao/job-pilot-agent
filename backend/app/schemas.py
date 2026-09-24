@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, field_serializer, model_validator
 
 from app.models import (
     InterviewMode,
@@ -45,6 +45,13 @@ WeakPointTag = Literal[
 
 class CareerPilotModel(BaseModel):
     model_config = ConfigDict(from_attributes=True)
+
+    @field_serializer("*", mode="wrap", when_used="json")
+    def serialize_utc_dates(self, value, handler):
+        # SQLite drops timezone metadata; stored application timestamps are UTC.
+        if isinstance(value, datetime):
+            value = value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+        return handler(value)
 
 
 class AIModel(BaseModel):

@@ -32,3 +32,21 @@ def test_active_excludes_withdrawn_and_closed_jobs(client):
 def test_invalid_funnel_filter_is_rejected(client):
     assert client.get("/api/jobs?funnel_stage=typo").status_code == 400
     assert client.get("/api/jobs?funnel_from=Applied").status_code == 400
+
+
+def test_funnel_filter_keeps_regressions_and_respects_additional_filters(client):
+    progressed = create_job(client, company="Progressed", status="Tech Screen")
+    client.patch(f"/api/jobs/{progressed['id']}", json={"status": "Applied"})
+    create_job(client, company="Other", status="Applied")
+    result = client.get('/api/jobs', params={'funnel_stage': 'Tech Screen', 'status_filter': 'Applied', 'search': 'Progressed'})
+    assert [row['id'] for row in result.json()] == [progressed['id']]
+    assert client.get('/api/jobs?funnel_stage=Offer&funnel_from=Saved').status_code == 400
+
+
+def test_dashboard_coverage_drilldowns_exclude_closed_jobs(client):
+    active = create_job(client, status="Applied", pay_min=None, pay_max=None, pay_raw=None, extraction_confidence=30)
+    create_job(client, status="Withdrawn", pay_min=None, pay_max=None, pay_raw=None, extraction_confidence=30)
+    for filter in ['missing_pay', 'missing_fit', 'low_confidence', 'needs_analysis']:
+        response = client.get('/api/jobs', params={'health_filter': filter, 'include_archived': True})
+        assert response.status_code == 200
+        assert [row['id'] for row in response.json()] == [active['id']]

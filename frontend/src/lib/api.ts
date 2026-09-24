@@ -52,7 +52,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     let message = `Request failed with ${response.status}`;
     try {
       const body = await response.json();
-      message = typeof body.detail === "string" ? body.detail : message;
+      message = typeof body.detail === "string" ? body.detail : Array.isArray(body.detail)
+        ? body.detail.map((issue: { loc?: Array<string | number>; msg?: string }) => `${issue.loc?.filter(part => part !== "body").join(" > ") || "Input"}: ${issue.msg || "Invalid value"}`).join(". ")
+        : message;
     } catch {
       // The status code is still useful if the backend returned plain text.
     }
@@ -75,7 +77,9 @@ async function requestForm<T>(path: string, formData: FormData): Promise<T> {
     let message = `Request failed with ${response.status}`;
     try {
       const body = await response.json();
-      message = typeof body.detail === "string" ? body.detail : message;
+      message = typeof body.detail === "string" ? body.detail : Array.isArray(body.detail)
+        ? body.detail.map((issue: { loc?: Array<string | number>; msg?: string }) => `${issue.loc?.filter(part => part !== "body").join(" > ") || "Input"}: ${issue.msg || "Invalid value"}`).join(". ")
+        : message;
     } catch {
       // The status code is still useful if the backend returned plain text.
     }

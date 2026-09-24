@@ -1,48 +1,50 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
-/** Session drafts survive tab switches and reloads without overwriting server updates. */
+/** Per-record session drafts survive remounts without leaking edits between records. */
 export function useDraft<T>(key: string, initial: T) {
-  const [value, setValue] = useState(initial);
-  const [ready, setReady] = useState(false);
-  const [storageError, setStorageError] = useState(false);
-  const [dirty, setDirty] = useState(false);
-  const baseline = useRef(JSON.stringify(initial));
   const storageKey = `job-pilot:draft:${key}`;
   const initialJson = JSON.stringify(initial);
+  const [state, setState] = useState({ key: storageKey, value: initial, dirty: false, ready: false, base: initialJson });
+  const [storageError, setStorageError] = useState(false);
   useEffect(() => {
+    let value = JSON.parse(initialJson) as T;
+    let dirty = false;
     try {
       const saved = sessionStorage.getItem(storageKey);
-      if (saved) { setValue(JSON.parse(saved) as T); setDirty(true); }
+      if (saved !== null) { value = JSON.parse(saved) as T; dirty = true; }
     } catch { setStorageError(true); }
-    setReady(true);
+    setState({ key: storageKey, value, dirty, ready: true, base: initialJson });
+    // Hydrate only when the identity changes; server updates are handled below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storageKey]);
   useEffect(() => {
-    if (baseline.current !== initialJson) {
-      baseline.current = initialJson;
-      if (!dirty) setValue(JSON.parse(initialJson) as T);
-    }
-  }, [initialJson, dirty]);
+    setState(current => current.key === storageKey && current.base !== initialJson
+      ? { ...current, base: initialJson, value: current.dirty ? current.value : JSON.parse(initialJson) as T }
+      : current);
+  }, [initialJson, storageKey]);
   useEffect(() => {
-    if (!ready) return;
+    if (!state.ready || state.key !== storageKey) return;
     try {
-      if (dirty) sessionStorage.setItem(storageKey, JSON.stringify(value));
+      if (state.dirty) sessionStorage.setItem(storageKey, JSON.stringify(state.value));
       else sessionStorage.removeItem(storageKey);
     } catch { setStorageError(true); }
-  }, [value, dirty, ready, storageKey]);
+  }, [state, storageKey]);
   useEffect(() => {
-    const warn = (event: BeforeUnloadEvent) => { if (dirty && storageError) { event.preventDefault(); event.returnValue = ""; } };
+    const warn = (event: BeforeUnloadEvent) => { if (state.dirty && storageError) { event.preventDefault(); event.returnValue = ""; } };
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, [dirty, storageError]);
+  }, [state.dirty, storageError]);
   const update: React.Dispatch<React.SetStateAction<T>> = next => {
-    setValue(current => typeof next === "function" ? (next as (value: T) => T)(current) : next);
-    setDirty(true);
+    setState(current => {
+      const value = current.key === storageKey ? current.value : initial;
+      return { ...current, key: storageKey, value: typeof next === "function" ? (next as (value: T) => T)(value) : next, dirty: true };
+    });
   };
   const clear = () => {
-    setDirty(false);
+    setState(current => ({ ...current, dirty: false }));
     try { sessionStorage.removeItem(storageKey); } catch { setStorageError(true); }
   };
-  return { value, setValue: update, clear, dirty, ready, storageError };
+  return { value: state.key === storageKey ? state.value : initial, setValue: update, clear, dirty: state.key === storageKey && state.dirty, ready: state.key === storageKey && state.ready, storageError };
 }

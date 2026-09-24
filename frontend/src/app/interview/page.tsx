@@ -107,7 +107,7 @@ function InterviewPageContent() {
 
   const jobsById = React.useMemo(() => new Map(jobs.map((job) => [job.id, job])), [jobs]);
   const activeQuestion = queue.find((question) => question.id === activeQuestionId) ?? queue[0] ?? null;
-  const isActive = Boolean(practiceSet && activeQuestion);
+  const isActive = Boolean(practiceSet && activeQuestion && !resumeSessionId && !searchParams.has("new") && !requestedTargetCategory && !requestedTargetRole && (!requestedJobId || practiceSet.job_id === requestedJobId));
 
   React.useEffect(() => {
     if (requestedJobId) {
@@ -152,6 +152,7 @@ function InterviewPageContent() {
         count
       }),
     onSuccess: (data) => {
+      router.replace("/interview");
       setPracticeSet(data);
       setQueue(data.questions);
       setActiveQuestionId(data.questions[0]?.id ?? "");
@@ -201,6 +202,7 @@ function InterviewPageContent() {
     <div className="grid gap-6">
       <PageHeader title="Interview Practice" description="Focused answer reps for saved jobs and role targets." />
       {[jobsQuery, sessionsQuery, insightsQuery, ...(resumeSessionId ? [resumeQuery] : [])].map((query, index) => query.error ? <Panel key={index}><p role="alert">Could not load {["job choices", "session history", "interview insights", "the requested session"][index]}: {(query.error as Error).message}</p><Button variant="secondary" onClick={() => query.refetch()}>Retry</Button></Panel> : query.isLoading ? <Panel key={index}>Loading {["job choices", "session history", "interview insights", "the requested session"][index]}...</Panel> : null)}
+      {resumeSessionId && resumeQuery.error ? <Link href="/interview" className="text-sm font-medium underline">Return to saved practice draft</Link> : null}
       {practiceDraft.dirty ? <p role="status" className="text-sm text-muted-foreground">{practiceDraft.storageError ? "Draft recovery is unavailable. Keep this page open until you submit your answer." : "Each question keeps its own draft. This practice set and your drafts recover after a refresh in this browser tab."}</p> : null}
       {isActive && practiceSet && activeQuestion ? (
         <Panel>
@@ -334,11 +336,11 @@ function InterviewPageContent() {
               </Button>
             </div>
           </Panel>
-          <CommandCenterPanel
+          {!sessionsQuery.isLoading && !insightsQuery.isLoading && !sessionsQuery.error && !insightsQuery.error ? <CommandCenterPanel
             insights={insights}
             sessions={sessions}
             jobsById={jobsById}
-          />
+          /> : null}
         </div>
       )}
 
@@ -354,15 +356,15 @@ function InterviewPageContent() {
           </button>
           {showInsightsHistory ? (
             <div className="mt-4 grid gap-4 xl:grid-cols-[1fr_420px]">
-              <InsightsPanel insights={insights} />
-              <SessionHistoryPanel sessions={sessions} jobsById={jobsById} />
+              {!insightsQuery.isLoading && !insightsQuery.error ? <InsightsPanel insights={insights} /> : null}
+              {!sessionsQuery.isLoading && !sessionsQuery.error ? <SessionHistoryPanel sessions={sessions} jobsById={jobsById} /> : null}
             </div>
           ) : null}
         </div>
       ) : (
         <div className="grid gap-4 xl:grid-cols-[1fr_420px]">
-          <InsightsPanel insights={insights} />
-          <SessionHistoryPanel sessions={sessions} jobsById={jobsById} />
+          {!insightsQuery.isLoading && !insightsQuery.error ? <InsightsPanel insights={insights} /> : null}
+          {!sessionsQuery.isLoading && !sessionsQuery.error ? <SessionHistoryPanel sessions={sessions} jobsById={jobsById} /> : null}
         </div>
       )}
     </div>

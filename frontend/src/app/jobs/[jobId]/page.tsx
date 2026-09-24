@@ -240,7 +240,7 @@ export default function JobDetailPage() {
       {error ? <Panel className="border-destructive/25 bg-destructive/10 text-sm text-destructive">{(error as Error).message}</Panel> : null}
       {isLoading ? <Panel>Loading job...</Panel> : null}
       {editDraft.dirty ? <p role="status" className="text-sm text-muted-foreground">Unsaved job edits are kept in this browser tab. Resume editing to save or discard them.</p> : null}
-      {job && !isEditing ? <nav aria-label="Job sections" className="flex flex-wrap gap-3 text-sm font-medium">{["Role Snapshot", "Fit And Gaps", "Company Signals", "Interview Prep", "Application Assets", "Status History"].map(label => <a className="rounded border border-border px-3 py-2 hover:bg-accent" key={label} href={`#${label.toLowerCase().replaceAll(" ", "-")}`}>{label}</a>)}</nav> : null}
+      {job && !isEditing ? <nav aria-label="Job sections" className="flex flex-wrap gap-3 text-sm font-medium">{["Role Snapshot", ...(advancedAnalysis ? ["Fit And Gaps", ...(advancedAnalysis.company_sentiment || companyResearch ? ["Company Signals"] : []), "Interview Prep"] : []), "Application Assets", "Status History"].map(label => <a className="rounded border border-border px-3 py-2 hover:bg-accent" key={label} href={`#${label.toLowerCase().replaceAll(" ", "-")}`}>{label}</a>)}</nav> : null}
 
       {job ? (
         <>
@@ -764,6 +764,7 @@ function JobEditFormView({
 
   return (
     <form className="grid gap-4" onSubmit={(event) => { event.preventDefault(); onSubmit(); }}>
+      <fieldset disabled={isSaving} className="grid min-w-0 gap-4">
       <div className="grid gap-4 md:grid-cols-2">
         <Field label="Company">
           <Input value={form.company} onChange={(event) => set("company", event.target.value)} />
@@ -849,15 +850,15 @@ function JobEditFormView({
         </div>
         {form.links.map((link, index) => (
           <div key={`${link.kind}-${index}`} className="grid gap-2 md:grid-cols-[120px_minmax(140px,0.8fr)_minmax(240px,1.4fr)_40px]">
-            <Select value={link.kind} onChange={(event) => setLink(index, { kind: event.target.value as JobLinkInput["kind"] })}>
+            <Select aria-label={`Link ${index + 1} type`} value={link.kind} onChange={(event) => setLink(index, { kind: event.target.value as JobLinkInput["kind"] })}>
               {editableLinkKinds.map((kind) => (
                 <option key={kind} value={kind}>
                   {linkKindLabels[kind]}
                 </option>
               ))}
             </Select>
-            <Input value={link.label} onChange={(event) => setLink(index, { label: event.target.value })} />
-            <Input value={link.url} onChange={(event) => setLink(index, { url: event.target.value })} placeholder="https://..." />
+            <Input aria-label={`Link ${index + 1} label`} value={link.label} onChange={(event) => setLink(index, { label: event.target.value })} />
+            <Input aria-label={`Link ${index + 1} URL`} value={link.url} onChange={(event) => setLink(index, { url: event.target.value })} placeholder="https://..." />
             <Button variant="ghost" size="icon" onClick={() => removeLink(index)} title="Remove link">
               <X className="h-4 w-4" />
             </Button>
@@ -875,7 +876,7 @@ function JobEditFormView({
           Cancel
         </Button>
       </div>
-    </form>
+    </fieldset></form>
   );
 }
 
@@ -947,22 +948,22 @@ function StatusHistoryEditor({
                 isSaving={updateMutation.isPending}
                 isDeleting={deleteMutation.isPending}
                 onSave={(payload) => updateMutation.mutate({ eventId: event.id, payload })}
-                onDelete={() => deleteMutation.mutate(event.id)}
+                onDelete={() => { if (window.confirm("Delete this history step? This can change the current status and funnel history.")) deleteMutation.mutate(event.id); }}
               />
             ))}
           </div>
           <div className="mt-5 rounded-md border border-border bg-muted/30 p-3">
             <div className="mb-3 text-sm font-semibold">Add status step</div>
-            <div className="grid items-center gap-2 md:grid-cols-[180px_220px_minmax(0,1fr)_88px]">
-              <Select value={newEvent.to_status} onChange={(event) => setNewEvent((current) => ({ ...current, to_status: event.target.value as JobStatus }))}>
+            <div className="grid items-center gap-2 sm:grid-cols-2">
+              <Select aria-label="New history status" value={newEvent.to_status} onChange={(event) => setNewEvent((current) => ({ ...current, to_status: event.target.value as JobStatus }))}>
                 {jobStatuses.map((status) => (
                   <option key={status} value={status}>
                     {status}
                   </option>
                 ))}
               </Select>
-              <Input type="datetime-local" value={newEvent.changed_at ?? ""} onChange={(event) => setNewEvent((current) => ({ ...current, changed_at: event.target.value }))} />
-              <Input value={newEvent.note ?? ""} onChange={(event) => setNewEvent((current) => ({ ...current, note: event.target.value }))} placeholder="Notes" />
+              <Input aria-label="New history date and time" type="datetime-local" value={newEvent.changed_at ?? ""} onChange={(event) => setNewEvent((current) => ({ ...current, changed_at: event.target.value }))} />
+              <Input aria-label="New history note" value={newEvent.note ?? ""} onChange={(event) => setNewEvent((current) => ({ ...current, note: event.target.value }))} placeholder="Notes" />
               <Button onClick={() => createMutation.mutate(newEvent)} disabled={createMutation.isPending}>
                 Add
               </Button>
@@ -1025,16 +1026,16 @@ function StatusEventRow({
       <div className="mb-2 text-xs text-muted-foreground">
         {event.from_status ?? "Created"} to {event.to_status} - {formatDate(event.changed_at)}
       </div>
-      <div className="grid items-center gap-2 md:grid-cols-[180px_220px_minmax(0,1fr)_88px_88px]">
-        <Select value={draft.to_status} onChange={(input) => setDraft((current) => ({ ...current, to_status: input.target.value as JobStatus }))}>
+      <div className="grid items-center gap-2 sm:grid-cols-2">
+        <Select aria-label="History status" value={draft.to_status} onChange={(input) => setDraft((current) => ({ ...current, to_status: input.target.value as JobStatus }))}>
           {jobStatuses.map((status) => (
             <option key={status} value={status}>
               {status}
             </option>
           ))}
         </Select>
-        <Input type="datetime-local" value={draft.changed_at ?? ""} onChange={(input) => setDraft((current) => ({ ...current, changed_at: input.target.value }))} />
-        <Input value={draft.note ?? ""} onChange={(input) => setDraft((current) => ({ ...current, note: input.target.value }))} placeholder="Notes" />
+        <Input aria-label="History date and time" type="datetime-local" value={draft.changed_at ?? ""} onChange={(input) => setDraft((current) => ({ ...current, changed_at: input.target.value }))} />
+        <Input aria-label="History note" value={draft.note ?? ""} onChange={(input) => setDraft((current) => ({ ...current, note: input.target.value }))} placeholder="Notes" />
         <Button variant="secondary" onClick={() => onSave(draft)} disabled={isSaving}>
           Save
         </Button>

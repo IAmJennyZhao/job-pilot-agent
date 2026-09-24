@@ -212,7 +212,7 @@ export default function JobDetailPage() {
         description={job ? `${job.status} - Last updated ${formatDate(job.updated_at)}` : "Review source links, extracted tracker details, and application history."}
         action={
           <div className="flex flex-wrap items-center gap-2">
-            <Link href="/jobs" className="text-sm font-medium text-primary">
+            <Link href={typeof window !== "undefined" && new URLSearchParams(window.location.search).get("returnTo")?.startsWith("/jobs?") ? new URLSearchParams(window.location.search).get("returnTo")! : "/jobs"} className="text-sm font-medium text-primary">
               Back to jobs
             </Link>
             {job ? (

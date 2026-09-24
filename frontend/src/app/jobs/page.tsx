@@ -3,7 +3,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, ExternalLink, FileText, Plus, Save, Search, Sparkles, X } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { Badge, PageHeader, Panel } from "@/components/ui/panel";
@@ -31,7 +33,8 @@ type ReviewState = JobCreatePayload & {
   duplicateCount: number;
 };
 
-type HealthFilter = "" | "stale" | "missing-data";
+const healthLabels: Record<string, string> = { active: "Active opportunities", stale: "Stale", "missing-data": "Missing data", "needs-analysis": "Needs analysis", "missing-pay": "Missing pay", "missing-fit": "Missing fit", "low-confidence": "Low confidence" };
+type HealthFilter = string;
 
 const linkKindLabels: Record<JobLinkInput["kind"], string> = {
   source: "Job Posting",
@@ -69,50 +72,48 @@ function statusFromUrl(value: string | null): JobStatus | "" {
 }
 
 function healthFromUrl(value: string | null): HealthFilter {
-  if (value === "stale" || value === "missing-data") return value;
+  if (value && value in healthLabels) return value;
   return "";
 }
 
-function toApiHealthFilter(value: HealthFilter): "stale" | "missing_data" | "" {
-  return value === "missing-data" ? "missing_data" : value;
-}
+function toApiHealthFilter(value: HealthFilter) { return value.replaceAll("-", "_"); }
 
 function isHiddenStatus(status: JobStatus | "") {
   return status === "Archived" || status === "Ghosted" || status === "Rejected";
 }
 
 export default function JobsPage() {
+  return <Suspense fallback={<Panel>Loading tracker...</Panel>}><JobsContent /></Suspense>;
+}
+function JobsContent() {
   const queryClient = useQueryClient();
-  const [showHidden, setShowHidden] = useState(false);
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<JobStatus | "">("");
-  const [healthFilter, setHealthFilter] = useState<HealthFilter>("");
-  const [categoryFilter, setCategoryFilter] = useState<JobCategory | "">("");
+  const params = useSearchParams();
+  const setFilter = (updates: Record<string, string>) => {
+    const next = new URLSearchParams(params.toString());
+    for (const [key, value] of Object.entries(updates)) value ? next.set(key, value) : next.delete(key);
+    window.history.replaceState(null, "", `/jobs${next.size ? `?${next}` : ""}`);
+  };
+  const search = params.get("search") ?? "";
+  const statusFilter = statusFromUrl(params.get("status"));
+  const healthFilter = healthFromUrl(params.get("health"));
+  const categoryFilter = params.get("category") as JobCategory | "" || "";
+  const funnelStage = params.get("funnel") ?? "";
+  const funnelFrom = params.get("from") ?? "";
+  const showHidden = params.get("hidden") === "true" || isHiddenStatus(statusFilter) || Boolean(funnelStage);
+  const sort = params.get("sort") ?? "updated";
+  const [showIntake, setShowIntake] = useState(false);
+  const [savedJob, setSavedJob] = useState<{ id: string; company: string } | null>(null);
+  const returnTo = `/jobs${params.size ? `?${params}` : ""}`;
   const [selectedJob, setSelectedJob] = useState<JobListItem | null>(null);
   const [intake, setIntake] = useState<IntakeState>({ source_url: "", source_content: "" });
   const [preview, setPreview] = useState<JobExtractPreview | null>(null);
   const [review, setReview] = useState<ReviewState | null>(null);
 
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const nextStatus = statusFromUrl(params.get("status"));
-    setStatusFilter(nextStatus);
-    setHealthFilter(healthFromUrl(params.get("health")));
-    setShowHidden(isHiddenStatus(nextStatus));
-  }, []);
-
-  const { data: jobs = [], isLoading, error } = useQuery({
-    queryKey: ["jobs", showHidden, search, statusFilter, healthFilter, categoryFilter],
-    queryFn: () =>
-      api.jobs({
-        includeArchived: showHidden,
-        search: search.trim() || undefined,
-        status: statusFilter,
-        category: categoryFilter,
-        healthFilter: toApiHealthFilter(healthFilter)
-      })
+  const { data: rawJobs = [], isLoading, error, isFetching } = useQuery({
+    queryKey: ["jobs", showHidden, search, statusFilter, healthFilter, categoryFilter, funnelStage, funnelFrom],
+    queryFn: () => api.jobs({ includeArchived: showHidden, search: search.trim() || undefined, status: statusFilter, category: categoryFilter, healthFilter: toApiHealthFilter(healthFilter), funnelStage, funnelFrom })
   });
-
+  const jobs = [...rawJobs].sort((a, b) => sort === "company" ? a.company.localeCompare(b.company) : sort === "pay" ? (b.pay_annual_max ?? b.pay_annual_min ?? -1) - (a.pay_annual_max ?? a.pay_annual_min ?? -1) : Date.parse(b.updated_at) - Date.parse(a.updated_at));
   const extractMutation = useMutation({
     mutationFn: api.extractJobPreview,
     onSuccess: (data) => {
@@ -123,7 +124,9 @@ export default function JobsPage() {
 
   const createMutation = useMutation({
     mutationFn: api.createJob,
-    onSuccess: () => {
+    onSuccess: (job) => {
+      setSavedJob(job);
+      setShowIntake(false);
       setIntake({ source_url: "", source_content: "" });
       setPreview(null);
       setReview(null);
@@ -159,27 +162,21 @@ export default function JobsPage() {
     createMutation.mutate(cleanReview(review, intake.source_url));
   };
 
-  const changeStatusFilter = (nextStatus: JobStatus | "") => {
-    setStatusFilter(nextStatus);
-    if (isHiddenStatus(nextStatus)) setShowHidden(true);
-  };
-
-  const changeShowHidden = (nextShowHidden: boolean) => {
-    setShowHidden(nextShowHidden);
-    if (!nextShowHidden && isHiddenStatus(statusFilter)) setStatusFilter("");
-  };
-
+  const changeStatusFilter = (status: JobStatus | "") => setFilter({ status, hidden: isHiddenStatus(status) ? "true" : params.get("hidden") ?? "" });
+  const changeShowHidden = (value: boolean) => setFilter({ hidden: value ? "true" : "", status: !value && isHiddenStatus(statusFilter) ? "" : statusFilter, funnel: "", from: "" });
   const saveReviewDisabled = createMutation.isPending || !review?.company.trim() || !review?.role_title.trim();
 
   return (
     <div className="grid gap-6">
       <PageHeader
         title="Job Tracker"
-        description="Extract a job from a posting, review it, then manage the application pipeline from a searchable tracker."
+        description="Track opportunities, review next steps, and keep your application history together."
+        action={<Button onClick={() => setShowIntake(!showIntake)} aria-expanded={showIntake} aria-controls="job-intake"><Plus className="h-4 w-4" />{showIntake ? "Hide add job" : "Add job"}</Button>}
       />
 
-      <div className={cn("grid gap-4 transition-[grid-template-columns] duration-500 ease-in-out", review ? "xl:grid-cols-2" : "xl:grid-cols-[430px_1fr]")}>
-        <Panel>
+      {savedJob ? <Panel className="text-sm"><div role="status">Saved {savedJob.company}. <Link className="font-semibold underline" href={`/jobs/${savedJob.id}`}>Open saved job</Link></div></Panel> : null}
+      <div className="grid min-w-0 gap-4">
+        <section id="job-intake" hidden={!showIntake}><Panel>
           <div className="mb-4 flex items-center gap-2">
             <Plus className="h-4 w-4 text-primary" />
             <h2 className="text-base font-semibold">Add Job</h2>
@@ -240,9 +237,9 @@ export default function JobsPage() {
               <SaveReviewedJobButton className="mt-4" onClick={saveReview} isPending={createMutation.isPending} disabled={saveReviewDisabled} />
             </div>
           ) : null}
-        </Panel>
+        </Panel></section>
 
-        <Panel className="overflow-hidden">
+        <Panel className="min-w-0 overflow-hidden">
           <div className="mb-4 grid gap-3">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex items-center gap-3">
@@ -256,20 +253,20 @@ export default function JobsPage() {
                   checked={showHidden}
                   onChange={(event) => changeShowHidden(event.target.checked)}
                 />
-                Show hidden
+                Include archived, rejected & ghosted
               </label>
             </div>
-            <div className="grid gap-2 lg:grid-cols-[1fr_180px_190px_220px]">
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(180px,1fr)_180px_190px_220px]">
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                 <Input
                   value={search}
-                  onChange={(event) => setSearch(event.target.value)}
+                  onChange={(event) => setFilter({ search: event.target.value })}
                   className="pl-9"
-                  placeholder="Search company, role, notes, status, URL..."
+                  aria-label="Search jobs" placeholder="Search company, role, notes..."
                 />
               </div>
-              <Select value={statusFilter} onChange={(event) => changeStatusFilter(event.target.value as JobStatus | "")}>
+              <Select aria-label="Current status" value={statusFilter} onChange={(event) => changeStatusFilter(event.target.value as JobStatus | "")}>
                 <option value="">All statuses</option>
                 {jobStatuses.map((status) => (
                   <option key={status} value={status}>
@@ -277,12 +274,11 @@ export default function JobsPage() {
                   </option>
                 ))}
               </Select>
-              <Select value={healthFilter} onChange={(event) => setHealthFilter(event.target.value as HealthFilter)}>
+              <Select aria-label="Job health" value={healthFilter} onChange={(event) => setFilter({ health: event.target.value })}>
                 <option value="">All health</option>
-                <option value="stale">Stale</option>
-                <option value="missing-data">Missing data</option>
+                {Object.entries(healthLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
               </Select>
-              <Select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value as JobCategory | "")}>
+              <Select aria-label="Job category" value={categoryFilter} onChange={(event) => setFilter({ category: event.target.value })}>
                 <option value="">All categories</option>
                 {jobCategories.map((category) => (
                   <option key={category} value={category}>
@@ -292,10 +288,18 @@ export default function JobsPage() {
               </Select>
             </div>
           </div>
+          <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
+            {funnelStage ? <Badge>{funnelFrom ? `${funnelFrom} → ${funnelStage}` : `Reached ${funnelStage}`} · excludes archived</Badge> : null}
+            {[...params.entries()].filter(([key]) => ["search", "status", "health", "category", "funnel"].includes(key)).map(([key, value]) => <button key={key} className="rounded-full border border-border px-3 py-1" onClick={() => setFilter(key === "funnel" ? { funnel: "", from: "", hidden: "" } : { [key]: "" })} aria-label={`Remove ${key} filter`}>{healthLabels[value] ?? value} ×</button>)}
+            {params.size > 0 ? <Button variant="ghost" size="sm" onClick={() => window.history.replaceState(null, "", "/jobs")}>Clear all</Button> : null}
+            <label className="ml-auto flex items-center gap-2">Sort by <Select aria-label="Sort jobs" value={sort} onChange={event => setFilter({ sort: event.target.value })}><option value="updated">Recently updated</option><option value="company">Company A–Z</option><option value="pay">Annual pay, highest first</option></Select></label>
+          </div>
+          {updateMutation.error || archiveMutation.error ? <p role="alert" className="mb-3 text-sm text-destructive">Could not save: {((updateMutation.error || archiveMutation.error) as Error).message}. Your previous saved values are shown; try again.</p> : null}
+          <p role="status" className="sr-only">{isFetching ? "Updating results" : `${jobs.length} jobs shown`}</p>
           {error ? <p className="text-sm text-destructive">{(error as Error).message}</p> : null}
           {isLoading ? <p className="text-sm text-muted-foreground">Loading jobs...</p> : null}
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1280px] text-left text-sm">
+            <table className="w-full min-w-[1050px] text-left text-sm">
               <thead className="border-b border-border text-xs uppercase text-muted-foreground">
                 <tr>
                   <th className="py-2 pr-4">Company</th>
@@ -314,21 +318,23 @@ export default function JobsPage() {
                   <JobRow
                     key={job.id}
                     job={job}
+                    returnTo={returnTo}
+                    busy={(updateMutation.isPending && updateMutation.variables?.id === job.id) || (archiveMutation.isPending && archiveMutation.variables === job.id)}
                     onSelect={() => setSelectedJob(job)}
                     onStatus={(nextStatus) => updateMutation.mutate({ id: job.id, payload: { status: nextStatus } })}
                     onCategory={(nextCategory) => updateMutation.mutate({ id: job.id, payload: { category: nextCategory } })}
-                    onPay={(payload) => updateMutation.mutate({ id: job.id, payload })}
+                    onPay={(payload) => updateMutation.mutateAsync({ id: job.id, payload })}
                     onArchive={() => archiveMutation.mutate(job.id)}
                   />
                 ))}
               </tbody>
             </table>
-            {!jobs.length && !isLoading ? <p className="py-8 text-sm text-muted-foreground">No jobs match the current filters.</p> : null}
+            {!jobs.length && !isLoading && !error ? <p className="py-8 text-sm text-muted-foreground">No jobs match the current filters.</p> : null}
           </div>
         </Panel>
       </div>
 
-      {selectedJob ? <JobDrawer job={selectedJob} onClose={() => setSelectedJob(null)} /> : null}
+      {selectedJob ? <JobDrawer job={selectedJob} returnTo={returnTo} onClose={() => setSelectedJob(null)} /> : null}
     </div>
   );
 }
@@ -602,27 +608,30 @@ function JobRow({
   onCategory,
   onPay,
   onArchive,
-  onSelect
+  onSelect,
+  returnTo,
+  busy
 }: {
   job: JobListItem;
   onStatus: (status: JobStatus) => void;
   onCategory: (category: JobCategory) => void;
-  onPay: (payload: Partial<JobCreatePayload>) => void;
+  onPay: (payload: Partial<JobCreatePayload>) => Promise<unknown>;
   onArchive: () => void;
   onSelect: () => void;
+  returnTo: string;
+  busy: boolean;
 }) {
   const source = job.links.find((link) => link.kind === "source") ?? job.links[0];
   return (
     <tr className="border-b border-border last:border-0">
       <td className="py-3 pr-4 align-top font-medium">{job.company}</td>
       <td className="py-3 pr-4 align-top">
-        <button className="text-left font-medium text-primary" onClick={onSelect}>
-          {job.role_title}
-        </button>
+        <Link className="font-medium text-primary underline-offset-2 hover:underline" href={`/jobs/${job.id}?returnTo=${encodeURIComponent(returnTo)}`}>{job.role_title}</Link>
+        {busy ? <span role="status" className="block text-xs">Saving...</span> : null}
         {job.summary ? <div className="mt-1 line-clamp-2 max-w-[300px] text-xs text-muted-foreground">{job.summary}</div> : null}
       </td>
       <td className="py-3 pr-4 align-top">
-        <Select value={job.category} onChange={(event) => onCategory(event.target.value as JobCategory)} className="min-w-48">
+        <Select disabled={busy} aria-label={`Category for ${job.company} ${job.role_title}`} value={job.category} onChange={(event) => onCategory(event.target.value as JobCategory)} className="min-w-48">
           {jobCategories.map((category) => (
             <option key={category} value={category}>
               {category}
@@ -631,7 +640,7 @@ function JobRow({
         </Select>
       </td>
       <td className="py-3 pr-4 align-top">
-        <Select value={job.status} onChange={(event) => onStatus(event.target.value as JobStatus)} className="min-w-44">
+        <Select disabled={busy} aria-label={`Status for ${job.company} ${job.role_title}`} value={job.status} onChange={(event) => onStatus(event.target.value as JobStatus)} className="min-w-44">
           {jobStatuses.map((status) => (
             <option key={status} value={status}>
               {status}
@@ -661,10 +670,10 @@ function JobRow({
       <td className="py-3 pr-4 align-top">
         <div className="flex gap-2">
           <Button variant="secondary" size="sm" onClick={onSelect}>
-            Details
+            Preview
           </Button>
           {job.status !== "Archived" && job.status !== "Ghosted" ? (
-            <Button variant="secondary" size="icon" onClick={onArchive} title="Archive job">
+            <Button variant="secondary" size="icon" disabled={busy} onClick={() => { if (window.confirm(`Archive ${job.company} - ${job.role_title}? You can restore it using the status filter.`)) onArchive(); }} aria-label={`Archive ${job.company} ${job.role_title}`} title="Archive job">
               <Archive className="h-4 w-4" />
             </Button>
           ) : null}
@@ -674,7 +683,7 @@ function JobRow({
   );
 }
 
-function PayEditor({ job, onSave }: { job: JobListItem; onSave: (payload: Partial<JobCreatePayload>) => void }) {
+function PayEditor({ job, onSave }: { job: JobListItem; onSave: (payload: Partial<JobCreatePayload>) => Promise<unknown> }) {
   const [isOpen, setIsOpen] = useState(false);
   const [draft, setDraft] = useState({
     pay_min: job.pay_min,
@@ -694,8 +703,13 @@ function PayEditor({ job, onSave }: { job: JobListItem; onSave: (payload: Partia
     });
   }, [job.pay_min, job.pay_max, job.pay_currency, job.pay_period, job.pay_raw]);
 
-  const save = () => {
-    onSave({
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const save = async () => {
+    if (draft.pay_min !== null && draft.pay_max !== null && draft.pay_min > draft.pay_max) { setSaveError("Minimum pay must not exceed maximum pay."); return; }
+    setSaving(true);
+    setSaveError("");
+    try { await onSave({
       pay_min: draft.pay_min,
       pay_max: draft.pay_max,
       pay_currency: draft.pay_currency.trim() || null,
@@ -703,6 +717,7 @@ function PayEditor({ job, onSave }: { job: JobListItem; onSave: (payload: Partia
       pay_raw: draft.pay_raw.trim() || null
     });
     setIsOpen(false);
+    } catch (error) { setSaveError((error as Error).message); } finally { setSaving(false); }
   };
 
   return (
@@ -712,7 +727,7 @@ function PayEditor({ job, onSave }: { job: JobListItem; onSave: (payload: Partia
         <div className="text-xs text-muted-foreground">{formatAnnualPay(job)}</div>
       </button>
       {isOpen ? (
-        <div className="absolute right-0 z-20 mt-2 w-80 rounded-md border border-border bg-popover p-3 text-popover-foreground shadow-xl">
+        <Dialog title="Edit compensation" onClose={() => { if (!saving) setIsOpen(false); }}>
           <div className="grid gap-3">
             <div className="grid grid-cols-2 gap-2">
               <Field label="Min">
@@ -739,29 +754,26 @@ function PayEditor({ job, onSave }: { job: JobListItem; onSave: (payload: Partia
             <Field label="Raw pay">
               <Input value={draft.pay_raw} onChange={(event) => setDraft((current) => ({ ...current, pay_raw: event.target.value }))} />
             </Field>
+            {saveError ? <p role="alert" className="text-destructive">{saveError}</p> : null}
             <div className="flex justify-end gap-2">
               <Button variant="secondary" size="sm" onClick={() => setIsOpen(false)}>
                 Cancel
               </Button>
-              <Button size="sm" onClick={save}>
+              <Button size="sm" onClick={save} disabled={saving}>
                 <Save className="h-4 w-4" />
                 Save
               </Button>
             </div>
           </div>
-        </div>
+        </Dialog>
       ) : null}
     </div>
   );
 }
 
-function JobDrawer({ job, onClose }: { job: JobListItem; onClose: () => void }) {
+function JobDrawer({ job, onClose, returnTo }: { job: JobListItem; onClose: () => void; returnTo: string }) {
   return (
-    <div className="fixed inset-0 z-30 bg-foreground/25" onClick={onClose}>
-      <aside
-        className="ml-auto h-full w-full max-w-xl overflow-y-auto border-l border-border bg-popover p-5 text-popover-foreground shadow-xl"
-        onClick={(event) => event.stopPropagation()}
-      >
+    <Dialog title={`${job.company}: ${job.role_title}`} onClose={onClose}>
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="text-sm text-muted-foreground">{job.company}</div>
@@ -782,7 +794,7 @@ function JobDrawer({ job, onClose }: { job: JobListItem; onClose: () => void }) 
           <InfoRow label="Pay" value={formatPay(job)} />
           <InfoRow label="Annual" value={formatAnnualPay(job)} />
         </div>
-        <Link href={`/jobs/${job.id}`} className="mt-4 block">
+        <Link href={`/jobs/${job.id}?returnTo=${encodeURIComponent(returnTo)}`} className="mt-4 block">
           <Button className="h-12 w-full text-sm">
             <FileText className="h-4 w-4" />
             View Full Details
@@ -810,29 +822,12 @@ function JobDrawer({ job, onClose }: { job: JobListItem; onClose: () => void }) 
             Close
           </Button>
         </div>
-      </aside>
-    </div>
+    </Dialog>
   );
 }
 
-function ProcessSteps({ active, steps }: { active: boolean; steps: string[] }) {
-  const [index, setIndex] = useState(0);
-
-  useEffect(() => {
-    if (!active) {
-      setIndex(0);
-      return;
-    }
-    const timer = window.setInterval(() => setIndex((current) => (current + 1) % steps.length), 1400);
-    return () => window.clearInterval(timer);
-  }, [active, steps.length]);
-
-  if (!active) return null;
-  return (
-    <div className="rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
-      {steps[index]}
-    </div>
-  );
+function ProcessSteps({ active }: { active: boolean; steps: string[] }) {
+  return active ? <p role="status" className="text-sm text-muted-foreground">Extracting job details. This can take a minute; keep this page open.</p> : null;
 }
 
 function formatPay(job: { pay_min: number | null; pay_max: number | null; pay_currency: string | null; pay_period: string | null; pay_raw: string | null }) {

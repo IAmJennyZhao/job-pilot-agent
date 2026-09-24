@@ -15,7 +15,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge, PageHeader, Panel } from "@/components/ui/panel";
 import { api } from "@/lib/api";
-import type { DashboardJobInsight, DashboardSankey, DashboardSankeyNode, DashboardSkillGap, JobStatus } from "@/lib/types";
+import type { DashboardJobInsight, DashboardSankey, DashboardSkillGap, JobStatus } from "@/lib/types";
 import { cn, formatDate } from "@/lib/utils";
 
 const stageOrder = ["Saved", "Applied", "Recruiter Screen", "Tech Screen", "Final Interview", "Offer"];
@@ -33,8 +33,8 @@ const stageColors: Record<string, string> = {
 };
 const fallbackStageColor = "hsl(var(--chart-saved))";
 
-function jobsStatusHref(status: string) {
-  return `/jobs?status=${encodeURIComponent(status)}`;
+function jobsStatusHref(status: string, source?: string) {
+  return `/jobs?funnel=${encodeURIComponent(status)}${source ? `&from=${encodeURIComponent(source)}` : ""}`;
 }
 
 function uniqueInsightItems(items: DashboardJobInsight[]) {
@@ -108,7 +108,7 @@ export default function DashboardPage() {
       {data ? (
         <>
           <div className="grid gap-4 md:grid-cols-3">
-            <Metric href="/jobs" title="Active" value={activeJobs} detail={`${archivedJobs} archived, ${ghostedJobs} ghosted`} icon={<BriefcaseBusiness className="h-4 w-4" />} />
+            <Metric href="/jobs?health=active" title="Active" value={activeJobs} detail={`${archivedJobs} archived, ${ghostedJobs} ghosted`} icon={<BriefcaseBusiness className="h-4 w-4" />} />
             <Metric href="/jobs?health=stale" title="Stale" value={staleJobs} detail="Needs review" icon={<TimerReset className="h-4 w-4" />} tone="warn" />
             <Metric href="/jobs?health=missing-data" title="Missing Data" value={missingDataCount} detail="Core coverage gaps" icon={<AlertTriangle className="h-4 w-4" />} tone="warn" />
           </div>
@@ -119,7 +119,7 @@ export default function DashboardPage() {
                 <div>
                   <h2 className="text-base font-semibold">Application Funnel</h2>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Implied left-to-right status flow, with terminal outcomes split from the furthest reached stage.
+                    Counts include every job that reached each stage, including later outcomes. Earlier stages are inferred; archived jobs are excluded.
                   </p>
                 </div>
                 <Link href="/jobs" className="text-sm font-medium text-primary">
@@ -135,11 +135,12 @@ export default function DashboardPage() {
                   <h2 className="text-base font-semibold">Search Health</h2>
                   <p className="mt-1 text-sm text-muted-foreground">{data.next_recommended_action}</p>
                 </div>
-                <Badge tone={staleJobs ? "warn" : "good"}>{staleJobs ? "Review" : "Clean"}</Badge>
+                <Badge tone={staleJobs || missingDataCount || needsAnalysisItems.length ? "warn" : "good"}>{staleJobs || missingDataCount || needsAnalysisItems.length ? "Needs attention" : "Up to date"}</Badge>
               </div>
               <div className="mt-5 grid gap-5">
                 <InsightList
                   title="Stale Jobs"
+                  href="/jobs?health=stale"
                   items={staleItems}
                   empty="No stage-based stale jobs."
                   action={(item) => (
@@ -155,6 +156,7 @@ export default function DashboardPage() {
                 />
                 <InsightList
                   title="Needs Analysis"
+                  href="/jobs?health=needs-analysis"
                   items={needsAnalysisItems}
                   empty="Every active opportunity has fit/job analysis."
                   action={(item) => (
@@ -185,18 +187,21 @@ export default function DashboardPage() {
               <div className="grid gap-5">
                 <CoverageBlock
                   title="Missing Pay"
+                  href="/jobs?health=missing-pay"
                   icon={<DollarSign className="h-4 w-4" />}
                   items={missingPayItems}
                   empty="Pay coverage is complete."
                 />
                 <CoverageBlock
                   title="Missing Fit"
+                  href="/jobs?health=missing-fit"
                   icon={<FileSearch className="h-4 w-4" />}
                   items={missingFitItems}
                   empty="Fit scores are complete."
                 />
                 <CoverageBlock
                   title="Low Confidence"
+                  href="/jobs?health=low-confidence"
                   icon={<AlertTriangle className="h-4 w-4" />}
                   items={lowConfidenceItems}
                   empty="Extraction confidence looks healthy."
@@ -277,109 +282,45 @@ function Metric({
 function SankeyChart({ sankey }: { sankey?: DashboardSankey }) {
   const nodes = sankey?.nodes ?? [];
   const links = sankey?.links ?? [];
-  const nodesById = new Map(nodes.map((node) => [node.id, node]));
-  const maxCount = Math.max(1, ...nodes.map((node) => node.count), ...links.map((link) => link.value));
-  const total = nodesById.get("Saved")?.count ?? 0;
-  const width = 920;
-  const height = 330;
-  const positions = new Map<string, { x: number; y: number }>();
-
-  stageOrder.forEach((status, index) => {
-    positions.set(status, { x: 46 + index * 124, y: 166 });
-  });
-  terminalOrder.forEach((status, index) => {
-    positions.set(status, { x: 790, y: 82 + index * 86 });
-  });
-
-  if (!total) {
-    return (
-      <div className="mt-6 grid min-h-72 place-items-center rounded-md border border-dashed border-border text-sm text-muted-foreground">
-        Add jobs to build the funnel.
-      </div>
-    );
-  }
-
-  return (
-    <div className="mt-5 overflow-x-auto">
-      <svg viewBox={`0 0 ${width} ${height}`} className="min-h-[330px] min-w-[920px]">
-        <defs>
-          <filter id="sankeyShadow" x="-20%" y="-20%" width="140%" height="140%">
-            <feDropShadow dx="0" dy="2" stdDeviation="2" floodOpacity="0.12" />
-          </filter>
-        </defs>
-        {links.map((link) => {
-          const source = positions.get(link.source);
-          const target = positions.get(link.target);
-          if (!source || !target) return null;
-          const strokeWidth = Math.max(3, Math.min(30, (link.value / maxCount) * 30));
-          const color = stageColors[link.target] ?? stageColors[link.source] ?? fallbackStageColor;
-          const path = `M ${source.x + 28} ${source.y} C ${source.x + 86} ${source.y}, ${target.x - 86} ${target.y}, ${target.x - 28} ${target.y}`;
-          return (
-            <a key={`${link.source}-${link.target}`} href={jobsStatusHref(link.target)} aria-label={`Open ${link.target} jobs`} className="cursor-pointer">
-              <path d={path} fill="none" stroke={color} strokeOpacity="0.2" strokeWidth={strokeWidth + 8} strokeLinecap="round" />
-              <path d={path} fill="none" stroke={color} strokeOpacity="0.55" strokeWidth={strokeWidth} strokeLinecap="round" />
-            </a>
-          );
-        })}
-        {nodes.map((node) => {
-          const position = positions.get(node.id);
-          if (!position) return null;
-          return (
-            <a key={node.id} href={jobsStatusHref(node.id)} aria-label={`Open ${node.label} jobs`} className="cursor-pointer">
-              <SankeyNode node={node} x={position.x} y={position.y} maxCount={maxCount} />
-            </a>
-          );
-        })}
-      </svg>
+  const total = nodes.find(node => node.id === "Saved")?.count ?? 0;
+  if (!total) return <div className="mt-6 rounded-md border border-dashed border-border p-6 text-sm">Your funnel starts with a saved job. <Link href="/jobs" className="font-medium underline">Open the tracker to add one</Link></div>;
+  return <div className="mt-5 grid gap-5">
+    <p className="text-sm text-muted-foreground">{total} tracked jobs · Select a stage or outcome to see exactly those jobs.</p>
+    <ol aria-label="Stages reached" className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+      {stageOrder.map((stage, index) => {
+        const node = nodes.find(node => node.id === stage);
+        const count = node?.count ?? 0;
+        const percent = Math.round(count / total * 100);
+        return <li key={stage}><Link href={jobsStatusHref(stage)} aria-label={`${stage}: ${count} jobs reached this stage, ${percent}% of tracked jobs`} className="block rounded-md border border-border p-3 transition hover:border-primary hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring">
+          <div className="text-xs text-muted-foreground">{index + 1}. {stage}</div>
+          <div className="my-2 flex items-baseline justify-between"><strong className="text-xl">{count}</strong><span className="text-xs">{percent}%</span></div>
+          <div aria-hidden="true" className="h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full" style={{ width: `${percent}%`, background: stageColors[stage] }} /></div>
+        </Link></li>;
+      })}
+    </ol>
+    <div><h3 className="mb-2 text-sm font-semibold">Closed outcomes by furthest stage</h3>
+      <div className="grid gap-3 sm:grid-cols-3">{terminalOrder.map(status => {
+        const count = nodes.find(node => node.id === status)?.count ?? 0;
+        return <div key={status} className="min-w-0 rounded-md border border-border p-3">
+          <Link href={jobsStatusHref(status)} className="font-semibold underline-offset-2 hover:underline">{status} ({count})</Link>
+          <ul className="mt-2 grid gap-1 text-sm">{links.filter(link => link.target === status).map(link => <li key={link.source}><Link href={jobsStatusHref(status, link.source)} className="block rounded px-1 py-2 hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring" aria-label={`${link.value} jobs ${status.toLowerCase()} after ${link.source}`}><span className="block">After {link.source}</span><span className="text-muted-foreground">{link.value} jobs · {Math.round(link.value / total * 100)}% of total</span></Link></li>)}</ul>
+          {!count ? <p className="mt-2 text-xs text-muted-foreground">No outcomes yet</p> : null}
+        </div>;
+      })}</div>
     </div>
-  );
-}
-
-function SankeyNode({
-  node,
-  x,
-  y,
-  maxCount
-}: {
-  node: DashboardSankeyNode;
-  x: number;
-  y: number;
-  maxCount: number;
-}) {
-  const height = Math.max(24, Math.min(96, (node.count / maxCount) * 96));
-  const color = stageColors[node.id] ?? fallbackStageColor;
-  const labelY = node.kind === "terminal" ? y + 44 : y + 72;
-  const labelWidth = Math.max(64, node.label.length * 6.5 + 16);
-  return (
-    <g>
-      <rect
-        x={x - 24}
-        y={y - height / 2}
-        width="48"
-        height={height}
-        rx="7"
-        fill={color}
-        opacity={node.count ? 0.95 : 0.28}
-        filter="url(#sankeyShadow)"
-      />
-      <text x={x} y={y + 5} textAnchor="middle" fill="hsl(var(--primary-foreground))" className="text-sm font-semibold">
-        {node.count}
-      </text>
-      <rect x={x - labelWidth / 2} y={labelY - 17} width={labelWidth} height="24" rx="4" fill="hsl(var(--card))" />
-      <text x={x} y={labelY} textAnchor="middle" fill="hsl(var(--foreground))" className="text-[11px] font-medium">
-        {node.label}
-      </text>
-    </g>
-  );
+    <details className="text-sm"><summary className="cursor-pointer font-medium">Stage transitions and counts</summary><table className="mt-3 w-full text-left"><caption className="sr-only">All inferred transitions; each link opens the exact jobs counted.</caption><thead><tr><th scope="col">Transition</th><th scope="col">Jobs</th></tr></thead><tbody>{links.map(link => <tr key={`${link.source}-${link.target}`} className="border-t border-border"><td className="py-2"><Link className="underline" href={jobsStatusHref(link.target, link.source)}>{link.source} → {link.target}</Link></td><td>{link.value}</td></tr>)}</tbody></table></details>
+  </div>;
 }
 
 function InsightList({
   title,
+  href,
   items,
   empty,
   action
 }: {
   title: string;
+  href: string;
   items?: DashboardJobInsight[];
   empty: string;
   action?: (item: DashboardJobInsight) => React.ReactNode;
@@ -387,7 +328,7 @@ function InsightList({
   const safeItems = items ?? [];
   return (
     <div>
-      <div className="mb-3 text-sm font-semibold">{title}</div>
+      <div className="mb-3 flex items-center justify-between gap-2 text-sm font-semibold">{title}<Link href={href} className="text-primary underline">View all</Link></div>
       {safeItems.length ? (
         <div className="grid gap-3">
           {safeItems.map((item) => (
@@ -403,11 +344,13 @@ function InsightList({
 
 function CoverageBlock({
   title,
+  href,
   icon,
   items,
   empty
 }: {
   title: string;
+  href: string;
   icon: React.ReactNode;
   items?: DashboardJobInsight[];
   empty: string;
@@ -417,7 +360,7 @@ function CoverageBlock({
     <div>
       <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
         <span className="text-primary">{icon}</span>
-        {title}
+        {title}<Link href={href} className="ml-auto text-primary underline">View all</Link>
       </div>
       {safeItems.length ? (
         <div className="grid gap-3">

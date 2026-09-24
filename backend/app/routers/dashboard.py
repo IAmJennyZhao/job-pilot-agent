@@ -259,7 +259,7 @@ def _build_top_skill_gaps(
 @router.get("/summary", response_model=schemas.DashboardSummary)
 def get_dashboard_summary(db: Session = Depends(get_db)):
     jobs = list(db.scalars(select(models.Job)).all())
-    active_jobs = [job for job in jobs if job.status not in job_service.HIDDEN_STATUSES]
+    active_jobs = [job for job in jobs if job_service.is_open_opportunity(job)]
     open_jobs = [job for job in jobs if job_service.is_open_opportunity(job)]
     archived_jobs = sum(1 for job in jobs if job.status == models.JobStatus.archived)
     ghosted_jobs = sum(1 for job in jobs if job.status == models.JobStatus.ghosted)

@@ -1,0 +1,22 @@
+"use client";
+
+import { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
+import { Button } from "./button";
+
+export function Dialog({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const close = useRef(onClose);
+  close.current = onClose;
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    ref.current?.showModal();
+    return () => { document.body.style.overflow = overflow; previous?.focus(); };
+  }, []);
+  return createPortal(<dialog ref={ref} aria-label={title} onCancel={event => { event.preventDefault(); close.current(); }} onClick={event => { if (event.target === ref.current) close.current(); }} className="m-auto max-h-[90dvh] w-[calc(100%-2rem)] max-w-xl overflow-y-auto rounded-lg border border-border bg-popover p-5 text-popover-foreground shadow-xl backdrop:bg-black/40">
+    <div className="mb-4 flex items-center justify-between gap-3"><h2 className="font-semibold">{title}</h2><Button variant="ghost" onClick={onClose} aria-label={`Close ${title}`}>Close</Button></div>
+    {children}
+  </dialog>, document.body);
+}

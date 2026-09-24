@@ -170,6 +170,15 @@ def health_filtered_jobs(
         return [job for job in jobs if is_stale(job)]
     if normalized == "missing_data":
         return [job for job in jobs if is_missing_core_data(job)]
+    predicates = {
+        "active": is_open_opportunity,
+        "needs_analysis": lambda job: is_open_opportunity(job) and needs_analysis(job),
+        "missing_pay": lambda job: is_open_opportunity(job) and not has_pay(job),
+        "missing_fit": lambda job: is_open_opportunity(job) and job.fit_score is None,
+        "low_confidence": lambda job: is_open_opportunity(job) and (job.extraction_confidence is None or job.extraction_confidence < LOW_CONFIDENCE_THRESHOLD),
+    }
+    if normalized in predicates:
+        return [job for job in jobs if predicates[normalized](job)]
     raise ValueError("Unsupported health filter")
 
 
@@ -277,15 +286,33 @@ def list_jobs(
     status: models.JobStatus | None = None,
     category: models.JobCategory | None = None,
     health_filter: str | None = None,
+    funnel_stage: str | None = None,
+    funnel_from: str | None = None,
 ) -> list[models.Job]:
+    stages = [stage.value for stage in FUNNEL_STATUSES]
+    terminals = ["Rejected", "Withdrawn", "Ghosted"]
+    if funnel_stage and funnel_stage not in stages + terminals:
+        raise ValueError("Unsupported funnel stage")
+    if funnel_from and (not funnel_stage or funnel_from not in stages):
+        raise ValueError("A valid funnel destination and source are required")
+    if funnel_from and funnel_stage in stages and stages.index(funnel_stage) != stages.index(funnel_from) + 1:
+        raise ValueError("Funnel stages must be consecutive")
     statement = select(models.Job).order_by(models.Job.updated_at.desc())
-    if not include_archived:
+    if funnel_stage:
+        statement = statement.where(models.Job.status != models.JobStatus.archived)
+    elif not include_archived:
         statement = statement.where(models.Job.status.notin_(HIDDEN_STATUSES))
     if status:
         statement = statement.where(models.Job.status == status)
     if category:
         statement = statement.where(models.Job.category == category)
     jobs = list(db.scalars(statement).all())
+    if funnel_stage:
+        jobs = [job for job in jobs if (
+            (funnel_stage in stages and furthest_stage_rank(job) >= stages.index(funnel_stage))
+            or (funnel_stage in terminals and job.status.value == funnel_stage
+                and (not funnel_from or furthest_stage_rank(job) == stages.index(funnel_from)))
+        )]
     if search:
         jobs = [job for job in jobs if _matches_search(job, search)]
     jobs = health_filtered_jobs(jobs, health_filter)
@@ -327,6 +354,8 @@ def list_job_items(
     status: models.JobStatus | None = None,
     category: models.JobCategory | None = None,
     health_filter: str | None = None,
+    funnel_stage: str | None = None,
+    funnel_from: str | None = None,
 ) -> list[schemas.JobListItem]:
     return [
         to_job_list_item(db, job)
@@ -337,6 +366,8 @@ def list_job_items(
             status=status,
             category=category,
             health_filter=health_filter,
+            funnel_stage=funnel_stage,
+            funnel_from=funnel_from,
         )
     ]
 

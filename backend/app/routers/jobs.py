@@ -25,6 +25,8 @@ def get_jobs(
     status_filter: models.JobStatus | None = None,
     category: models.JobCategory | None = None,
     health_filter: str | None = None,
+    funnel_stage: str | None = None,
+    funnel_from: str | None = None,
     db: Session = Depends(get_db),
 ):
     try:
@@ -35,6 +37,8 @@ def get_jobs(
             status=status_filter,
             category=category,
             health_filter=health_filter,
+            funnel_stage=funnel_stage,
+            funnel_from=funnel_from,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc

@@ -13,6 +13,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 directory = Path(tempfile.mkdtemp(prefix="job-pilot-synthetic-ux-"))
 os.environ["DATABASE_URL"] = f"sqlite:///{(directory / 'synthetic.db').as_posix()}"
 os.environ["AUTO_MIGRATE"] = "0"
+os.environ["ASSET_STORAGE_DIR"] = str(directory / "storage")
+os.environ["BACKEND_CORS_ORIGINS"] = "http://localhost:3000,http://127.0.0.1:3000,http://127.0.0.1:3100"
 
 from fastapi.testclient import TestClient
 from app import models, schemas
@@ -42,6 +44,11 @@ def fake_output(output_model, *_args):
         return fake_analysis_output()
     if output_model is schemas.ResumeSuggestionOutput:
         return fake_resume_suggestion_output()
+    if output_model is schemas.InterviewAnswerFeedbackOutput:
+        return schemas.InterviewAnswerFeedbackOutput(score=80, what_went_well=["Clear structure"],
+            what_was_missing=["Add a measured result"], suggested_better_answer="Explain the result of your API work.",
+            coaching_notes=["Keep the example concise"], evidence_to_add=["Response latency"],
+            weak_point_tags=["specific_evidence"], missing_skill_names=[], follow_up_question="")
     raise RuntimeError("This synthetic verification server does not call external AI services.")
 
 
@@ -67,4 +74,4 @@ print(f"Synthetic UI verification database: {directory}", flush=True)
 ready_for_ui = True
 if __name__ == '__main__':
     import uvicorn
-    uvicorn.run(app, host='127.0.0.1', port=8000)
+    uvicorn.run(app, host='127.0.0.1', port=int(os.environ.get("UI_FIXTURE_PORT", "8000")))

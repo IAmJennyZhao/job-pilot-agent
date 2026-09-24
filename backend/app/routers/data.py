@@ -1,6 +1,7 @@
 import csv
 import io
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -63,3 +64,10 @@ def recovery(recovery_id: str):
     if not path.is_file():
         raise HTTPException(404, "Recovery backup not found")
     return FileResponse(path, media_type="application/json", filename="job-pilot-before-restore.json")
+
+
+@router.get("/recoveries")
+def recoveries():
+    root = Path(get_settings().asset_storage_dir) / "backups"
+    return sorted([{"id": path.stem, "created_at": datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat(), "bytes": path.stat().st_size}
+        for path in root.glob("*.json") if re.fullmatch(r"[a-f0-9]{32}", path.stem)], key=lambda item: item["created_at"], reverse=True)

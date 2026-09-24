@@ -9,7 +9,7 @@ from typing import get_args, get_type_hints
 
 from fastapi import HTTPException
 from pydantic import TypeAdapter
-from sqlalchemy import Enum, JSON, String, insert, select, text
+from sqlalchemy import Enum, JSON, String, insert, select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -39,6 +39,8 @@ def export_archive(db: Session) -> bytes:
         original = row.get("file_path")
         row["file_path"] = None
         if not original:
+            if row.get("source_filename"):
+                missing.append(row["source_filename"])
             continue
         path = Path(original).resolve()
         if path.is_relative_to(root) and path.is_file():

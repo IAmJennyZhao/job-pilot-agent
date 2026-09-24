@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type { InterviewScoreEntry } from "@/lib/types";
 import { Button } from "@/components/ui/button";
-import { Select } from "@/components/ui/field";
+import { Field, Select } from "@/components/ui/field";
 import { formatDate } from "@/lib/utils";
 
 export function AttemptHistory({ questionId, onRevise, disabled }: { questionId: string; onRevise?: (answer: string) => void; disabled?: boolean }) {
@@ -17,7 +17,7 @@ export function AttemptHistory({ questionId, onRevise, disabled }: { questionId:
   return <section className="rounded-md border border-border p-4"><h3 className="font-semibold">Answer attempts ({attempts.length})</h3>
     <p className="my-2 text-xs text-muted-foreground">Saved answers to this exact question across sessions. Scores are AI coaching estimates; compare the feedback as well as the number.</p>
     {query.isLoading ? <p>Loading attempts…</p> : query.error ? <><p role="alert">{query.error.message}</p><Button onClick={() => query.refetch()}>Retry attempts</Button></> : !latest ? <p className="text-sm">Evaluate an answer to save your first attempt.</p> : <>
-      {attempts.length > 1 ? <><label className="mb-3 grid gap-1 text-sm">Compare with<Select value={previous.message_id} onChange={event => setSelected(event.target.value)}>{attempts.slice(0, -1).map((item, index) => <option key={item.message_id} value={item.message_id}>Attempt {index + 1} · {formatDate(item.created_at)} · {item.score}/100</option>)}</Select></label>
+      {attempts.length > 1 ? <><Field label="Compare with"><Select value={previous.message_id} onChange={event => setSelected(event.target.value)}>{attempts.slice(0, -1).map((item, index) => <option key={item.message_id} value={item.message_id}>Attempt {index + 1} · {formatDate(item.created_at)} · {item.score}/100</option>)}</Select></Field>
         <p className="mb-3 text-sm">Score change: {latest.score - previous.score > 0 ? "+" : ""}{latest.score - previous.score} points from selected attempt to latest.</p></> : null}
       <div className="grid gap-3 md:grid-cols-2">{attempts.length > 1 ? <Attempt item={previous} title="Earlier attempt" onRevise={onRevise} disabled={disabled} /> : null}<Attempt item={latest} title="Latest attempt" onRevise={onRevise} disabled={disabled} /></div>
     </>}

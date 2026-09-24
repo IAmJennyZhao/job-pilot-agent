@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
@@ -12,6 +12,7 @@ export default function DataPage() {
   const [confirmation, setConfirmation] = useState("");
   const [message, setMessage] = useState("");
   const client = useQueryClient();
+  const recoveries = useQuery({ queryKey: ["recovery-backups"], queryFn: api.recoveryBackups });
   const download = useMutation({ mutationFn: async (path: "backup" | "jobs.csv" | `recovery/${string}`) => {
     const blob = await api.downloadData(path);
     const url = URL.createObjectURL(blob);
@@ -24,8 +25,10 @@ export default function DataPage() {
   const preview = useMutation({ mutationFn: () => { if (!file) throw new Error("Choose a backup file"); return api.previewRestore(file); } });
   const restore = useMutation({ mutationFn: () => { if (!file || !preview.data) throw new Error("Preview the backup first"); return api.restoreData(file, preview.data.sha256, confirmation); }, onSuccess: () => {
     // Old browser drafts must not overwrite restored records with the same IDs.
-    for (const storage of [localStorage, sessionStorage]) { for (const key of Object.keys(storage)) { if (key.startsWith("job-pilot:draft:")) storage.removeItem(key); } }
-    client.removeQueries(); setConfirmation("");
+    try { for (const storage of [localStorage, sessionStorage]) { for (const key of Object.keys(storage)) { if (key.startsWith("job-pilot:draft:")) storage.removeItem(key); } } }
+    catch { setMessage("Restore succeeded, but browser draft storage could not be cleared. Discard old drafts before saving edits."); }
+    client.removeQueries({ predicate: query => query.queryKey[0] !== "recovery-backups" });
+    client.invalidateQueries({ queryKey: ["recovery-backups"] }); setConfirmation("");
   }});
   const busy = download.isPending || preview.isPending || restore.isPending;
   return <div className="grid gap-6"><PageHeader title="Export & backups" description="Keep a portable copy of your job search and restore it when needed." />
@@ -36,6 +39,7 @@ export default function DataPage() {
       {preview.data && !restore.isSuccess ? <div className="mt-4 grid gap-3"><h3 className="font-medium">Backup contents</h3><dl className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-3">{Object.entries(preview.data.counts).map(([name, count]) => <div key={name}><dt className="text-muted-foreground">{name.replaceAll("_", " ")}</dt><dd>{count}</dd></div>)}</dl><p className="text-sm">{preview.data.files} PDF attachments.</p>{preview.data.missing_files.length ? <p role="alert" className="text-sm text-warning-foreground">Missing original PDFs: {preview.data.missing_files.join(", ")}. Only their saved records and text will be restored.</p> : null}<Field label="Type RESTORE to replace all saved data"><Input disabled={busy} value={confirmation} onChange={event => setConfirmation(event.target.value)} autoComplete="off" /></Field><Button variant="danger" disabled={busy || confirmation !== "RESTORE"} onClick={() => restore.mutate()}>{restore.isPending ? "Restoring…" : "Replace data with this backup"}</Button></div> : null}
       {restore.data ? <div role="status" className="mt-4"><p>Restore complete. Your restored data is ready.</p><Button className="mt-2" variant="secondary" disabled={busy} onClick={() => download.mutate(`recovery/${restore.data.recovery_id}`)}>Download pre-restore recovery backup</Button></div> : null}
     </Panel>
+    <Panel><h2 className="font-semibold">Recovery backups on this computer</h2><p className="my-2 text-sm text-muted-foreground">Created automatically before a restore. Download one, then preview it above to recover that saved state. Close other Job Pilot tabs before restoring so stale edits do not overwrite restored records.</p>{recoveries.isLoading ? <p>Loading recovery backups…</p> : recoveries.error ? <><p role="alert">{recoveries.error.message}</p><Button onClick={() => recoveries.refetch()}>Retry recovery list</Button></> : recoveries.data?.length ? <ul className="grid gap-2">{recoveries.data.map(item => <li key={item.id} className="flex flex-wrap items-center gap-3 text-sm"><span>{new Date(item.created_at).toLocaleString()} · {Math.ceil(item.bytes / 1024)} KB</span><Button variant="secondary" disabled={busy} onClick={() => download.mutate(`recovery/${item.id}`)}>Download recovery copy</Button></li>)}</ul> : <p className="text-sm">No recovery backups yet.</p>}</Panel>
     {[download.error, preview.error, restore.error].map((error, index) => error ? <p key={index} role="alert" className="text-sm text-destructive">{error.message}</p> : null)}
   </div>;
 }

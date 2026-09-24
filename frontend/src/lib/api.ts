@@ -93,6 +93,7 @@ async function requestForm<T>(path: string, formData: FormData): Promise<T> {
 }
 
 export const api = {
+  recoveryBackups: () => request<Array<{ id: string; created_at: string; bytes: number }>>("/api/data/recoveries"),
   downloadData: async (path: "backup" | "jobs.csv" | `recovery/${string}`) => {
     const response = await fetch(`${API_BASE_URL}/api/data/${path}`);
     if (!response.ok) { const body = await response.json(); throw new Error(typeof body.detail === "string" ? body.detail : "Download failed"); }

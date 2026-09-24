@@ -28,5 +28,5 @@ def test_revision_keeps_exact_answer_score_and_timing(client, monkeypatch):
     assert all(attempt["created_at"].endswith("Z") for attempt in attempts)
     assert client.post("/api/interview/answers/evaluate", json={**base, "answer": " "}).status_code == 422
     assert client.post("/api/interview/answers/evaluate", json={**base, "answer": "Valid", "elapsed_seconds": -1}).status_code == 422
-    other = client.post("/api/interview/sessions", json={"mode": "live_practice"}).json()
+    other = client.post("/api/interview/sessions", json={"mode": "live_practice", "target_role": "Other Engineer"}).json()
     assert client.post("/api/interview/answers/evaluate", json={**base, "session_id": other["id"], "answer": "Wrong session"}).status_code == 400

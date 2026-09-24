@@ -60,6 +60,9 @@ export type JobStatusEventPayload = {
   note?: string | null;
 };
 
+export type OutcomeRow = { label: string; saved: number; applied: number; interviews: number; offers: number; interview_rate: number | null; offer_rate: number | null; job_ids: string[] };
+export type OutcomeReport = { total_jobs: number; groups: Record<"source" | "category" | "resume", OutcomeRow[]> };
+
 export type JobAction = {
   job_id: string;
   title: string;

@@ -229,6 +229,14 @@ class Job(TimestampMixin, Base):
         return self.links[0].url if self.links else None
 
 
+class ApplicationAttribution(Base):
+    __tablename__ = "application_attributions"
+    job_id: Mapped[str] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"), primary_key=True)
+    source: Mapped[str] = mapped_column(String(255), nullable=False)
+    category: Mapped[str] = mapped_column(String(255), nullable=False)
+    resume_version: Mapped[str] = mapped_column(String(500), nullable=False)
+
+
 class JobAction(TimestampMixin, Base):
     __tablename__ = "job_actions"
 

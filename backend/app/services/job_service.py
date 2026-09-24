@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import models, schemas
+from app.services import attribution_service
 
 MAX_TOP_GAPS = 3
 LOW_CONFIDENCE_THRESHOLD = 80
@@ -256,6 +257,7 @@ def save_job(db: Session, payload: schemas.JobCreate) -> models.Job:
     db.flush()
     _replace_links(db, job, payload.links)
     db.add(_status_event(job, None, payload.status, payload.status_note))
+    attribution_service.capture(db, job)
     db.commit()
     db.refresh(job)
     return job
@@ -396,6 +398,7 @@ def update_job(db: Session, job: models.Job, payload: schemas.JobUpdate) -> mode
     ):
         raise ValueError("Cover letter template not found")
     old_status = job.status
+    old_rank = furthest_stage_rank(job)
     pay_keys = {"pay_min", "pay_max", "pay_currency", "pay_period", "pay_raw"}
     for key, value in values.items():
         setattr(job, key, value)
@@ -405,6 +408,8 @@ def update_job(db: Session, job: models.Job, payload: schemas.JobUpdate) -> mode
         _replace_links(db, job, [schemas.JobLinkCreate(**link) for link in links])
     if "status" in values and old_status != job.status:
         db.add(_status_event(job, old_status, job.status, status_note))
+    if old_rank == 0:
+        attribution_service.capture(db, job)
     db.add(job)
     db.commit()
     db.refresh(job)
@@ -416,12 +421,15 @@ def create_status_event(
     job: models.Job,
     payload: schemas.JobStatusEventCreate,
 ) -> models.Job:
+    old_rank = furthest_stage_rank(job)
     event = models.JobStatusEvent(job=job, to_status=payload.to_status, note=payload.note)
     if payload.changed_at is not None:
         event.changed_at = payload.changed_at
     db.add(event)
     db.flush()
     _reconcile_status_history(db, job)
+    if old_rank == 0:
+        attribution_service.capture(db, job)
     db.add(job)
     db.commit()
     db.refresh(job)
@@ -434,6 +442,7 @@ def update_status_event(
     event_id: str,
     payload: schemas.JobStatusEventUpdate,
 ) -> models.Job:
+    old_rank = furthest_stage_rank(job)
     event = next((item for item in job.status_events if item.id == event_id), None)
     if event is None:
         raise LookupError("Status event not found")
@@ -443,6 +452,8 @@ def update_status_event(
     db.add(event)
     db.flush()
     _reconcile_status_history(db, job)
+    if old_rank == 0:
+        attribution_service.capture(db, job)
     db.add(job)
     db.commit()
     db.refresh(job)
@@ -473,12 +484,15 @@ def update_application_status(
     status: models.JobStatus,
     notes: str | None = None,
 ) -> models.Job:
+    old_rank = furthest_stage_rank(job)
     old_status = job.status
     job.status = status
     if notes is not None:
         job.notes = notes
     if old_status != status:
         db.add(_status_event(job, old_status, status, notes))
+    if old_rank == 0:
+        attribution_service.capture(db, job)
     db.add(job)
     db.commit()
     db.refresh(job)

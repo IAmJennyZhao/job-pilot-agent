@@ -12,7 +12,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.config import get_settings
 from app.logging_config import request_id_var, setup_logging
 from app.migrations import run_migrations
-from app.routers import actions, ai, dashboard, interview, jobs, profile, skill_gaps, study_plans
+from app.routers import actions, ai, dashboard, interview, jobs, profile, reports, skill_gaps, study_plans
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +100,7 @@ def create_app() -> FastAPI:
 
     app.include_router(jobs.router)
     app.include_router(actions.router)
+    app.include_router(reports.router)
     app.include_router(profile.router)
     app.include_router(skill_gaps.router)
     app.include_router(study_plans.router)

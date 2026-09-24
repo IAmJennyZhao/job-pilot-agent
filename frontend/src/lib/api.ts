@@ -13,6 +13,7 @@ import type {
   InterviewSession,
   Job,
   JobAction,
+  OutcomeReport,
   JobCategory,
   JobCreatePayload,
   JobDetail,
@@ -92,6 +93,7 @@ async function requestForm<T>(path: string, formData: FormData): Promise<T> {
 }
 
 export const api = {
+  outcomeReport: (since?: string) => request<OutcomeReport>(`/api/reports/outcomes${since ? `?saved_since=${encodeURIComponent(since)}` : ""}`),
   actions: () => request<JobAction[]>("/api/actions"),
   action: (jobId: string) => request<JobAction | null>(`/api/actions/${jobId}`),
   saveAction: (jobId: string, payload: { title: string; due_date: string; completed: boolean }) =>

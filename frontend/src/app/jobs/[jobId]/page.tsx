@@ -3,11 +3,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, CheckCircle2, ChevronDown, ClipboardList, ExternalLink, FileText, Mail, Pencil, RefreshCw, Save, Sparkles, X } from "lucide-react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { Badge, PageHeader, Panel } from "@/components/ui/panel";
+import { useDraft } from "@/lib/use-draft";
 import { api } from "@/lib/api";
 import {
   jobCategories,
@@ -122,7 +123,8 @@ export default function JobDetailPage() {
   const jobId = params.jobId;
   const queryClient = useQueryClient();
   const [isEditing, setIsEditing] = useState(false);
-  const [form, setForm] = useState<JobEditForm | null>(null);
+  const searchParams = useSearchParams();
+  const returnTo = searchParams.get("returnTo");
 
   const { data: job, isLoading, error } = useQuery({
     queryKey: ["job", jobId],
@@ -148,9 +150,8 @@ export default function JobDetailPage() {
     queryFn: api.coverLetterTemplates
   });
 
-  useEffect(() => {
-    if (job) setForm(formFromJob(job));
-  }, [job]);
+  const editDraft = useDraft<JobEditForm | null>(`job-${jobId}`, job ? formFromJob(job) : null);
+  const { value: form, setValue: setForm } = editDraft;
 
   const invalidateJob = () => {
     queryClient.invalidateQueries({ queryKey: ["job", jobId] });
@@ -164,6 +165,7 @@ export default function JobDetailPage() {
   const updateMutation = useMutation({
     mutationFn: (values: JobEditForm) => api.updateJob(jobId, cleanForm(values)),
     onSuccess: () => {
+      editDraft.clear();
       setIsEditing(false);
       invalidateJob();
     }
@@ -192,7 +194,9 @@ export default function JobDetailPage() {
   });
 
   const cancelEdit = () => {
+    if (editDraft.dirty && !window.confirm("Discard these unsaved job edits?")) return;
     if (job) setForm(formFromJob(job));
+    editDraft.clear();
     setIsEditing(false);
   };
 
@@ -212,7 +216,7 @@ export default function JobDetailPage() {
         description={job ? `${job.status} - Last updated ${formatDate(job.updated_at)}` : "Review source links, extracted tracker details, and application history."}
         action={
           <div className="flex flex-wrap items-center gap-2">
-            <Link href={typeof window !== "undefined" && new URLSearchParams(window.location.search).get("returnTo")?.startsWith("/jobs?") ? new URLSearchParams(window.location.search).get("returnTo")! : "/jobs"} className="text-sm font-medium text-primary">
+            <Link href={returnTo?.startsWith("/jobs?") ? returnTo : "/jobs"} className="text-sm font-medium text-primary">
               Back to jobs
             </Link>
             {job ? (
@@ -227,7 +231,7 @@ export default function JobDetailPage() {
             {job && !isEditing ? (
               <Button variant="secondary" size="sm" onClick={() => setIsEditing(true)}>
                 <Pencil className="h-4 w-4" />
-                Edit
+                {editDraft.dirty ? "Resume editing draft" : "Edit"}
               </Button>
             ) : null}
           </div>
@@ -235,6 +239,8 @@ export default function JobDetailPage() {
       />
       {error ? <Panel className="border-destructive/25 bg-destructive/10 text-sm text-destructive">{(error as Error).message}</Panel> : null}
       {isLoading ? <Panel>Loading job...</Panel> : null}
+      {editDraft.dirty ? <p role="status" className="text-sm text-muted-foreground">Unsaved job edits are kept in this browser tab. Resume editing to save or discard them.</p> : null}
+      {job && !isEditing ? <nav aria-label="Job sections" className="flex flex-wrap gap-3 text-sm font-medium">{["Role Snapshot", "Fit And Gaps", "Company Signals", "Interview Prep", "Application Assets", "Status History"].map(label => <a className="rounded border border-border px-3 py-2 hover:bg-accent" key={label} href={`#${label.toLowerCase().replaceAll(" ", "-")}`}>{label}</a>)}</nav> : null}
 
       {job ? (
         <>
@@ -470,7 +476,7 @@ function MergedJobDetail({
       <Panel>
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-base font-semibold">Role Snapshot</h2>
+            <h2 id="role-snapshot" tabIndex={-1} className="scroll-mt-28 text-base font-semibold">Role Snapshot</h2>
             <p className="mt-1 text-sm text-muted-foreground">
               {compactText(insights?.summary || job.summary || "No summary captured.", 120)}
             </p>
@@ -521,7 +527,7 @@ function MergedJobDetail({
       {analysis ? (
         <>
           <Panel>
-            <h2 className="mb-5 text-base font-semibold">Fit And Gaps</h2>
+            <h2 id="fit-and-gaps" tabIndex={-1} className="scroll-mt-28 mb-5 text-base font-semibold">Fit And Gaps</h2>
             <div className="grid gap-5 md:grid-cols-3">
               <div>
                 <h3 className="mb-2 text-sm font-medium text-success-foreground">Fit</h3>
@@ -537,7 +543,7 @@ function MergedJobDetail({
           {sentiment ? (
             <Panel>
               <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-                <h2 className="text-base font-semibold">Company Signals</h2>
+                <h2 id="company-signals" tabIndex={-1} className="scroll-mt-28 text-base font-semibold">Company Signals</h2>
                 <div className="flex flex-wrap gap-2">
                   {sentiment.sentiment ? <Badge>{sentiment.sentiment}</Badge> : null}
                   {typeof sentiment.confidence === "number" ? <Badge tone={sentiment.confidence >= 70 ? "good" : "warn"}>{sentiment.confidence}% coverage</Badge> : null}
@@ -549,7 +555,7 @@ function MergedJobDetail({
             </Panel>
           ) : null}
           <Panel>
-            <h2 className="mb-5 text-base font-semibold">Interview Prep</h2>
+            <h2 id="interview-prep" tabIndex={-1} className="scroll-mt-28 mb-5 text-base font-semibold">Interview Prep</h2>
             <QuestionList questions={analysis.expected_questions} />
           </Panel>
         </>
@@ -596,7 +602,7 @@ function ApplicationAssetsPanel({
     <div>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-base font-semibold">Application Assets</h2>
+          <h2 id="application-assets" tabIndex={-1} className="scroll-mt-28 text-base font-semibold">Application Assets</h2>
           <p className="mt-1 text-xs text-muted-foreground">{latestSource}</p>
         </div>
         {recommendation ? <Badge tone={recommendation.source === "ai" ? "good" : "neutral"}>{recommendation.source}</Badge> : null}
@@ -910,7 +916,7 @@ function StatusHistoryEditor({
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-base font-semibold">Status History</h2>
+          <h2 id="status-history" tabIndex={-1} className="scroll-mt-28 text-base font-semibold">Status History</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             {isEditing ? "Correct accidental status changes or add missing steps. The latest event sets the current status." : "Application timeline for this job."}
           </p>
@@ -1127,24 +1133,8 @@ function AdvancedAnalysisControl({
   );
 }
 
-function ProcessSteps({ active, steps }: { active: boolean; steps: string[] }) {
-  const [index, setIndex] = useState(0);
-
-  useEffect(() => {
-    if (!active) {
-      setIndex(0);
-      return;
-    }
-    const timer = window.setInterval(() => setIndex((current) => (current + 1) % steps.length), 1400);
-    return () => window.clearInterval(timer);
-  }, [active, steps.length]);
-
-  if (!active) return null;
-  return (
-    <div className="mt-4 rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
-      {steps[index]}
-    </div>
-  );
+function ProcessSteps({ active }: { active: boolean; steps: string[] }) {
+  return active ? <p role="status" className="mt-3 text-sm text-muted-foreground">Analyzing this opportunity. This can take a minute; keep this page open.</p> : null;
 }
 
 function Section({

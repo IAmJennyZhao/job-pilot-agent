@@ -5,6 +5,7 @@ import { Archive, ExternalLink, FileText, Plus, Save, Search, Sparkles, X } from
 import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { useDraft } from "@/lib/use-draft";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
@@ -105,9 +106,11 @@ function JobsContent() {
   const [savedJob, setSavedJob] = useState<{ id: string; company: string } | null>(null);
   const returnTo = `/jobs${params.size ? `?${params}` : ""}`;
   const [selectedJob, setSelectedJob] = useState<JobListItem | null>(null);
-  const [intake, setIntake] = useState<IntakeState>({ source_url: "", source_content: "" });
+  const intakeDraft = useDraft<IntakeState>("job-intake", { source_url: "", source_content: "" });
+  const { value: intake, setValue: setIntake } = intakeDraft;
   const [preview, setPreview] = useState<JobExtractPreview | null>(null);
-  const [review, setReview] = useState<ReviewState | null>(null);
+  const reviewDraft = useDraft<ReviewState | null>("job-review", null);
+  const { value: review, setValue: setReview } = reviewDraft;
 
   const { data: rawJobs = [], isLoading, error, isFetching } = useQuery({
     queryKey: ["jobs", showHidden, search, statusFilter, healthFilter, categoryFilter, funnelStage, funnelFrom],
@@ -130,6 +133,8 @@ function JobsContent() {
       setIntake({ source_url: "", source_content: "" });
       setPreview(null);
       setReview(null);
+      intakeDraft.clear();
+      reviewDraft.clear();
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -182,6 +187,7 @@ function JobsContent() {
             <h2 className="text-base font-semibold">Add Job</h2>
           </div>
 
+          {(intakeDraft.dirty || reviewDraft.dirty) ? <p role="status" className="mb-3 text-sm">Draft restored or kept in this browser tab. Save the reviewed job to add it to your tracker.</p> : null}
           <div className="grid gap-4">
             <Field label="Job URL">
               <Input
@@ -201,25 +207,24 @@ function JobsContent() {
             {extractMutation.error ? (
               <div className="rounded-md border border-warning-foreground/20 bg-warning p-3 text-sm text-warning-foreground">
                 <div>{(extractMutation.error as Error).message}</div>
-                <Button className="mt-3" size="sm" variant="secondary" onClick={startManualFallback}>
+                <Button className="mt-3" size="sm" variant="secondary" onClick={() => { if (!review || window.confirm("Replace the current review with a blank manual entry?")) startManualFallback(); }}>
                   Use manual fallback
                 </Button>
               </div>
             ) : null}
             <div className="flex flex-wrap gap-2">
               <Button
-                onClick={() =>
+                onClick={() => { if (review && !window.confirm("Replace the current review with newly extracted fields?")) return;
                   extractMutation.mutate({
                     source_url: intake.source_url || null,
                     source_content: intake.source_content || null
-                  })
-                }
+                  }); }}
                 disabled={extractMutation.isPending || (!intake.source_url.trim() && !intake.source_content.trim())}
               >
                 <Sparkles className="h-4 w-4" />
                 {extractMutation.isPending ? "Extracting..." : "Extract fields"}
               </Button>
-              <Button variant="secondary" onClick={startManualFallback}>
+              <Button variant="secondary" onClick={() => { if (!review || window.confirm("Replace the current review with a blank manual entry?")) startManualFallback(); }}>
                 Manual entry
               </Button>
             </div>

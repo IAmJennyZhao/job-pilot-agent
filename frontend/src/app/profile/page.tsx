@@ -23,6 +23,8 @@ import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { Badge, PageHeader, Panel } from "@/components/ui/panel";
 import { api } from "@/lib/api";
 import type { CoverLetterTemplate, CoverageGapResponse, ResumeOption, ResumeProfile } from "@/lib/types";
+import { useDraft } from "@/lib/use-draft";
+import { RecordEditor } from "@/components/ui/record-editor";
 import { cn, csvToList, formatDate, listToCsv } from "@/lib/utils";
 
 type TabKey = "base" | "resumes" | "templates" | "coverage";
@@ -38,8 +40,8 @@ export default function ProfilePage() {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = React.useState<TabKey>("base");
   const { data: profile, isLoading, error } = useQuery({ queryKey: ["profile"], queryFn: api.profile });
-  const { data: resumeOptions = [] } = useQuery({ queryKey: ["resume-options"], queryFn: api.resumeOptions });
-  const { data: templates = [] } = useQuery({ queryKey: ["cover-letter-templates"], queryFn: api.coverLetterTemplates });
+  const { data: resumeOptions = [], isLoading: resumesLoading, error: resumesError } = useQuery({ queryKey: ["resume-options"], queryFn: api.resumeOptions });
+  const { data: templates = [], isLoading: templatesLoading, error: templatesError } = useQuery({ queryKey: ["cover-letter-templates"], queryFn: api.coverLetterTemplates });
 
   const invalidateProfileAssets = () => {
     queryClient.invalidateQueries({ queryKey: ["profile"] });
@@ -56,7 +58,8 @@ export default function ProfilePage() {
       />
       {error ? <Panel className="border-destructive/25 bg-destructive/10 text-sm text-destructive">{(error as Error).message}</Panel> : null}
       {isLoading ? <Panel>Loading application assets...</Panel> : null}
-      <ReadinessStrip profile={profile ?? null} resumeOptions={resumeOptions} templates={templates} />
+      {resumesError || templatesError ? <Panel><div role="alert">Could not load assets: {((resumesError || templatesError) as Error).message}</div></Panel> : null}
+      {!isLoading && !resumesLoading && !templatesLoading && !error && !resumesError && !templatesError ? <ReadinessStrip profile={profile ?? null} resumeOptions={resumeOptions} templates={templates} onSelect={setActiveTab} /> : null}
       <div className="flex flex-wrap gap-2 border-b border-border pb-2">
         {tabs.map((tab) => {
           const Icon = tab.icon;
@@ -65,6 +68,7 @@ export default function ProfilePage() {
             <button
               key={tab.key}
               type="button"
+              aria-pressed={active}
               onClick={() => setActiveTab(tab.key)}
               className={cn(
                 "inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition",
@@ -77,9 +81,9 @@ export default function ProfilePage() {
           );
         })}
       </div>
-      {activeTab === "base" ? <BaseProfileTab profile={profile ?? null} onSaved={invalidateProfileAssets} /> : null}
-      {activeTab === "resumes" ? <ResumeVariantsTab resumeOptions={resumeOptions} onChanged={invalidateProfileAssets} /> : null}
-      {activeTab === "templates" ? <CoverLetterTemplatesTab templates={templates} onChanged={invalidateProfileAssets} /> : null}
+      {activeTab === "base" && !isLoading && !error ? <BaseProfileTab profile={profile ?? null} onSaved={invalidateProfileAssets} /> : null}
+      {activeTab === "resumes" && !resumesLoading && !resumesError ? <ResumeVariantsTab resumeOptions={resumeOptions} onChanged={invalidateProfileAssets} /> : null}
+      {activeTab === "templates" && !templatesLoading && !templatesError ? <CoverLetterTemplatesTab templates={templates} onChanged={invalidateProfileAssets} /> : null}
       {activeTab === "coverage" ? <CoverageAuditTab /> : null}
     </div>
   );
@@ -88,17 +92,19 @@ export default function ProfilePage() {
 function ReadinessStrip({
   profile,
   resumeOptions,
-  templates
+  templates,
+  onSelect
 }: {
   profile: ResumeProfile | null;
   resumeOptions: ResumeOption[];
   templates: CoverLetterTemplate[];
+  onSelect: (tab: TabKey) => void;
 }) {
   const checks = [
-    { label: "Base profile", ready: Boolean(profile) },
-    { label: "Skills", ready: Boolean(profile?.skills.length) },
-    { label: "Ready resume", ready: resumeOptions.some((option) => option.status === "ready") },
-    { label: "Cover template", ready: Boolean(templates.length) }
+    { tab: "base" as TabKey, label: "Base profile", ready: Boolean(profile) },
+    { tab: "base" as TabKey, label: "Skills", ready: Boolean(profile?.skills.length) },
+    { tab: "resumes" as TabKey, label: "Ready resume", ready: resumeOptions.some((option) => option.status === "ready") },
+    { tab: "templates" as TabKey, label: "Cover template", ready: Boolean(templates.length) }
   ];
   const ready = checks.every((item) => item.ready);
   const StatusIcon = ready ? CheckCircle2 : AlertCircle;
@@ -112,7 +118,7 @@ function ReadinessStrip({
         </div>
         <div className="flex flex-wrap gap-2">
           {checks.map((item) => (
-            <span
+            <button type="button" onClick={() => onSelect(item.tab)}
               key={item.label}
               className={cn(
                 "inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium",
@@ -121,7 +127,7 @@ function ReadinessStrip({
             >
               {item.ready ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertCircle className="h-3.5 w-3.5" />}
               {item.label}
-            </span>
+            </button>
           ))}
         </div>
       </div>
@@ -130,8 +136,8 @@ function ReadinessStrip({
 }
 
 function BaseProfileTab({ profile, onSaved }: { profile: ResumeProfile | null; onSaved: () => void }) {
-  const [form, setForm] = React.useState(() => profileFormFromProfile(profile));
-  React.useEffect(() => setForm(profileFormFromProfile(profile)), [profile]);
+  const draft = useDraft("base-profile", profileFormFromProfile(profile));
+  const { value: form, setValue: setForm } = draft;
   const mutation = useMutation({
     mutationFn: () => {
       const payload = {
@@ -148,7 +154,7 @@ function BaseProfileTab({ profile, onSaved }: { profile: ResumeProfile | null; o
       };
       return profile ? api.updateProfile(profile.id, payload) : api.saveProfile(payload);
     },
-    onSuccess: onSaved
+    onSuccess: () => { draft.clear(); onSaved(); }
   });
 
   return (
@@ -179,20 +185,15 @@ function BaseProfileTab({ profile, onSaved }: { profile: ResumeProfile | null; o
             <Textarea value={form.skill_groups} onChange={(event) => setForm({ ...form, skill_groups: event.target.value })} />
           </Field>
           <div className="grid gap-4 lg:grid-cols-3">
-            <Field label="Experience">
-              <Textarea className="min-h-48 font-mono text-xs" value={form.experience_json} onChange={(event) => setForm({ ...form, experience_json: event.target.value })} />
-            </Field>
-            <Field label="Projects">
-              <Textarea className="min-h-48 font-mono text-xs" value={form.projects_json} onChange={(event) => setForm({ ...form, projects_json: event.target.value })} />
-            </Field>
-            <Field label="Education">
-              <Textarea className="min-h-48 font-mono text-xs" value={form.education_json} onChange={(event) => setForm({ ...form, education_json: event.target.value })} />
-            </Field>
+            <RecordEditor title="Experience" value={form.experience_json} onChange={value => setForm({ ...form, experience_json: value })} />
+            <RecordEditor title="Projects" value={form.projects_json} onChange={value => setForm({ ...form, projects_json: value })} />
+            <RecordEditor title="Education" value={form.education_json} onChange={value => setForm({ ...form, education_json: value })} />
           </div>
           <Field label="Raw resume text">
             <Textarea className="min-h-48" value={form.resume_text} onChange={(event) => setForm({ ...form, resume_text: event.target.value })} />
           </Field>
         </AdvancedDetails>
+        <DraftNotice dirty={draft.dirty} storageError={draft.storageError} saved={mutation.isSuccess} />
         {mutation.error ? <p className="text-sm text-destructive">{(mutation.error as Error).message}</p> : null}
         <Button className="justify-self-start" onClick={() => mutation.mutate()} disabled={mutation.isPending}>
           <Save className="h-4 w-4" />
@@ -283,6 +284,7 @@ function ResumeVariantsTab({ resumeOptions, onChanged }: { resumeOptions: Resume
           </Button>
         </div>
       </div>
+      {createMutation.error ? <p role="alert" className="text-destructive">{createMutation.error.message}</p> : null}
       {importMutation.error ? <p className="text-sm text-destructive">{(importMutation.error as Error).message}</p> : null}
       {resumeOptions.length ? (
         resumeOptions.map((option) =>
@@ -332,6 +334,7 @@ function ResumeOptionCard({
 
   return (
     <Panel className="p-4">
+      {confirmMutation.error || deleteMutation.error ? <p role="alert" className="text-destructive">{((confirmMutation.error || deleteMutation.error) as Error).message}</p> : null}
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <AssetHeading
           title={option.title}
@@ -381,8 +384,8 @@ function ResumeOptionEditor({
   onChanged: () => void;
   onDeleted: () => void;
 }) {
-  const [form, setForm] = React.useState(() => resumeFormFromOption(option));
-  React.useEffect(() => setForm(resumeFormFromOption(option)), [option]);
+  const draft = useDraft(`resume-${option.id}`, resumeFormFromOption(option));
+  const { value: form, setValue: setForm } = draft;
   const saveMutation = useMutation({
     mutationFn: () =>
       api.updateResumeOption(option.id, {
@@ -400,10 +403,13 @@ function ResumeOptionEditor({
         education: parseJsonList(form.education_json, option.education),
         parsed_text: form.parsed_text
       }),
-    onSuccess: onChanged
+    onSuccess: () => { draft.clear(); onChanged(); }
   });
   const confirmMutation = useMutation({
-    mutationFn: (merge: boolean) => api.confirmResumeOption(option.id, merge),
+    mutationFn: async (merge: boolean) => {
+      await saveMutation.mutateAsync();
+      return api.confirmResumeOption(option.id, merge);
+    },
     onSuccess: onChanged
   });
   const deleteMutation = useMutation({
@@ -435,13 +441,13 @@ function ResumeOptionEditor({
               PDF
             </a>
           ) : null}
-          <Button variant="secondary" size="sm" onClick={() => confirmMutation.mutate(false)} disabled={confirmMutation.isPending || option.status === "ready"}>
+          <Button variant="secondary" size="sm" onClick={() => confirmMutation.mutate(false)} disabled={confirmMutation.isPending || saveMutation.isPending || (!draft.dirty && option.status === "ready")}>
             <CheckCircle2 className="h-4 w-4" />
-            Ready
+            Save & mark ready
           </Button>
-          <Button variant="secondary" size="sm" onClick={() => confirmMutation.mutate(true)} disabled={confirmMutation.isPending}>
+          <Button variant="secondary" size="sm" onClick={() => confirmMutation.mutate(true)} disabled={confirmMutation.isPending || saveMutation.isPending}>
             <UserRound className="h-4 w-4" />
-            Ready + merge
+            Save, mark ready & merge
           </Button>
           <Button variant="ghost" size="sm" onClick={deleteOption} disabled={deleteMutation.isPending}>
             <Trash2 className="h-4 w-4" />
@@ -488,22 +494,18 @@ function ResumeOptionEditor({
             </Field>
           </div>
           <div className="grid gap-4 lg:grid-cols-3">
-            <Field label="Experience">
-              <Textarea className="min-h-48 font-mono text-xs" value={form.experience_json} onChange={(event) => setForm({ ...form, experience_json: event.target.value })} />
-            </Field>
-            <Field label="Projects">
-              <Textarea className="min-h-48 font-mono text-xs" value={form.projects_json} onChange={(event) => setForm({ ...form, projects_json: event.target.value })} />
-            </Field>
-            <Field label="Education">
-              <Textarea className="min-h-48 font-mono text-xs" value={form.education_json} onChange={(event) => setForm({ ...form, education_json: event.target.value })} />
-            </Field>
+            <RecordEditor title="Experience" value={form.experience_json} onChange={value => setForm({ ...form, experience_json: value })} />
+            <RecordEditor title="Projects" value={form.projects_json} onChange={value => setForm({ ...form, projects_json: value })} />
+            <RecordEditor title="Education" value={form.education_json} onChange={value => setForm({ ...form, education_json: value })} />
           </div>
           <Field label="Parsed resume text">
             <Textarea className="min-h-56" value={form.parsed_text} onChange={(event) => setForm({ ...form, parsed_text: event.target.value })} />
           </Field>
         </AdvancedDetails>
+        {confirmMutation.error || deleteMutation.error ? <p role="alert" className="text-sm text-destructive">{((confirmMutation.error || deleteMutation.error) as Error).message}</p> : null}
+        <DraftNotice dirty={draft.dirty} storageError={draft.storageError} saved={saveMutation.isSuccess} />
         {saveMutation.error ? <p className="text-sm text-destructive">{(saveMutation.error as Error).message}</p> : null}
-        <Button className="justify-self-start" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
+        <Button className="justify-self-start" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending || confirmMutation.isPending}>
           <Save className="h-4 w-4" />
           {saveMutation.isPending ? "Saving..." : "Save resume variant"}
         </Button>
@@ -549,6 +551,7 @@ function CoverLetterTemplatesTab({ templates, onChanged }: { templates: CoverLet
           </Button>
         </div>
       </Panel>
+      {createMutation.error ? <p role="alert" className="text-destructive">{createMutation.error.message}</p> : null}
       {templates.length ? (
         templates.map((template) =>
           template.id === expandedTemplateId ? (
@@ -623,22 +626,14 @@ function CoverLetterTemplateEditor({
   onChanged: () => void;
   onDeleted: () => void;
 }) {
-  const [form, setForm] = React.useState(() => ({
+  const draft = useDraft(`template-${template.id}`, {
     title: template.title,
     target_roles: listToCsv(template.target_roles),
     target_keywords: listToCsv(template.target_keywords),
     body: template.body,
     notes: template.notes ?? ""
-  }));
-  React.useEffect(() => {
-    setForm({
-      title: template.title,
-      target_roles: listToCsv(template.target_roles),
-      target_keywords: listToCsv(template.target_keywords),
-      body: template.body,
-      notes: template.notes ?? ""
-    });
-  }, [template]);
+  });
+  const { value: form, setValue: setForm } = draft;
   const saveMutation = useMutation({
     mutationFn: () =>
       api.updateCoverLetterTemplate(template.id, {
@@ -648,7 +643,7 @@ function CoverLetterTemplateEditor({
         body: form.body,
         notes: form.notes || null
       }),
-    onSuccess: onChanged
+    onSuccess: () => { draft.clear(); onChanged(); }
   });
   const deleteMutation = useMutation({
     mutationFn: () => api.deleteCoverLetterTemplate(template.id),
@@ -693,6 +688,8 @@ function CoverLetterTemplateEditor({
             <Textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} />
           </Field>
         </AdvancedDetails>
+        {deleteMutation.error ? <p role="alert" className="text-destructive">{deleteMutation.error.message}</p> : null}
+        <DraftNotice dirty={draft.dirty} storageError={draft.storageError} saved={saveMutation.isSuccess} />
         {saveMutation.error ? <p className="text-sm text-destructive">{(saveMutation.error as Error).message}</p> : null}
         <Button className="justify-self-start" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
           <Save className="h-4 w-4" />
@@ -865,13 +862,12 @@ function formatJson(value: unknown) {
   return JSON.stringify(value, null, 2);
 }
 
-function parseJsonList(value: string, fallback: Record<string, unknown>[]) {
+function parseJsonList(value: string, _fallback: Record<string, unknown>[]) {
   try {
     const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed : fallback;
-  } catch {
-    return fallback;
-  }
+    if (!Array.isArray(parsed) || parsed.some(item => !item || typeof item !== "object" || Array.isArray(item))) throw new Error();
+    return parsed as Record<string, unknown>[];
+  } catch { throw new Error("Experience, projects, or education contains invalid data. Correct the highlighted draft before saving."); }
 }
 
 function formatSkillGroups(groups: Array<{ category: string; skills: string[] }>) {
@@ -888,4 +884,8 @@ function parseSkillGroups(value: string) {
       return { category: category.trim() || "Skills", skills: csvToList(skills) };
     })
     .filter((group) => group.skills.length);
+}
+
+function DraftNotice({ dirty, storageError, saved }: { dirty: boolean; storageError: boolean; saved: boolean }) {
+  return <p role="status" className="text-sm text-muted-foreground">{dirty ? storageError ? "Unsaved changes. Draft recovery is unavailable in this browser; save before leaving." : "Unsaved changes. Your draft is kept in this browser tab, including after a refresh." : saved ? "Saved successfully." : ""}</p>;
 }

@@ -2,6 +2,8 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BookOpen, ChevronRight, Pencil, RefreshCw, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { Dialog } from "@/components/ui/dialog";
 import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/field";
@@ -29,8 +31,8 @@ type PlanRequestMeta = {
 export default function SkillsPage() {
   const queryClient = useQueryClient();
   const { data: gaps = [], isLoading, error } = useQuery({ queryKey: ["skill-gaps"], queryFn: api.skillGaps });
-  const { data: profile } = useQuery({ queryKey: ["profile"], queryFn: api.profile });
-  const { data: savedPlans = [] } = useQuery({ queryKey: ["study-plans"], queryFn: api.savedStudyPlans });
+  const { data: profile, isLoading: profileLoading, error: profileError } = useQuery({ queryKey: ["profile"], queryFn: api.profile });
+  const { data: savedPlans = [], isLoading: plansLoading, error: plansError } = useQuery({ queryKey: ["study-plans"], queryFn: api.savedStudyPlans });
 
   const [timeframe, setTimeframe] = React.useState<StudyPlanTimeframe>("2 weeks");
   const [hours, setHours] = React.useState("");
@@ -122,7 +124,8 @@ export default function SkillsPage() {
         }
       />
 
-      <div className="grid gap-4 xl:grid-cols-[1fr_420px]">
+      {updateMutation.error ? <p role="alert" className="text-destructive">Could not update skill level: {updateMutation.error.message}</p> : null}
+      <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="grid content-start gap-4">
           <Panel className="overflow-hidden">
             <div className="mb-4 flex items-center justify-between gap-3">
@@ -166,7 +169,7 @@ export default function SkillsPage() {
             ) : null}
           </Panel>
 
-          <SavedPlansPanel plans={savedPlans} />
+          {plansLoading ? <Panel>Loading saved plans...</Panel> : plansError ? <Panel><p role="alert">Could not load saved plans: {(plansError as Error).message}</p><Button onClick={() => queryClient.invalidateQueries({ queryKey: ["study-plans"] })}>Retry</Button></Panel> : <SavedPlansPanel plans={savedPlans} />}
         </div>
 
         <Panel className="self-start">
@@ -212,11 +215,11 @@ export default function SkillsPage() {
                 <Input
                   type="number"
                   min={1}
-                  placeholder="Hours (optional)"
+                  aria-label="Available hours" placeholder="Hours (optional)"
                   value={hours}
                   onChange={(event) => setHours(event.target.value)}
                 />
-                <Select value={hoursUnit} onChange={(event) => setHoursUnit(event.target.value as "day" | "week")}>
+                <Select aria-label="Time budget unit" value={hoursUnit} onChange={(event) => setHoursUnit(event.target.value as "day" | "week")}>
                   <option value="day">per day</option>
                   <option value="week">per week</option>
                 </Select>
@@ -231,6 +234,7 @@ export default function SkillsPage() {
               </Select>
             </label>
             {planMutation.error ? <p className="text-sm text-destructive">{(planMutation.error as Error).message}</p> : null}
+            {profileLoading ? <p role="status">Loading profile...</p> : profileError ? <p role="alert">Could not load your profile: {(profileError as Error).message}</p> : !profile ? <p className="text-sm">Create a <Link href="/profile" className="underline">base profile in Application Assets</Link> before generating a plan.</p> : null}
             <Button onClick={() => planMutation.mutate()} disabled={planMutation.isPending || !profile}>
               {planMutation.isPending ? "Generating..." : "Generate study plan"}
             </Button>
@@ -281,9 +285,8 @@ function SavedPlansPanel({ plans }: { plans: SavedStudyPlan[] }) {
   const submitRename = (id: string) => {
     const title = renameValue.trim();
     if (title) {
-      renameMutation.mutate({ id, title });
+      renameMutation.mutate({ id, title }, { onSuccess: () => setRenamingId(null) });
     }
-    setRenamingId(null);
   };
 
   return (
@@ -292,6 +295,7 @@ function SavedPlansPanel({ plans }: { plans: SavedStudyPlan[] }) {
         <h2 className="text-base font-semibold">Saved Study Plans</h2>
         <Badge>{plans.length} saved</Badge>
       </div>
+      {renameMutation.error || deleteMutation.error ? <p role="alert" className="mb-3 text-destructive">{((renameMutation.error || deleteMutation.error) as Error).message}</p> : null}
       {plans.length ? (
         <div className="grid gap-3">
           {plans.map((plan) => {
@@ -304,14 +308,14 @@ function SavedPlansPanel({ plans }: { plans: SavedStudyPlan[] }) {
                       <ChevronRight className={cn("h-4 w-4 shrink-0 transition-transform", expanded && "rotate-90")} />
                       <Input
                         autoFocus
+                        aria-label="Plan name"
                         value={renameValue}
                         onChange={(event) => setRenameValue(event.target.value)}
-                        onBlur={() => submitRename(plan.id)}
                         onKeyDown={(event) => {
                           if (event.key === "Enter") submitRename(plan.id);
                           if (event.key === "Escape") setRenamingId(null);
                         }}
-                      />
+                      /><Button size="sm" disabled={renameMutation.isPending || !renameValue.trim()} onClick={() => submitRename(plan.id)}>Save</Button><Button variant="ghost" size="sm" onClick={() => setRenamingId(null)}>Cancel</Button>
                     </div>
                   ) : (
                     <button
@@ -343,7 +347,7 @@ function SavedPlansPanel({ plans }: { plans: SavedStudyPlan[] }) {
                   <button
                     type="button"
                     aria-label="Delete plan"
-                    onClick={() => deleteMutation.mutate(plan.id)}
+                    disabled={deleteMutation.isPending} onClick={() => { if (window.confirm(`Delete study plan "${plan.title}"? This cannot be undone.`)) deleteMutation.mutate(plan.id); }}
                     className="text-muted-foreground transition-colors hover:text-destructive"
                   >
                     <Trash2 className="h-4 w-4" />
@@ -361,7 +365,7 @@ function SavedPlansPanel({ plans }: { plans: SavedStudyPlan[] }) {
                         </div>
                       </div>
                     ) : null}
-                    <StudyPlanView plan={plan.plan} />
+                    <SavedPlanProgress saved={plan} />
                   </div>
                 ) : null}
               </div>
@@ -375,7 +379,7 @@ function SavedPlansPanel({ plans }: { plans: SavedStudyPlan[] }) {
   );
 }
 
-function StudyPlanView({ plan }: { plan: StudyPlan }) {
+function StudyPlanView({ plan, onToggle, busy = false }: { plan: StudyPlan; onToggle?: (id: string) => void; busy?: boolean }) {
   return (
     <div className="grid gap-4 text-sm">
       {plan.top_gaps.length ? <List title="Top gaps" items={plan.top_gaps} /> : null}
@@ -384,20 +388,18 @@ function StudyPlanView({ plan }: { plan: StudyPlan }) {
         <div>
           <h3 className="font-medium">Plan</h3>
           <div className="mt-2 grid gap-3">
-            {plan.study_plan.map((item) => (
+            {plan.study_plan.map((item, periodIndex) => (
               <div key={`${item.period}-${item.focus}`} className="rounded-md border border-border bg-muted/40 p-3">
                 <div className="font-medium">{item.period}: {item.focus}</div>
                 <ul className="mt-2 list-inside list-disc text-muted-foreground">
-                  {item.tasks.map((task) => (
-                    <li key={task}>{task}</li>
-                  ))}
+                  {item.tasks.map((task, taskIndex) => { const id = `task:${periodIndex}:${taskIndex}`; return <li key={id} className="mb-2 list-none">{onToggle ? <label className="flex items-start gap-2"><input className="mt-1" type="checkbox" checked={plan.completed_tasks?.includes(id) ?? false} disabled={busy} onChange={() => onToggle(id)} /><span className={plan.completed_tasks?.includes(id) ? "line-through" : ""}>{task}</span></label> : task}</li>; })}
                 </ul>
               </div>
             ))}
           </div>
         </div>
       ) : null}
-      {plan.project_ideas.length ? <List title="Project ideas" items={plan.project_ideas} /> : null}
+      {plan.project_ideas.length ? <div><h3 className="font-medium">Project ideas</h3><ul className="mt-2 grid gap-2">{plan.project_ideas.map((project, index) => <li key={index}>{onToggle ? <label className="flex items-start gap-2"><input className="mt-1" type="checkbox" checked={plan.completed_tasks?.includes(`project:${index}`) ?? false} disabled={busy} onChange={() => onToggle(`project:${index}`)} /><span>{project}</span></label> : project}</li>)}</ul></div> : null}
     </div>
   );
 }
@@ -427,7 +429,7 @@ function GapTable({
           {selectable ? <th className="w-8 py-2 pr-2" aria-label="Select for study plan" /> : null}
           <th className="py-2 pr-4">Skill</th>
           <th className="py-2 pr-4">Sources</th>
-          <th className="py-2 pr-4">Count</th>
+          <th className="py-2 pr-4">Mentions</th>
           <th className="py-2 pr-4">Priority</th>
           <th className="py-2 pr-4">Level</th>
           <th className="py-2 pr-4">Suggested Action</th>
@@ -447,7 +449,7 @@ function GapTable({
                 />
               </td>
             ) : null}
-            <td className="py-3 pr-4 font-medium">{gap.skill_name}</td>
+            <td className="py-3 pr-4 font-medium"><SkillEvidence gap={gap} /></td>
             <td className="py-3 pr-4">
               <div className="flex flex-wrap gap-1.5">
                 {gap.sources.map((source) => (
@@ -461,6 +463,7 @@ function GapTable({
             </td>
             <td className="py-3 pr-4">
               <Select
+                aria-label={`Your level in ${gap.skill_name}`}
                 value={gap.user_level}
                 onChange={(event) => onLevelChange(gap.id, event.target.value as SkillGap["user_level"])}
               >
@@ -489,4 +492,21 @@ function List({ title, items }: { title: string; items: string[] }) {
       </div>
     </div>
   );
+}
+
+function SavedPlanProgress({ saved }: { saved: SavedStudyPlan }) {
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: (completed: string[]) => api.updateStudyProgress(saved.id, completed),
+    onSuccess: updated => queryClient.setQueryData<SavedStudyPlan[]>(["study-plans"], old => old?.map(plan => plan.id === updated.id ? updated : plan))
+  });
+  const completed = saved.plan.completed_tasks ?? [];
+  const total = saved.plan.study_plan.reduce((count, period) => count + period.tasks.length, 0) + saved.plan.project_ideas.length;
+  return <div className="grid gap-3"><p role="status" className="text-sm">{completed.length} of {total} tasks completed{mutation.isPending ? " · Saving..." : ""}</p><progress className="h-2 w-full accent-primary" aria-label="Study plan progress" value={completed.length} max={Math.max(1, total)} />{mutation.error ? <p role="alert" className="text-destructive">Progress was not saved: {mutation.error.message}. Try again.</p> : null}<StudyPlanView plan={saved.plan} busy={mutation.isPending} onToggle={id => mutation.mutate(completed.includes(id) ? completed.filter(value => value !== id) : [...completed, id])} /></div>;
+}
+
+function SkillEvidence({ gap }: { gap: SkillGap }) {
+  const [open, setOpen] = React.useState(false);
+  const query = useQuery({ queryKey: ["skill-evidence", gap.id], queryFn: () => api.skillEvidence(gap.id), enabled: open });
+  return <><button className="text-left text-primary underline" onClick={() => setOpen(true)} aria-label={`View evidence for ${gap.skill_name}`}>{gap.skill_name}</button>{open ? <Dialog title={`Evidence for ${gap.skill_name}`} onClose={() => setOpen(false)}><p className="mb-3 text-sm text-muted-foreground">{gap.count} recorded mentions, including repeat analyses. These are the matching sources still available; mentions are not a count of unique jobs.</p>{query.isLoading ? <p role="status">Loading evidence...</p> : query.error ? <p role="alert">{query.error.message}</p> : query.data?.length ? <ul className="grid gap-3">{query.data.map(item => <li key={`${item.href}-${item.source}`}><Link className="underline" href={item.href}>{item.label}</Link><div className="text-xs text-muted-foreground">{item.source}</div></li>)}</ul> : <p>No matching source records remain. This skill may come from an older analysis.</p>}</Dialog> : null}</>;
 }

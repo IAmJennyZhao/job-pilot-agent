@@ -812,7 +812,12 @@ class SavedStudyPlanCreate(BaseModel):
 
 
 class SavedStudyPlanUpdate(BaseModel):
-    title: str = Field(min_length=1, max_length=255)
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    completed_tasks: list[str] | None = None
+
+
+class SavedStudyPlanContent(StudyPlanResponse):
+    completed_tasks: list[str] = Field(default_factory=list)
 
 
 class SavedStudyPlanRead(CareerPilotModel):
@@ -824,7 +829,7 @@ class SavedStudyPlanRead(CareerPilotModel):
     time_budget_unit: str
     mode: str
     focus_skills: list[str]
-    plan: StudyPlanResponse
+    plan: SavedStudyPlanContent
     created_at: datetime
     updated_at: datetime
 

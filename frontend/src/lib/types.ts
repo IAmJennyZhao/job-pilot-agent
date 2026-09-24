@@ -576,6 +576,7 @@ export type StudyPlanMode = "weekly_plan" | "project_ideas" | "both";
 export type StudyPlanTimeframe = "1 week" | "2 weeks" | "1 month";
 
 export type StudyPlan = {
+  completed_tasks?: string[];
   top_gaps: string[];
   priority_order: string[];
   study_plan: Array<{ period: string; focus: string; tasks: string[] }>;

@@ -9,6 +9,7 @@ import { FeedbackDetails, weakPointLabels } from "@/components/interview/feedbac
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { Badge, PageHeader, Panel } from "@/components/ui/panel";
+import { useDraft } from "@/lib/use-draft";
 import { api } from "@/lib/api";
 import { sessionTarget } from "@/lib/interview";
 import {
@@ -73,15 +74,19 @@ function InterviewPageContent() {
   const requestedQuestionType = searchParams.get("questionType") as InterviewQuestionType | null;
   const resumeSessionId = searchParams.get("resumeSessionId");
 
-  const { data: jobs = [] } = useQuery({ queryKey: ["jobs"], queryFn: () => api.jobs() });
-  const { data: sessions = [] } = useQuery({ queryKey: ["interview-sessions"], queryFn: api.interviewSessions });
-  const { data: insights } = useQuery({ queryKey: ["interview-insights"], queryFn: api.interviewInsights });
-  const { data: resumeData } = useQuery({
+  const jobsQuery = useQuery({ queryKey: ["jobs", "interview-all"], queryFn: () => api.jobs({ includeArchived: true }) });
+  const jobs = jobsQuery.data ?? [];
+  const sessionsQuery = useQuery({ queryKey: ["interview-sessions"], queryFn: api.interviewSessions });
+  const sessions = sessionsQuery.data ?? [];
+  const insightsQuery = useQuery({ queryKey: ["interview-insights"], queryFn: api.interviewInsights });
+  const insights = insightsQuery.data;
+  const resumeQuery = useQuery({
     queryKey: ["interview-resume", resumeSessionId],
     queryFn: () => api.resumeSession(resumeSessionId as string),
     enabled: Boolean(resumeSessionId)
   });
 
+  const resumeData = resumeQuery.data;
   const [targetMode, setTargetMode] = React.useState<"job" | "role">(requestedJobId ? "job" : "role");
   const [jobId, setJobId] = React.useState(requestedJobId);
   const [targetCategory, setTargetCategory] = React.useState<JobCategory>("AI/ML Engineer");
@@ -89,10 +94,14 @@ function InterviewPageContent() {
   const [stage, setStage] = React.useState<InterviewStage>("mixed");
   const [questionType, setQuestionType] = React.useState<InterviewQuestionType>("mixed");
   const [count, setCount] = React.useState(6);
-  const [practiceSet, setPracticeSet] = React.useState<InterviewPracticeSet | null>(null);
-  const [queue, setQueue] = React.useState<InterviewPracticeQuestion[]>([]);
-  const [activeQuestionId, setActiveQuestionId] = React.useState("");
-  const [answer, setAnswer] = React.useState("");
+  const practiceDraft = useDraft<{ practiceSet: InterviewPracticeSet | null; queue: InterviewPracticeQuestion[]; activeQuestionId: string; answers: Record<string, string> }>("interview-practice", { practiceSet: null, queue: [], activeQuestionId: "", answers: {} });
+  const { practiceSet, queue, activeQuestionId } = practiceDraft.value;
+  const setPracticeSet = (value: InterviewPracticeSet | null) => practiceDraft.setValue(current => ({ ...current, practiceSet: value }));
+  const setQueue: React.Dispatch<React.SetStateAction<InterviewPracticeQuestion[]>> = value => practiceDraft.setValue(current => ({ ...current, queue: typeof value === "function" ? value(current.queue) : value }));
+  const setActiveQuestionId = (value: string) => practiceDraft.setValue(current => ({ ...current, activeQuestionId: value }));
+  const answerKey = `${practiceSet?.session_id ?? ""}:${activeQuestionId}`;
+  const answer = practiceDraft.value.answers[answerKey] ?? "";
+  const setAnswer = (value: string) => practiceDraft.setValue(current => ({ ...current, answers: { ...current.answers, [answerKey]: value } }));
   const [feedback, setFeedback] = React.useState<InterviewPracticeFeedback | null>(null);
   const [showInsightsHistory, setShowInsightsHistory] = React.useState(false);
 
@@ -124,14 +133,13 @@ function InterviewPageContent() {
   }, [requestedJobId, requestedTargetCategory, requestedTargetRole, requestedStage, requestedQuestionType]);
 
   React.useEffect(() => {
-    if (!resumeData) return;
+    if (!resumeData || !practiceDraft.ready) return;
     setPracticeSet(resumeData);
     setQueue(resumeData.questions);
     setActiveQuestionId(resumeData.questions[0]?.id ?? "");
-    setAnswer("");
     setFeedback(null);
     router.replace("/interview");
-  }, [resumeData, router]);
+  }, [resumeData, router, practiceDraft.ready]);
 
   const createPracticeSet = useMutation({
     mutationFn: () =>
@@ -147,7 +155,6 @@ function InterviewPageContent() {
       setPracticeSet(data);
       setQueue(data.questions);
       setActiveQuestionId(data.questions[0]?.id ?? "");
-      setAnswer("");
       setFeedback(null);
       queryClient.invalidateQueries({ queryKey: ["interview-sessions"] });
       queryClient.invalidateQueries({ queryKey: ["interview-insights"] });
@@ -187,14 +194,14 @@ function InterviewPageContent() {
     setPracticeSet(null);
     setQueue([]);
     setActiveQuestionId("");
-    setAnswer("");
     setFeedback(null);
   };
 
   return (
     <div className="grid gap-6">
       <PageHeader title="Interview Practice" description="Focused answer reps for saved jobs and role targets." />
-
+      {[jobsQuery, sessionsQuery, insightsQuery, ...(resumeSessionId ? [resumeQuery] : [])].map((query, index) => query.error ? <Panel key={index}><p role="alert">Could not load {["job choices", "session history", "interview insights", "the requested session"][index]}: {(query.error as Error).message}</p><Button variant="secondary" onClick={() => query.refetch()}>Retry</Button></Panel> : query.isLoading ? <Panel key={index}>Loading {["job choices", "session history", "interview insights", "the requested session"][index]}...</Panel> : null)}
+      {practiceDraft.dirty ? <p role="status" className="text-sm text-muted-foreground">{practiceDraft.storageError ? "Draft recovery is unavailable. Keep this page open until you submit your answer." : "Each question keeps its own draft. This practice set and your drafts recover after a refresh in this browser tab."}</p> : null}
       {isActive && practiceSet && activeQuestion ? (
         <Panel>
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -207,14 +214,14 @@ function InterviewPageContent() {
                 </p>
               </div>
             </div>
-            <Button variant="secondary" onClick={resetPracticeSet}>
+            <Button variant="secondary" onClick={resetPracticeSet} disabled={evaluateAnswer.isPending}>
               <Target className="h-4 w-4" />
               New practice set
             </Button>
           </div>
           <div className="grid gap-4">
             <PracticeSetStats practiceSet={practiceSet} />
-            <QuestionQueue questions={queue} activeQuestionId={activeQuestion.id} onSelect={setActiveQuestionId} />
+            <QuestionQueue questions={queue} activeQuestionId={activeQuestion.id} onSelect={id => { if (!evaluateAnswer.isPending) { setActiveQuestionId(id); setFeedback(null); } }} />
             <div className="rounded-md border border-border bg-muted/30 p-4">
               <div className="mb-3 flex flex-wrap items-center gap-2">
                 <Badge>{activeQuestion.question_type.replace("_", " ")}</Badge>
@@ -224,7 +231,7 @@ function InterviewPageContent() {
               <p className="text-base font-medium leading-7">{activeQuestion.content}</p>
             </div>
             <Field label="Your answer">
-              <Textarea value={answer} onChange={(event) => setAnswer(event.target.value)} className="min-h-44" />
+              <Textarea disabled={evaluateAnswer.isPending} value={answer} onChange={(event) => setAnswer(event.target.value)} className="min-h-44" />
             </Field>
             {evaluateAnswer.error ? <p className="text-sm text-destructive">{(evaluateAnswer.error as Error).message}</p> : null}
             <div className="flex flex-wrap gap-2">
@@ -232,7 +239,7 @@ function InterviewPageContent() {
                 <Sparkles className="h-4 w-4" />
                 {evaluateAnswer.isPending ? "Evaluating..." : "Evaluate answer"}
               </Button>
-              <Button variant="secondary" onClick={() => setAnswer("")} disabled={!answer.trim()}>
+              <Button variant="secondary" onClick={() => { if (window.confirm("Clear this answer draft?")) setAnswer(""); }} disabled={!answer.trim() || evaluateAnswer.isPending}>
                 <RotateCcw className="h-4 w-4" />
                 Clear
               </Button>
@@ -267,7 +274,8 @@ function InterviewPageContent() {
 
               {targetMode === "job" ? (
                 <Field label="Saved job">
-                  <Select value={jobId} onChange={(event) => setJobId(event.target.value)}>
+                  <Select aria-label="Saved job" value={jobId} onChange={(event) => setJobId(event.target.value)}>
+                    {!jobs.length ? <option value="">No saved jobs - add one in Jobs or practice a general role</option> : null}
                     {jobs.map((job) => (
                       <option key={job.id} value={job.id}>
                         {job.company} - {job.role_title}
@@ -320,7 +328,7 @@ function InterviewPageContent() {
                 </Select>
               </Field>
               {createPracticeSet.error ? <p className="text-sm text-destructive">{(createPracticeSet.error as Error).message}</p> : null}
-              <Button onClick={() => createPracticeSet.mutate()} disabled={!canStart || createPracticeSet.isPending}>
+              <Button onClick={() => createPracticeSet.mutate()} disabled={!practiceDraft.ready || !canStart || createPracticeSet.isPending || Boolean(resumeSessionId && resumeQuery.isLoading)}>
                 <Play className="h-4 w-4" />
                 {createPracticeSet.isPending ? "Starting..." : "Start practice"}
               </Button>

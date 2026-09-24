@@ -52,7 +52,14 @@ def save_study_plan(payload: schemas.SavedStudyPlanCreate, db: Session = Depends
 @router.patch("/{plan_id}", response_model=schemas.SavedStudyPlanRead)
 def rename_study_plan(plan_id: str, payload: schemas.SavedStudyPlanUpdate, db: Session = Depends(get_db)):
     plan = _get_plan_or_404(db, plan_id)
-    plan.title = payload.title
+    if payload.title is not None:
+        plan.title = payload.title
+    if payload.completed_tasks is not None:
+        valid = {f"task:{i}:{j}" for i, period in enumerate(plan.plan.get("study_plan", [])) for j, _ in enumerate(period["tasks"])}
+        valid.update(f"project:{i}" for i, _ in enumerate(plan.plan.get("project_ideas", [])))
+        if not set(payload.completed_tasks) <= valid:
+            raise HTTPException(status_code=400, detail="Unknown study task")
+        plan.plan = {**plan.plan, "completed_tasks": list(dict.fromkeys(payload.completed_tasks))}
     db.add(plan)
     db.commit()
     db.refresh(plan)

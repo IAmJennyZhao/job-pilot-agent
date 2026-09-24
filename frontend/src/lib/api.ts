@@ -193,6 +193,7 @@ export const api = {
     request<void>(`/api/profile/cover-letter-templates/${id}`, { method: "DELETE" }),
   generateCoverageGaps: () => request<CoverageGapResponse>("/api/profile/coverage-gaps", { method: "POST" }),
   skillGaps: () => request<SkillGap[]>("/api/skill-gaps"),
+  skillEvidence: (id: string) => request<Array<{ label: string; href: string; source: string }>>(`/api/skill-gaps/${id}/evidence`),
   updateSkillGap: (id: string, payload: Partial<Pick<SkillGap, "user_level" | "suggested_action">>) =>
     request<SkillGap>(`/api/skill-gaps/${id}`, {
       method: "PATCH",
@@ -257,5 +258,6 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ title })
     }),
+  updateStudyProgress: (id: string, completed_tasks: string[]) => request<SavedStudyPlan>(`/api/study-plans/${id}`, { method: "PATCH", body: JSON.stringify({ completed_tasks }) }),
   deleteStudyPlan: (id: string) => request<void>(`/api/study-plans/${id}`, { method: "DELETE" })
 };

@@ -24,6 +24,17 @@ def interview_insights(db: Session = Depends(get_db)):
     return interview_service.interview_insights(db)
 
 
+@router.get("/questions/{question_id}/attempts", response_model=list[schemas.InterviewRecentScore])
+def question_attempts(question_id: str, db: Session = Depends(get_db)):
+    if not db.get(models.InterviewQuestion, question_id):
+        raise HTTPException(404, "Question not found")
+    messages = db.scalars(select(models.InterviewMessage).where(
+        models.InterviewMessage.question_id == question_id,
+        models.InterviewMessage.score.is_not(None),
+    ).order_by(models.InterviewMessage.created_at, models.InterviewMessage.id)).all()
+    return [interview_service._score_entry(message) for message in messages]
+
+
 @router.post("/sessions", response_model=schemas.InterviewSessionRead, status_code=status.HTTP_201_CREATED)
 def create_session(payload: schemas.InterviewSessionCreate, db: Session = Depends(get_db)):
     if payload.job_id and not db.get(models.Job, payload.job_id):

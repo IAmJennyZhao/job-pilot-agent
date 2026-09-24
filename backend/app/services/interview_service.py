@@ -465,6 +465,9 @@ def evaluate_practice_answer(
     if not question:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Question not found")
 
+    if not any(message.question_id == question.id for message in session.messages):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Question does not belong to this session")
+
     job, profile, company, role_title, job_source = _practice_target_for_session(db, session)
     output = ai_service.get_structured_output(
         schemas.InterviewAnswerFeedbackOutput,
@@ -504,6 +507,10 @@ def evaluate_practice_answer(
         db.add(follow_up)
 
     feedback_payload = output.model_dump()
+    # Keep exact attempt data with its score; timestamps can tie within a second.
+    feedback_payload["submitted_answer"] = payload.answer
+    feedback_payload["elapsed_seconds"] = payload.elapsed_seconds
+    feedback_payload["time_limit_seconds"] = payload.time_limit_seconds
     feedback_payload["follow_up_question_id"] = follow_up.id if follow_up else None
     messages = [
         models.InterviewMessage(
@@ -521,6 +528,7 @@ def evaluate_practice_answer(
             question_type=question.question_type,
             score=output.score,
             feedback=feedback_payload,
+            created_at=datetime.now(timezone.utc),
         ),
     ]
     if follow_up:
@@ -563,6 +571,8 @@ def evaluate_practice_answer(
 
 
 def _answer_for_score_message(message: models.InterviewMessage) -> str | None:
+    if isinstance((message.feedback or {}).get("submitted_answer"), str):
+        return message.feedback["submitted_answer"]
     if not message.question_id:
         return None
 

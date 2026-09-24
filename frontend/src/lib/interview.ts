@@ -66,6 +66,10 @@ export function groupSessionEntries(messages: InterviewMessage[]): SessionEntry[
       entry.answer = message.content;
       entry.answeredAt = message.created_at;
     } else if (message.role === "ai" && message.score != null) {
+      if (typeof feedback?.submitted_answer === "string") {
+        entry.answer = feedback.submitted_answer;
+        entry.answeredAt = message.created_at;
+      }
       entry.feedback = {
         score: message.score,
         what_went_well: asStringArray(feedback?.what_went_well),

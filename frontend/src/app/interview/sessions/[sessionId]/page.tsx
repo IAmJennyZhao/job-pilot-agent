@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { AttemptHistory } from "@/components/interview/attempt-history";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -69,9 +70,9 @@ export default function InterviewSessionDetailPage() {
       {session ? (
         <>
           <div className="flex flex-wrap gap-2">
-            {hasUnanswered ? (
+            {entries.length ? (
               <Link href={`/interview?resumeSessionId=${session.id}`}>
-                <Button>Resume practice</Button>
+                <Button>Resume / revise answers</Button>
               </Link>
             ) : null}
             <Link href={startAnotherHref}>
@@ -94,6 +95,7 @@ export default function InterviewSessionDetailPage() {
                     {!entry.answer ? <Badge tone="bad">Not answered</Badge> : null}
                   </div>
                   <p className="text-base font-medium leading-7">{entry.question}</p>
+                  {entry.questionId ? <AttemptHistory questionId={entry.questionId} /> : null}
                   {entry.whyItMatters ? <p className="mt-1 text-xs text-muted-foreground">{entry.whyItMatters}</p> : null}
                   {entry.answer ? (
                     <div className="mt-4 grid gap-4">

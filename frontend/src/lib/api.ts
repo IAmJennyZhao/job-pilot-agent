@@ -6,6 +6,7 @@ import type {
   CoverageGapResponse,
   DashboardSummary,
   InterviewInsights,
+  InterviewScoreEntry,
   InterviewPracticeFeedback,
   InterviewPracticeSet,
   InterviewPracticeSetPayload,
@@ -220,7 +221,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload)
     }),
-  evaluatePracticeAnswer: (payload: { session_id: string; question_id: string; answer: string }) =>
+  questionAttempts: (questionId: string) => request<InterviewScoreEntry[]>(`/api/interview/questions/${questionId}/attempts`),
+  evaluatePracticeAnswer: (payload: { session_id: string; question_id: string; answer: string; elapsed_seconds?: number | null; time_limit_seconds?: number | null }) =>
     request<InterviewPracticeFeedback>("/api/interview/answers/evaluate", {
       method: "POST",
       body: JSON.stringify(payload)

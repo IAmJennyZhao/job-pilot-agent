@@ -1,6 +1,8 @@
 "use client";
 
 import { useConfirm } from "@/components/ui/confirm-provider";
+import { PracticeTimer, usePracticeTimer } from "@/components/interview/practice-timer";
+import { AttemptHistory } from "@/components/interview/attempt-history";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BarChart3, Brain, ChevronDown, ClipboardList, ExternalLink, MessageSquareText, Play, RotateCcw, Sparkles, Target, X } from "lucide-react";
@@ -104,6 +106,7 @@ function InterviewPageContent() {
   const setQueue: React.Dispatch<React.SetStateAction<InterviewPracticeQuestion[]>> = value => practiceDraft.setValue(current => ({ ...current, queue: typeof value === "function" ? value(current.queue) : value }));
   const setActiveQuestionId = (value: string) => practiceDraft.setValue(current => ({ ...current, activeQuestionId: value }));
   const answerKey = `${practiceSet?.session_id ?? ""}:${activeQuestionId}`;
+  const timer = usePracticeTimer(answerKey);
   const answer = practiceDraft.value.answers[answerKey] ?? "";
   const setAnswer = (value: string) => practiceDraft.setValue(current => ({ ...current, answers: { ...current.answers, [answerKey]: value } }));
   const [feedback, setFeedback] = React.useState<InterviewPracticeFeedback | null>(null);
@@ -173,21 +176,23 @@ function InterviewPageContent() {
       return api.evaluatePracticeAnswer({
         session_id: practiceSet.session_id,
         question_id: activeQuestion.id,
-        answer
+        answer,
+        elapsed_seconds: timer.stop() || null,
+        time_limit_seconds: timer.limit
       });
     },
     onSuccess: (data) => {
       setFeedback(data);
-      setAnswer("");
+      timer.reset();
       if (data.follow_up) {
         const followUp = data.follow_up;
         setQueue((current) => {
           if (current.some((question) => question.id === followUp.id)) return current;
           return [...current, followUp];
         });
-        setActiveQuestionId(followUp.id);
       }
       queryClient.invalidateQueries({ queryKey: ["interview-sessions"] });
+      queryClient.invalidateQueries({ queryKey: ["interview-attempts"] });
       queryClient.invalidateQueries({ queryKey: ["interview-insights"] });
       queryClient.invalidateQueries({ queryKey: ["skill-gaps"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
@@ -196,6 +201,7 @@ function InterviewPageContent() {
 
   const canStart = targetMode === "job" ? Boolean(jobs.some(job => job.id === jobId) && !jobsQuery.isLoading && !jobsQuery.error) : Boolean(targetCategory || targetRole.trim());
   const resetPracticeSet = () => {
+    timer.stop();
     setPracticeSet(null);
     setQueue([]);
     setActiveQuestionId("");
@@ -227,7 +233,7 @@ function InterviewPageContent() {
           </div>
           <div className="grid gap-4">
             <PracticeSetStats practiceSet={practiceSet} />
-            <QuestionQueue questions={queue} activeQuestionId={activeQuestion.id} onSelect={id => { if (!evaluateAnswer.isPending) { setActiveQuestionId(id); setFeedback(null); } }} />
+            <QuestionQueue questions={queue} activeQuestionId={activeQuestion.id} onSelect={id => { if (!evaluateAnswer.isPending) { timer.stop(); setActiveQuestionId(id); setFeedback(null); } }} />
             <div className="rounded-md border border-border bg-muted/30 p-4">
               <div className="mb-3 flex flex-wrap items-center gap-2">
                 <Badge>{activeQuestion.question_type.replace("_", " ")}</Badge>
@@ -239,6 +245,7 @@ function InterviewPageContent() {
             <Field label="Your answer">
               <Textarea disabled={evaluateAnswer.isPending} value={answer} onChange={(event) => setAnswer(event.target.value)} className="min-h-44" />
             </Field>
+            <PracticeTimer timer={timer} disabled={evaluateAnswer.isPending} />
             {evaluateAnswer.error ? <p className="text-sm text-destructive">{(evaluateAnswer.error as Error).message}</p> : null}
             <div className="flex flex-wrap gap-2">
               <Button onClick={() => evaluateAnswer.mutate()} disabled={!answer.trim() || evaluateAnswer.isPending}>
@@ -251,6 +258,7 @@ function InterviewPageContent() {
               </Button>
             </div>
             {feedback ? <FeedbackPanel feedback={feedback} /> : null}
+            <AttemptHistory key={activeQuestion.id} questionId={activeQuestion.id} disabled={evaluateAnswer.isPending} onRevise={async value => { if (!answer.trim() || answer === value || await confirm("Replace this answer draft with the selected attempt?")) { setAnswer(value); timer.reset(); setFeedback(null); } }} />
           </div>
         </Panel>
       ) : (

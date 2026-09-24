@@ -738,6 +738,15 @@ class InterviewPracticeAnswerCreate(BaseModel):
     session_id: str
     question_id: str
     answer: str = Field(min_length=1)
+    elapsed_seconds: int | None = Field(default=None, ge=0, le=604800)
+    time_limit_seconds: int | None = Field(default=None, ge=30, le=3600)
+
+    @field_validator("answer")
+    @classmethod
+    def nonblank_answer(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Enter an answer")
+        return value
 
 
 class InterviewPracticeAnswerFeedback(InterviewAnswerFeedback):
@@ -747,7 +756,7 @@ class InterviewPracticeAnswerFeedback(InterviewAnswerFeedback):
     follow_up: InterviewPracticeQuestionRead | None = None
 
 
-class InterviewRecentScore(BaseModel):
+class InterviewRecentScore(CareerPilotModel):
     message_id: str
     session_id: str
     question_id: str | None

@@ -66,6 +66,8 @@ for (const family of ["ai", "backend", "fullstack"]) {
     const after = await (await request.get(`${backend}/api/jobs/${id}`)).json();
     expect(after.status).toBe("Saved");
     expect(after.source_content).toBe(original.source_content);
+    expect(after.selected_resume_option_id).toBe(original.selected_resume_option_id);
+    expect(after.selected_cover_letter_template_id).toBe(original.selected_cover_letter_template_id);
     await expect(exports.getByRole("button", { name: "Download PDF", exact: true })).toBeEnabled();
     await expect(letter.getByRole("button", { name: "Download letter TXT", exact: true })).toBeEnabled();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBeTruthy();

@@ -101,8 +101,10 @@ def freeze():
             with tarfile.open(archive) as tar:
                 tar.extractall(checkout, filter="data")
             target = destination / f"v{version}.json.gz"
-            env = {**os.environ, "AUTO_MIGRATE": "0", "DATABASE_URL": "sqlite://", "OPENAI_API_KEY": "synthetic-frozen-key", "OPENAI_MODEL": "synthetic-frozen-model", "PYTHONPATH": "",
-                   "RESUME_PDFLATEX": str(root / "storage/texlive/bin/windows/pdflatex.exe")}
+            import shutil
+            portable = root / "storage/texlive/bin" / ("windows/pdflatex.exe" if os.name == "nt" else "x86_64-linux/pdflatex")
+            compiler = os.environ.get("RESUME_PDFLATEX") or shutil.which("pdflatex") or str(portable)
+            env = {**os.environ, "AUTO_MIGRATE": "0", "DATABASE_URL": "sqlite://", "OPENAI_API_KEY": "synthetic-frozen-key", "OPENAI_MODEL": "synthetic-frozen-model", "PYTHONPATH": "", "RESUME_PDFLATEX": compiler}
             subprocess.run([sys.executable, str(Path(__file__).resolve()), "--worker", str(version), str(target)], cwd=checkout / "backend", env=env, check=True)
             metadata = json.loads(Path(str(target) + ".meta.json").read_text())
             Path(str(target) + ".meta.json").unlink()

@@ -1,5 +1,4 @@
 """Distinct fictional acceptance cases. Deterministic outputs are NOT live AI evaluations."""
-import copy
 import json
 import yaml
 from app import schemas

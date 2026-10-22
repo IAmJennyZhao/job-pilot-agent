@@ -158,6 +158,7 @@ test("recovered description edits block generation until saved or discarded", as
   await page.reload();
   const panel = page.getByRole("region", { name: "Resume tailoring", exact: true });
   await expect(panel.getByRole("link", { name: "Download job description recovery" })).toBeVisible();
+  await expect(panel.getByRole("button", { name: "Edit full description" })).toBeDisabled();
   await panel.getByLabel("I reviewed this complete saved job description.").check();
   await expect(panel.getByRole("button", { name: "Generate tailored resume", exact: true })).toBeDisabled();
   await panel.getByRole("button", { name: "Discard incompatible job description" }).click();

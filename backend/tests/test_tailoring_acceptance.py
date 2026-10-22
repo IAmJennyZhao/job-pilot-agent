@@ -1,7 +1,5 @@
 """Real persistence/render/export acceptance; only model output is fictional and deterministic."""
 import hashlib
-import json
-import uuid
 import pytest
 from app.config import get_settings
 from app.services import ai_service

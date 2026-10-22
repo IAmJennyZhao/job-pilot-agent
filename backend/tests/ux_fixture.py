@@ -16,7 +16,7 @@ os.environ["AUTO_MIGRATE"] = "0"
 os.environ["OPENAI_API_KEY"] = "synthetic-ui-key"
 os.environ["OPENAI_MODEL"] = "synthetic-ui-model"
 os.environ["ASSET_STORAGE_DIR"] = str(directory / "storage")
-os.environ["BACKEND_CORS_ORIGINS"] = "http://localhost:3000,http://127.0.0.1:3000,http://127.0.0.1:3100"
+os.environ["BACKEND_CORS_ORIGINS"] = f"http://localhost:3000,http://127.0.0.1:3000,http://127.0.0.1:{os.environ.get('UI_FRONTEND_PORT', '3100')}"
 
 from fastapi.testclient import TestClient
 from app import models, schemas

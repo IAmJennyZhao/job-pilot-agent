@@ -11,8 +11,30 @@ ROOT = Path(__file__).parent / "fixtures" / "compatibility"
 CASES = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))
 
 
+@pytest.fixture
+def migrated_client(client, tmp_path):
+    from sqlalchemy.orm import Session
+    from app.database import build_engine, get_db
+    from app.main import app
+    from app.migrations import run_migrations
+    url = "sqlite:///" + (tmp_path / "historical-restore.db").as_posix()
+    run_migrations(url)
+    engine = build_engine(url)
+    previous = app.dependency_overrides[get_db]
+    def sessions():
+        with Session(engine) as session:
+            yield session
+    app.dependency_overrides[get_db] = sessions
+    try:
+        yield client
+    finally:
+        app.dependency_overrides[get_db] = previous
+        engine.dispose()
+
+
 @pytest.mark.parametrize("case", CASES, ids=lambda c: f"backup-v{c['version']}")
-def test_real_historical_archive_restore_and_reexport(client, monkeypatch, tmp_path, case):
+def test_real_historical_archive_restore_and_reexport(migrated_client, monkeypatch, tmp_path, case):
+    client = migrated_client
     monkeypatch.setattr(get_settings(), "asset_storage_dir", str(tmp_path))
     monkeypatch.setattr(ai_service, "get_tailoring_output", lambda *a, **k: pytest.fail("Restore called a model"))
     monkeypatch.setattr(resume_compiler, "compile_pdf", lambda *a: pytest.fail("Historical export recompiled"))

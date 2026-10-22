@@ -39,7 +39,8 @@ def get_structured_output(
 
     try:
         with httpx.Client(trust_env=False, timeout=OPENAI_TIMEOUT_SECONDS) as http_client:
-            client = OpenAI(api_key=api_key, http_client=http_client)
+            options = {"max_retries": 0} if output_model is schemas.JobExtractionOutput else {}
+            client = OpenAI(api_key=api_key, http_client=http_client, **options)
             response = client.responses.parse(
                 model=model,
                 instructions=system_prompt,
@@ -47,6 +48,9 @@ def get_structured_output(
                 text_format=output_model,
             )
     except Exception as exc:
+        if output_model is schemas.JobExtractionOutput:
+            logger.warning("Basic job extraction failed (%s)", type(exc).__name__)
+            raise HTTPException(502, "Could not extract job basics. Retry or use manual entry; your draft is preserved.") from None
         logger.exception("OpenAI request failed (model=%s, output=%s)", model, output_model.__name__)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,

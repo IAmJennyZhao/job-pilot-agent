@@ -5,8 +5,28 @@ from sqlalchemy.orm import Session
 from app import models, schemas
 from app.database import get_db
 from app.services import job_intake_service, job_service
+from app.intake_schemas import IntakeReview, IntakeSave
+from app.services import intake_preferences, intake_review_service
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
+
+
+@router.post("/intake/evaluate")
+def evaluate_intake(payload: IntakeReview, db: Session = Depends(get_db)):
+    return intake_preferences.evaluate(db, payload)
+
+
+@router.post("/intake/save", response_model=schemas.JobDetail)
+def save_intake(payload: IntakeSave, db: Session = Depends(get_db)):
+    return intake_review_service.save(db, payload)
+
+
+@router.get("/{job_id}/intake")
+def intake_preparation(job_id: str, db: Session = Depends(get_db)):
+    job = job_service.get_job(db, job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    return intake_review_service.preparation(db, job)
 
 
 @router.post("/extract-preview", response_model=schemas.JobExtractPreview)

@@ -230,7 +230,7 @@ def _reconcile_status_history(db: Session, job: models.Job) -> None:
     job.status = events[-1].to_status
 
 
-def save_job(db: Session, payload: schemas.JobCreate) -> models.Job:
+def save_job(db: Session, payload: schemas.JobCreate, *, commit: bool = True) -> models.Job:
     job = models.Job(
         company=payload.company,
         role_title=payload.role_title,
@@ -258,8 +258,11 @@ def save_job(db: Session, payload: schemas.JobCreate) -> models.Job:
     _replace_links(db, job, payload.links)
     db.add(_status_event(job, None, payload.status, payload.status_note))
     attribution_service.capture(db, job)
-    db.commit()
-    db.refresh(job)
+    if commit:
+        db.commit()
+        db.refresh(job)
+    else:
+        db.flush()
     return job
 
 

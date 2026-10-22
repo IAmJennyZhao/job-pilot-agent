@@ -18,7 +18,8 @@ from app.database import Base, build_engine
 
 MAX_BYTES = 50 * 1024 * 1024
 FORMAT = "job-pilot-backup"
-VERSION = 2
+VERSION = 3
+INTAKE_TABLES = {"job_intake_reviews"}
 TAILORING_TABLES = {"tailoring_source_versions", "tailoring_source_events", "tailoring_profile_states"}
 V1_TABLES = {"application_attributions", "asset_recommendation_snapshots", "cover_letter_templates",
             "interview_messages", "interview_questions", "interview_sessions", "job_actions", "job_analyses",
@@ -105,12 +106,16 @@ def validate_archive(content: bytes):
         raise HTTPException(413, "Backup exceeds the 50 MB archive limit")
     try:
         archive = json.loads(content)
-        if archive.get("format") != FORMAT or archive.get("version") not in {1, VERSION}:
+        if archive.get("format") != FORMAT or archive.get("version") not in {1, 2, VERSION}:
             raise ValueError("Unsupported backup format or version")
         if archive["version"] == 1:
             if set(archive["tables"]) != V1_TABLES:
                 raise ValueError("Invalid legacy backup tables")
             archive["tables"].update({name: [] for name in TAILORING_TABLES})
+        if archive["version"] in {1, 2}:
+            if set(archive["tables"]) != V1_TABLES | TAILORING_TABLES:
+                raise ValueError("Invalid legacy backup tables")
+            archive["tables"].update({name: [] for name in INTAKE_TABLES})
         if set(archive["tables"]) != set(Base.metadata.tables):
             raise ValueError("Backup tables do not match this app version")
         tables = {}

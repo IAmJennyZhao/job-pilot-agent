@@ -106,9 +106,12 @@ class JobDuplicateCandidate(BaseModel):
     matched_on: list[str] = Field(default_factory=list)
 
 
+from app.intake_facts import IntakeFacts
+
+
 class JobExtractPreviewRequest(BaseModel):
     source_url: HttpUrl | str | None = None
-    source_content: str | None = None
+    source_content: str | None = Field(default=None, max_length=100_000)
 
     @model_validator(mode="after")
     def has_source_material(self) -> "JobExtractPreviewRequest":
@@ -118,6 +121,7 @@ class JobExtractPreviewRequest(BaseModel):
 
 
 class JobExtractionOutput(AIModel):
+    preference_facts: IntakeFacts = Field(default_factory=IntakeFacts)
     company: str
     role_title: str
     category: JobCategory = JobCategory.other

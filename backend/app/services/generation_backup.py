@@ -55,6 +55,10 @@ def validate_generation_tables(tables):
                 data = attempt["input_data"]
                 if data["job"] != snapshot["job"] or data["approved_evidence"] != snapshot["projection"] or data["prior_outputs"] != accepted or data["stage"] != stage:
                     raise ValueError("Invalid stage input snapshot")
+                if generation_version(snapshot) == 2:
+                    from app.services.resume_generation import stage_input
+                    if data != stage_input(snapshot, stage, accepted, data.get("repair")):
+                        raise ValueError("Invalid composition contract snapshot")
                 if attempt["state"] not in {"running", "passed", "failed", "interrupted"}:
                     raise ValueError("Invalid stage state")
                 output = attempt["output_data"]
@@ -62,6 +66,14 @@ def validate_generation_tables(tables):
                     raise ValueError("Invalid stage output hash")
                 if output is not None:
                     parsed = output_models(snapshot)[stage].model_validate(output)
+                    metadata = attempt["provider_metadata"]
+                    if "composition_plan" in metadata:
+                        from app.services.resume_composition import plan_model, compile_plan
+                        if stage not in {"select", "revise"} or generation_version(snapshot) != 2 or metadata.get("composition_version") != 1:
+                            raise ValueError("Unsupported composition plan")
+                        plan = plan_model(output_models(snapshot)[stage], data).model_validate(metadata["composition_plan"])
+                        if compile_plan(plan, data).model_dump(mode="json") != output:
+                            raise ValueError("Composition plan differs from saved output")
                     report = validate_stage(stage, parsed, snapshot, accepted)
                     if report != attempt["validation"] or (attempt["state"] == "passed" and not report["valid"]):
                         raise ValueError("Invalid stage validation report")
@@ -81,6 +93,6 @@ def validate_generation_tables(tables):
                 raise ValueError("Revision lacks all four validated stages")
             draft = output_models(snapshot)["polish"].model_validate(accepted["polish"]).draft
             content = assemble_content(draft, snapshot)
-            if revision["content"] != content or revision["content_hash"] != digest(content) or revision["plain_text"] != plain_text(content) or revision["validation"] != accuracy_report(draft, snapshot, accepted):
+            if revision["content"] != content or revision["content_hash"] != digest(content) or revision["plain_text"] != plain_text(content, snapshot) or revision["validation"] != accuracy_report(draft, snapshot, accepted):
                 raise ValueError("Generated revision was altered")
     tables["tailoring_runs"] = ordered

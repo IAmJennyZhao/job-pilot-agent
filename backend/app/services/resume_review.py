@@ -111,7 +111,7 @@ def save(db, baseline_id, payload, restore=False):
     row = models.ResumeEditRevision(baseline_id=baseline.id, parent_id=head.id if edits else None,
         sequence=len(edits)+1, origin="restored" if restore else "edited", restored_from_id=restored.id if restored else None,
         request_key=payload.request_key, request_hash=fingerprint, content=content, content_hash=digest(content),
-        plain_text=plain_text(content), validation=validation, created_at=now())
+        plain_text=plain_text(content, run.snapshot), validation=validation, created_at=now())
     db.add(row)
     try:
         db.commit()

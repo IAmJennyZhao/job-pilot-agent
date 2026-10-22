@@ -1,5 +1,4 @@
 """Fictional regressions minimized from the live writing evaluation."""
-import copy
 import json
 import pytest
 from types import SimpleNamespace
@@ -141,3 +140,125 @@ def test_v1_reviewed_history_restores_alongside_v2(client, prepared, monkeypatch
     bad = json.loads(archive)
     bad["tables"]["tailoring_runs"][0]["snapshot"]["generation_version"] = 999
     assert client.post("/api/data/restore-preview", files={"file": ("bad.json", json.dumps(bad).encode())}).status_code == 400
+
+
+def test_compact_selection_compiles_exact_text_and_stable_identity():
+    from app.services.resume_composition import SelectionPlan, RevisionPlan, compile_plan
+    snapshot, _ = example()
+    data = {"approved_evidence": snapshot["projection"], "prior_outputs": {}}
+    plan = SelectionPlan(requirements=[{"id": "Q1", "quote": "Python", "description": "Python"},
+        {"id": "Q2", "quote": "Kubernetes", "description": "Kubernetes"}],
+        selections=[{"claim_id": "C1", "requirement_ids": ["Q1"]}], skills=[])
+    selected = compile_plan(plan, data)
+    assert selected.bullets[0].text == "Built internal Python checks."
+    assert selected.unmet_requirement_ids == ["Q2"]
+    data["prior_outputs"]["select"] = selected.model_dump()
+    revised = compile_plan(RevisionPlan(selections=[{"claim_id": "C1", "requirement_ids": ["Q1"],
+        "parent_bullet_ids": [], "issue_ids": []}], skills=[], decisions=[]), data)
+    assert revised.draft.bullets == selected.bullets and revised.lineage == []
+    plan.selections[0].claim_id = "EXCLUDED"
+    with pytest.raises(ValueError, match="unknown claim"):
+        compile_plan(plan, data)
+
+
+def test_compact_provider_boundary_records_plan_and_never_accepts_prose(monkeypatch):
+    from app.config import get_settings
+    from app.services import tailoring_provider as provider
+    from app.services.resume_composition import SelectionPlan
+    snapshot, draft = example()
+    monkeypatch.setattr(get_settings(), "openai_api_key", "synthetic-key")
+    data = {"contract": {"composition_version": 1}, "stage": "select", "approved_evidence": snapshot["projection"], "prior_outputs": {}}
+    class FakeClient:
+        def __init__(self, **kwargs): self.responses = self
+        async def parse(self, **kwargs):
+            assert issubclass(kwargs["text_format"], SelectionPlan)
+            plan = kwargs["text_format"](requirements=draft.requirements, selections=[], skills=[],
+                overlap_choices={"group_1": {"claim_id": "C1", "requirement_ids": ["Q1"]}})
+            return SimpleNamespace(output=[], status="completed", output_parsed=plan, id="synthetic", model="synthetic", usage=None)
+    monkeypatch.setattr(provider, "AsyncOpenAI", FakeClient)
+    output, metadata = provider.get_tailoring_output(ResumeDraft, "system", json.dumps(data), model="synthetic", timeout=1)
+    assert output.bullets[0].text == snapshot["projection"]["claims"][0]["text"]
+    assert metadata["composition_plan"]["overlap_choices"]["group_1"]["claim_id"] == "C1"
+
+
+def test_overlap_choice_schema_excludes_alternatives_from_independent_selections():
+    from pydantic import ValidationError
+    from app.services.resume_composition import plan_model, compile_plan
+    snapshot, draft = example()
+    data = {"contract": {"composition_version": 1}, "approved_evidence": snapshot["projection"], "prior_outputs": {}}
+    schema = plan_model(ResumeDraft, data)
+    payload = {"requirements": [r.model_dump() for r in draft.requirements], "skills": [], "selections": [],
+        "unsupported_requirements": [{"id": "Q2", "quote": "Kubernetes", "description": "Kubernetes"}],
+        "overlap_choices": {"group_1": {"claim_id": "C1", "requirement_ids": ["Q1"]}}}
+    compiled = compile_plan(schema.model_validate(payload), data)
+    assert compiled.unmet_requirement_ids == ["Q2"]
+    payload["selections"] = [{"claim_id": "C2", "requirement_ids": []}]
+    with pytest.raises(ValidationError):
+        schema.model_validate(payload)
+
+
+def test_repeated_selection_preserves_all_requirement_and_skill_links_once():
+    from app.services.resume_composition import SelectionPlan, compile_plan
+    snapshot, draft = example()
+    plan = SelectionPlan(requirements=draft.requirements,
+        selections=[{"claim_id": "C1", "requirement_ids": ["Q1"]}, {"claim_id": "C1", "requirement_ids": ["Q2"]}],
+        skills=[{"name": "Python", "source_ids": ["T1"]}, {"name": "python", "source_ids": ["BAD"]}])
+    compiled = compile_plan(plan, {"approved_evidence": snapshot["projection"], "prior_outputs": {}})
+    assert len(compiled.bullets) == 1 and compiled.bullets[0].requirement_ids == ["Q1", "Q2"]
+    assert len(compiled.skills) == 1 and compiled.skills[0].source_ids == ["T1", "BAD"]
+    # Coalescing must not hide invalid links: the stage validator still rejects them.
+    errors = validate_draft(compiled, snapshot)
+    assert any("unknown requirement" in e for e in errors)
+    assert any("provenance" in e for e in errors)
+
+
+def test_revision_seed_preserves_overlap_choices_and_requires_authorized_additions():
+    from app.services.resume_composition import SelectionPlan, RevisionPlan, plan_model, compile_plan, revision_seed
+    snapshot, draft = example()
+    data = {"contract": {"composition_version": 1}, "approved_evidence": snapshot["projection"], "prior_outputs": {}}
+    selected = compile_plan(SelectionPlan(requirements=draft.requirements, selections=[{"claim_id": "C1", "requirement_ids": ["Q1"]}], skills=[]), data)
+    data["prior_outputs"]["select"] = selected.model_dump()
+    from app.generation_schemas import RevisedResume
+    schema = plan_model(RevisedResume, data)
+    seed = revision_seed(data)
+    assert seed["overlap_choices"]["group_1"]["claim_id"] == "C1"
+    assert compile_plan(schema.model_validate(seed), data).draft == selected
+    addition = RevisionPlan(selections=[{"claim_id": "C2", "requirement_ids": [], "parent_bullet_ids": [], "issue_ids": []}], skills=[], decisions=[])
+    with pytest.raises(ValueError, match="accepted draft recommendation"):
+        compile_plan(addition, data)
+    data["prior_outputs"]["critique"] = {"issues": [{"issue_id": "I1", "field_path": "draft", "requires_user_fact_confirmation": False}]}
+    addition.decisions = [RevisionDecision(issue_id="I1", action="accepted", reason="Choose the supported outcome.")]
+    assert compile_plan(addition, data).lineage[0].issue_ids == ["I1"]
+
+
+def test_compact_provider_through_coordinator_and_backup(client, prepared, monkeypatch):
+    from app.services import ai_service, tailoring_provider as provider
+    from app.services.resume_composition import SelectionPlan, RevisionPlan
+    from app.generation_schemas import PolishedResume
+    job, _ = prepared
+    class FakeClient:
+        def __init__(self, **kwargs): self.responses = self
+        async def parse(self, **kwargs):
+            data = json.loads(kwargs["input"])
+            schema = kwargs["text_format"]
+            prior = data["prior_outputs"]
+            if issubclass(schema, SelectionPlan):
+                output = schema(requirements=[{"id": "Q1", "quote": "Python", "description": "Python"}],
+                    selections=[{"claim_id": "C-ALLOWED", "requirement_ids": ["Q1"]}], skills=[])
+            elif schema is CritiqueReport:
+                output = CritiqueReport(issues=[])
+            elif issubclass(schema, RevisionPlan):
+                output = schema.model_validate(data["contract"]["revision_seed"])
+            else:
+                output = PolishedResume(draft=prior["revise"]["draft"], edits=[])
+            return SimpleNamespace(output=[], status="completed", output_parsed=output, id="synthetic", model="synthetic", usage=None)
+    monkeypatch.setattr(provider, "AsyncOpenAI", FakeClient)
+    monkeypatch.setattr(ai_service, "get_tailoring_output", provider.get_tailoring_output)
+    run = generate(client, job).json()
+    assert run["state"] == "completed", run
+    assert run["stages"][0]["metadata"]["composition_version"] == 1
+    archive = client.get("/api/data/backup").json()
+    assert client.post("/api/data/restore-preview", files={"file": ("backup.json", json.dumps(archive).encode())}).status_code == 200
+    stage = next(a for a in archive["tables"]["tailoring_stage_attempts"] if a["stage"] == "select")
+    stage["provider_metadata"]["composition_plan"]["selections"][0]["claim_id"] = "EXCLUDED"
+    assert client.post("/api/data/restore-preview", files={"file": ("bad.json", json.dumps(archive).encode())}).status_code == 400

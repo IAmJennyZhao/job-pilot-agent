@@ -188,7 +188,9 @@ def assemble_content(draft, snapshot):
             "draft": draft.model_dump()}
 
 
-def plain_text(content):
+def plain_text(content, snapshot=None):
+    if snapshot is not None and generation_version(snapshot) == 1:
+        return legacy.plain_text(content)
     identity = content["identity"]
     lines = [identity.get("name", "")]
     contact = " | ".join(str(identity[k]) for k in ("location", "phone", "email", "website", "github", "linkedin") if identity.get(k))

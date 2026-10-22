@@ -8,7 +8,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from pydantic import ValidationError
 from app import models
-from app.generation_schemas import PolishedResume
 from app.resume_prompts import system_for
 from app.services import ai_service, profile_service, tailoring_source_service
 from app.services.generation_inputs import capture, require_capture
@@ -96,12 +95,16 @@ def stage_input(snapshot, stage, accepted, repair=None):
     if generation_version(snapshot) == 2:
         projection = snapshot["projection"]
         data["contract"] = {
+            "composition_version": 1,
             "critique_targets": ["draft", "skills", *[f"bullets.{b['id']}" for b in accepted.get("select", {}).get("bullets", [])]],
             "claim_ids": [c["id"] for c in projection["claims"]],
             "skill_source_ids": [c["id"] for key in ("technology_catalog", "skill_groups") for c in projection[key]],
             "overlap_policy": "At most one bullet per overlap group. Prefer one representative; permitted complementary claims may share that bullet up to 45 words.",
             "lineage_policy": "New bullet IDs require explicit parents and accepted critique issue links; retire every replaced parent.",
         }
+        if stage == "revise":
+            from app.services.resume_composition import revision_seed
+            data["contract"]["revision_seed"] = revision_seed(data)
     return data
 
 
@@ -155,9 +158,11 @@ def execute(engine, run_id):
             for attempt_number in (1, 2):
                 data = stage_input(snapshot, stage, accepted, repair)
                 output_model = output_models(snapshot)[stage]
+                from app.services.resume_composition import plan_model
+                wire_model = plan_model(output_model, data)
                 payload = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
                 # Bytes are a conservative token bound; reserve space for schema/output.
-                bound = len(payload.encode()) + len(system_for(stage, generation_version(snapshot)).encode()) + len(json.dumps(output_model.model_json_schema()).encode()) + snapshot["limits"]["output_tokens"]
+                bound = len(payload.encode()) + len(system_for(stage, generation_version(snapshot)).encode()) + len(json.dumps(wire_model.model_json_schema()).encode()) + snapshot["limits"]["output_tokens"]
                 if bound > snapshot["limits"]["context_tokens"]:
                     raise ProviderFailure("This stage exceeds the configured context budget. Sources and outputs were not truncated.")
                 timeout = min(snapshot["limits"]["attempt_seconds"], (deadline - now()).total_seconds())
@@ -210,7 +215,7 @@ def execute(engine, run_id):
         content = assemble_content(final, snapshot)
         with Session(engine) as db:
             run = lock_live(db, run_id)
-            db.add(models.TailoredRevision(run_id=run_id, content=content, content_hash=digest(content), plain_text=plain_text(content), validation=report))
+            db.add(models.TailoredRevision(run_id=run_id, content=content, content_hash=digest(content), plain_text=plain_text(content, snapshot), validation=report))
             run.state, run.active_key, run.finished_at = "completed", None, now()
             db.commit()
     except ProviderFailure as exc:

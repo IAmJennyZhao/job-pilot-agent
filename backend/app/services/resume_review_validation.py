@@ -85,7 +85,7 @@ def validate_revision(content, snapshot, parent=None, identities=None):
 
 def check_stored_edit(row, baseline, snapshot, parent, identities):
     expected = build_content(ResumeEdit.model_validate(editable(row["content"])), baseline, snapshot)
-    if row["content"] != expected or row["content_hash"] != digest(expected) or row["plain_text"] != plain_text(expected):
+    if row["content"] != expected or row["content_hash"] != digest(expected) or row["plain_text"] != plain_text(expected, snapshot):
         raise ValueError("Edited resume content or derived text was altered")
     if row["validation"] != validate_revision(expected, snapshot, parent, identities):
         raise ValueError("Edited resume validation was altered")

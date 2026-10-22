@@ -17,6 +17,8 @@ Use the dashboard to track active opportunities, spot stale applications, monito
 
 Save jobs from pasted descriptions or URLs, extract structured details, flag duplicates, and run AI-assisted analysis for resume fit, company research, interview prep, asset recommendations, skill gaps, and study plans.
 
+With approved tailoring sources active, open a saved job, review its complete description and preference checks, then choose **Generate tailored resume**. Four passes select evidence, critique, revise and polish a saved draft. Progress, evidence and retry history appear on the job page; detailed analysis remains a separate action. Generation currently permits conservative source-preserving wording and requires human review. PDF/downloads and final approval are later phases. See [Phase 3 verification and operating notes](docs/tailoring-phase3.md).
+
 [![Job Intelligence Flow Demo](docs/assets/job-intelligence-flow-quick.gif)](docs/assets/job-intelligence-flow.mp4)
 [Watch Full Job Intelligence Flow Demo](docs/assets/job-intelligence-flow.mp4)
 
@@ -82,6 +84,7 @@ Important settings:
 
 - `DATABASE_URL` defaults to local SQLite at `backend/careerpilot.db`.
 - `OPENAI_API_KEY` and `OPENAI_MODEL` enable AI actions.
+- `TAILORING_CONTEXT_TOKENS` bounds resume-generation inputs (default `128000`); keep it within the configured model's context window.
 - `TAVILY_API_KEY` enables public web retrieval for company research.
 - `NEXT_PUBLIC_API_BASE_URL` points the frontend at the backend.
 

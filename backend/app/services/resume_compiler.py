@@ -41,7 +41,10 @@ def compile_pdf(tex, executable):
         raise ValueError("Two previews are already rendering. Retry after they finish.")
     try:
         # OS-managed private temporary directories; no paths derived from imported data.
-        with tempfile.TemporaryDirectory(prefix="job-pilot-render-") as directory:
+        scratch = Path(get_settings().asset_storage_dir).resolve() / "render-tmp"
+        scratch.mkdir(parents=True, exist_ok=True, mode=0o700)
+        cleanup_stale_workspaces(scratch)
+        with tempfile.TemporaryDirectory(prefix="job-pilot-render-", dir=scratch) as directory:
             root = Path(directory)
             (root / "resume.tex").write_text(tex, encoding="utf-8")
             # No API credentials, custom TeX search paths, shell escape or font generators.
@@ -83,6 +86,17 @@ def compile_pdf(tex, executable):
         _slots.release()
 
 
+def cleanup_stale_workspaces(root):
+    """Only app-owned scratch directories; approved bundles live transactionally in SQLite."""
+    root = root.resolve()
+    for candidate in root.glob("job-pilot-render-*"):
+        resolved = candidate.resolve()
+        if candidate.is_symlink() or candidate.is_junction() or not resolved.is_relative_to(root) or not candidate.is_dir():
+            continue
+        if time.time() - candidate.stat().st_mtime > 3600:
+            shutil.rmtree(resolved)
+
+
 def normalized(text):
     # Ignore layout whitespace/separators and PDF ligature encoding, not substantive text.
     text = unicodedata.normalize("NFKC", text).replace("--", "–")
@@ -98,6 +112,21 @@ def inspect_pdf(pdf, text, compiler_warnings=()):
             raise ValueError("Unreadable or excessive PDF pages.")
         if len(document) != 1:
             issues.append(f"Resume is {len(document)} pages. Save a shorter revision; body text and margins will not be reduced.")
+        if document.embfile_count():
+            raise ValueError("PDF attachments are not allowed.")
+        for xref in range(1, document.xref_length()):
+            # Fail closed on active content in imported backup bytes too.
+            for key in ("JS", "AA", "AcroForm", "RichMediaContent", "XFA"):
+                if document.xref_get_key(xref, key)[0] != "null":
+                    raise ValueError("PDF active content is not allowed.")
+            opening = document.xref_get_key(xref, "OpenAction")
+            if opening[0] != "null":
+                target = int(opening[1].split()[0]) if opening[0] == "xref" else 0
+                if not target or document.xref_get_key(target, "S") != ("name", "/GoTo") or set(document.xref_get_keys(target)) != {"S", "D"}:
+                    raise ValueError("PDF opening actions must only select the initial page.")
+            action = document.xref_get_key(xref, "S")
+            if action[0] == "name" and action[1] in {"/JavaScript", "/Launch", "/SubmitForm", "/ImportData", "/GoToR", "/GoToE"}:
+                raise ValueError("PDF external actions are not allowed.")
         extracted = ""
         for page in document:
             if abs(page.rect.width - 612) > 1 or abs(page.rect.height - 792) > 1:

@@ -42,14 +42,35 @@ def safe_link(value, email=False):
     from urllib.parse import quote
     if not value or not value.isascii() or any(c.isspace() for c in value):
         return None
+    if not email and ":" in value and not value.startswith(("https://", "http://")):
+        return None
     target = "mailto:" + value if email else value if "://" in value else "https://" + value
     parsed = urlsplit(target)
     if parsed.scheme not in ({"mailto"} if email else {"https", "http"}) or (not email and (not parsed.hostname or parsed.username or parsed.password)):
         return None
-    return quote(target, safe=":/@.-?=+,")
+    target = re.sub(r"%(?![a-fA-F0-9]{2})", "%25", target)
+    return quote(target, safe=":/?#[]@!$&'()*+,;=%")
 
 
-def document(content, snapshot):
+def presentation_metadata(content, snapshot, bank):
+    """Add project presentation from the frozen approved bank without rewriting old drafts.
+
+    Older generation projections omitted these fields. Tech lines only include technologies
+    explicitly supported by the selected claims, never planned or excluded work.
+    """
+    records = {r["id"]: r for r in bank["records"]}
+    selected = {cid for b in content["draft"]["bullets"] for cid in b["evidence_ids"]}
+    metadata = {}
+    for r in content["records"]:
+        if r["kind"] != "project": continue
+        approved = records[r["id"]]
+        supported = {name.casefold() for c in snapshot["projection"]["claims"] if c["id"] in selected and c["record_id"] == r["id"] for name in c["technologies"]}
+        metadata[r["id"]] = {"subtitle": approved.get("subtitle"), "public_url": approved.get("public_url"),
+            "technologies": [name for name in approved.get("technologies", []) if name.casefold() in supported]}
+    return metadata
+
+
+def document(content, snapshot, metadata=None):
     """Allowlisted public presentation; IDs, provenance, gaps and notes never escape."""
     identity = content["identity"]
     def cell(value, link=None):
@@ -66,13 +87,18 @@ def document(content, snapshot):
         if e.get("minors"): detail.append("Minors: " + ", ".join(e["minors"]))
         education.append([e["institution"], e.get("graduation_display") or e.get("graduation") or "", " | ".join(detail)])
     remaining = {s["name"].casefold(): s["name"] for s in content["draft"]["skills"]}
-    skills = []
+    categories = {"Languages": [], "Frameworks & Libraries": [], "Data & Tools": []}
     for group in snapshot["projection"]["skill_groups"]:
         names = [remaining.pop(v.casefold()) for v in group["values"] if v.casefold() in remaining]
-        if names: skills.append([group["label"], ", ".join(names)])
-    if remaining: skills.append(["Technologies", ", ".join(remaining.values())])
+        # Source labels can include editorial instructions. Only public, owned labels export.
+        label = group["label"].casefold()
+        category = "Languages" if label.startswith("languages") else "Frameworks & Libraries" if label.startswith("frameworks") else "Data & Tools"
+        categories[category].extend(names)
+    categories["Data & Tools"].extend(remaining.values())
+    skills = [[label, ", ".join(names)] for label, names in categories.items() if names]
     entries = []
     for r in content["records"]:
+        r = {**r, **(metadata or {}).get(r["id"], {})}
         bullets = [b["text"] for b in content["draft"]["bullets"] if b["record_id"] == r["id"]]
         if r["kind"] == "employment":
             entries.append({"kind": "employment", "heading": r.get("employer") or "", "dates": r.get("dates_display") or " - ".join(r[k] for k in ("start", "end") if r.get(k)),

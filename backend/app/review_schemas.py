@@ -33,3 +33,9 @@ class ReviewResume(StrictModel):
     content_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
     validation_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
     input_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+class ApproveResumeExport(StrictModel):
+    preview_receipt_id: str = Field(min_length=36, max_length=36)
+    manifest_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    layout_reviewed: bool

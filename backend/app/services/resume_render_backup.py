@@ -7,6 +7,7 @@ def validate_render_tables(tables):
     baselines = {r["id"]: r for r in tables["tailored_revisions"]}
     revisions = {**baselines, **{r["id"]: r for r in tables["resume_edit_revisions"]}}
     runs = {r["id"]: r for r in tables["tailoring_runs"]}
+    sources = {r["id"]: r for r in tables["tailoring_source_versions"]}
     renders = {r["id"]: r for r in tables["resume_renders"]}
     receipts = {r["id"]: r for r in tables["resume_preview_receipts"]}
     reviews = {r["id"]: r for r in tables["resume_review_approvals"]}
@@ -22,7 +23,7 @@ def validate_render_tables(tables):
         validation = validation_for(SimpleNamespace(**revision), SimpleNamespace(**baseline), edits, run)
         if not validation["valid"] or row["validation_hash"] != digest(validation):
             raise ValueError("Render content validation mismatch")
-        rendering.verify_bundle(SimpleNamespace(**row), revision["content"], run.snapshot)
+        rendering.verify_bundle(SimpleNamespace(**row), revision["content"], run.snapshot, sources[run.source_id]["bank"])
     for receipt in receipts.values():
         if receipt["manifest_hash"] != renders[receipt["render_id"]]["manifest_hash"]:
             raise ValueError("Preview manifest mismatch")

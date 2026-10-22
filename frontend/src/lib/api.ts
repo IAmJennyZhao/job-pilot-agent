@@ -36,7 +36,7 @@ import type {
 
 import type { IntakeReview, IntakeSave, IntakeEvaluation, IntakePreparation } from "./intake-types";
 import type { GenerationRequest, GenerationRun, GenerationWorkspace } from "./generation-types";
-import type { ReviewWorkspace, SaveResumeEdit, RestoreResumeRevision, ReviewResume } from "./review-types";
+import type { ReviewWorkspace, SaveResumeEdit, RestoreResumeRevision, ReviewResume, ResumeRender, ResumeRenderPreview } from "./review-types";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
@@ -161,6 +161,16 @@ export const api = {
   saveResumeEdit: (id: string, payload: SaveResumeEdit) => request<ReviewWorkspace>(`/api/tailoring/resumes/${id}/revisions`, { method: "POST", body: JSON.stringify(payload) }),
   restoreResumeRevision: (id: string, payload: RestoreResumeRevision) => request<ReviewWorkspace>(`/api/tailoring/resumes/${id}/restore`, { method: "POST", body: JSON.stringify(payload) }),
   reviewResume: (id: string, payload: ReviewResume) => request<ReviewWorkspace>(`/api/tailoring/resumes/${id}/review`, { method: "POST", body: JSON.stringify(payload) }),
+  resumeRenders: (id: string, revisionId: string) => request<ResumeRender[]>(`/api/tailoring/resumes/${id}/renders?revision_id=${encodeURIComponent(revisionId)}`),
+  renderResume: (id: string, payload: ReviewResume) => request<ResumeRender>(`/api/tailoring/resumes/${id}/renders`, { method: "POST", body: JSON.stringify(payload) }),
+  previewResumeRender: (id: string, renderId: string) => request<ResumeRenderPreview>(`/api/tailoring/resumes/${id}/renders/${renderId}/preview`, { method: "POST" }),
+  approveResumeRender: (id: string, renderId: string, payload: { preview_receipt_id: string; manifest_hash: string; layout_reviewed: boolean }) => request<ResumeRender>(`/api/tailoring/resumes/${id}/renders/${renderId}/approve`, { method: "POST", body: JSON.stringify(payload) }),
+  deleteResumeRender: (id: string, renderId: string) => request<void>(`/api/tailoring/resumes/${id}/renders/${renderId}`, { method: "DELETE" }),
+  downloadResumeRender: async (id: string, renderId: string, format: "pdf" | "tex" | "txt") => {
+    const response = await fetch(`${API_BASE_URL}/api/tailoring/resumes/${id}/renders/${renderId}/download/${format}`, { cache: "no-store" });
+    if (!response.ok) { const error = await response.json(); throw new Error(error.detail || "Download failed. Retry from this saved artifact."); }
+    return response.blob();
+  },
   generationRun: (runId: string) => request<GenerationRun>(`/api/tailoring/runs/${runId}`),
   generateResume: (jobId: string, payload: GenerationRequest) => request<GenerationRun>(`/api/jobs/${jobId}/tailoring/resume`, { method: "POST", body: JSON.stringify(payload) }),
   retryResume: (runId: string, payload: GenerationRequest) => request<GenerationRun>(`/api/tailoring/runs/${runId}/retry`, { method: "POST", body: JSON.stringify(payload) }),

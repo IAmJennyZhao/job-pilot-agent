@@ -33,7 +33,7 @@ def manifest(bundle):
     return digest({k: v for k, v in bundle.items() if k != "files"})
 
 
-def verify_bundle(row, content, snapshot):
+def verify_bundle(row, content, snapshot, bank):
     bundle = row.bundle
     if bundle["renderer_version"] != layout.VERSION or bundle["template_hash"] != layout.TEMPLATE_HASH:
         raise ValueError("Unsupported historical renderer")
@@ -41,7 +41,10 @@ def verify_bundle(row, content, snapshot):
         raise ValueError("Render manifest mismatch")
     if row.input_hash != digest(snapshot) or row.render_key != render_key(row.revision_id, row.content_hash, row.validation_hash, row.input_hash, bundle["engine"]):
         raise ValueError("Render input mismatch")
-    doc = layout.document(content, snapshot)
+    metadata = layout.presentation_metadata(content, snapshot, bank)
+    if bundle["presentation_metadata"] != metadata:
+        raise ValueError("Project presentation metadata mismatch")
+    doc = layout.document(content, snapshot, metadata)
     tex, text = layout.exports(doc)
     files = decode_bundle(bundle)
     if bundle["document"] != doc or files["tex"] != tex.encode() or files["txt"] != text.encode():
@@ -61,7 +64,8 @@ def get_render(db, baseline_id, render_id):
         raise HTTPException(404, "Resume artifact not found.")
     selected = review.selected_revision(baseline, review.revisions(db, baseline), row.revision_id)
     try:
-        files = verify_bundle(row, selected.content, run.snapshot)
+        source = db.get(models.TailoringSourceVersion, run.source_id)
+        files = verify_bundle(row, selected.content, run.snapshot, source.bank)
     except (ValueError, KeyError, TypeError):
         raise HTTPException(409, "Stored artifact failed integrity checks. Restore an intact backup; historical bytes will not be replaced.") from None
     return row, files
@@ -98,7 +102,9 @@ def create(db, baseline_id, payload):
         if existing:
             get_render(db, baseline_id, existing.id)
             return details(db, existing)
-        doc = layout.document(selected["content"], snapshot)
+        source = db.get(models.TailoringSourceVersion, run.source_id)
+        metadata = layout.presentation_metadata(selected["content"], snapshot, source.bank)
+        doc = layout.document(selected["content"], snapshot, metadata)
         tex, text = layout.exports(doc)
         db.rollback()  # Compiler never holds a database transaction/lock.
         pdf, warnings = resume_compiler.compile_pdf(tex, executable)
@@ -108,7 +114,7 @@ def create(db, baseline_id, payload):
     files = {"pdf": pdf, "tex": tex.encode(), "txt": text.encode()}
     bundle = {"renderer_version": layout.VERSION, "template_hash": layout.TEMPLATE_HASH, "engine": engine,
               "source_template_hash": digest(snapshot["template_tex"]), "source_style_hash": digest(snapshot["style_guide"]),
-              "document": doc, "files": {k: base64.b64encode(v).decode("ascii") for k, v in files.items()},
+              "document": doc, "presentation_metadata": metadata, "files": {k: base64.b64encode(v).decode("ascii") for k, v in files.items()},
               "hashes": {k: sha(v) for k, v in files.items()}, "validation": validation, "compiler_warnings": warnings}
     # Keep an immutable preview even if another tab saved while it rendered. Final approval rechecks the head.
     row = models.ResumeRender(baseline_id=baseline_id, revision_id=payload.revision_id,
@@ -130,7 +136,10 @@ def preview(db, baseline_id, render_id):
     row, files = get_render(db, baseline_id, render_id)
     receipt = models.ResumePreviewReceipt(render_id=row.id, manifest_hash=row.manifest_hash)
     db.add(receipt); db.commit()
-    return {"preview_receipt_id": receipt.id, "manifest_hash": row.manifest_hash, "pdf_base64": base64.b64encode(files["pdf"]).decode("ascii")}
+    import pymupdf
+    with pymupdf.open(stream=files["pdf"], filetype="pdf") as document:
+        pages = [base64.b64encode(page.get_pixmap(matrix=pymupdf.Matrix(1.5, 1.5), alpha=False).tobytes("png")).decode("ascii") for page in document]
+    return {"preview_receipt_id": receipt.id, "manifest_hash": row.manifest_hash, "pdf_base64": base64.b64encode(files["pdf"]).decode("ascii"), "page_images": pages}
 
 
 def approve(db, baseline_id, render_id, payload):

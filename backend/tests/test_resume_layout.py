@@ -28,7 +28,7 @@ def test_escaping_and_links_are_data_only():
     assert layout.escape(r"\input{secret} & 90% $ # _ ~ ^") == r"\textbackslash{}input\{secret\} \& 90\% \$ \# \_ \textasciitilde{} \textasciicircum{}"
     assert layout.safe_link("file:///secret") is None
     assert layout.safe_link("https://user:password@example.test") is None
-    assert layout.safe_link("https://example.test/a_%20?x=y&b=2") == "https://example.test/a_%2520?x=y%26b=2"
+    assert layout.safe_link("https://example.test/a_%20?x=y&b=2") == "https://example.test/a_%20?x=y&b=2"
     with pytest.raises(ValueError): layout.escape("hidden\x00text")
 
 

@@ -4,6 +4,12 @@ export type ResumeEdit = { bullets: ResumeBullet[]; skills: ResumeDraft["skills"
 export type SaveResumeEdit = { request_key: string; expected_revision_id: string; edit: ResumeEdit };
 export type RestoreResumeRevision = { request_key: string; expected_revision_id: string; revision_id: string };
 export type ReviewResume = { revision_id: string; content_hash: string; validation_hash: string; input_hash: string };
+export type ResumeRender = {
+  id: string; revision_id: string; manifest_hash: string; content_hash: string; created_at: string;
+  renderer_version: string; engine: string; approved_at: string | null; hashes: Record<"pdf" | "tex" | "txt", string>;
+  validation: { valid: boolean; pages: number; issues: string[]; human_layout_review_required: boolean };
+};
+export type ResumeRenderPreview = { preview_receipt_id: string; manifest_hash: string; pdf_base64: string; page_images: string[] };
 export type ResumeChange = { field: string; kind: string; before: unknown; after: unknown };
 export type ReviewWorkspace = {
   baseline_id: string; run_id: string; job_id: string; profile_id: string; current_revision_id: string; input_hash: string; source_problem: string | null;

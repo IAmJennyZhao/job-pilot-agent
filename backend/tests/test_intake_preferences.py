@@ -161,3 +161,30 @@ def test_failed_intake_save_rolls_back_job_and_events(client, monkeypatch):
     with next(app.dependency_overrides[get_db]()) as db:
         assert list(db.scalars(select(models.JobStatusEvent))) == []
     assert client.post("/api/jobs/intake/save", json=request).status_code == 200
+
+
+@pytest.mark.parametrize("url", ["javascript:alert(1)", "file:///private.txt", "https://user:secret@example.test/job", "not-a-url"])
+def test_intake_rejects_invalid_source_and_review_links(client, url):
+    assert client.post("/api/jobs/extract-preview", json={"source_url": url}).status_code == 422
+    payload = review().model_dump(mode="json")
+    payload["job"]["links"] = [{"label": "Posting", "url": url}]
+    assert client.post("/api/jobs/intake/evaluate", json=payload).status_code == 422
+
+
+def test_extraction_provider_has_no_hidden_retries_and_safe_errors(monkeypatch, caplog):
+    from types import SimpleNamespace
+    from fastapi import HTTPException
+    calls = []
+    class FakeClient:
+        def __init__(self, **kwargs):
+            assert kwargs["max_retries"] == 0
+            self.responses = self
+        def parse(self, **kwargs):
+            calls.append(kwargs)
+            raise RuntimeError("PRIVATE_PROVIDER_DETAILS")
+    monkeypatch.setattr(ai_service, "get_settings", lambda: SimpleNamespace(openai_api_key="synthetic", openai_model="synthetic"))
+    monkeypatch.setattr(ai_service, "OpenAI", FakeClient)
+    with pytest.raises(HTTPException) as error:
+        ai_service.get_structured_output(schemas.JobExtractionOutput, "system", "synthetic posting")
+    assert len(calls) == 1 and error.value.status_code == 502
+    assert "PRIVATE_PROVIDER_DETAILS" not in error.value.detail + caplog.text

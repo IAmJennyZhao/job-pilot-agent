@@ -1,4 +1,5 @@
 from typing import Literal
+from urllib.parse import urlsplit
 from pydantic import BaseModel, Field, model_validator
 from app.schemas import JobCreate
 from app.intake_facts import IntakeFacts
@@ -17,6 +18,10 @@ class IntakeReview(BaseModel):
             raise ValueError("Job description exceeds 100,000 characters.")
         if self.job.pay_min is not None and self.job.pay_max is not None and self.job.pay_min > self.job.pay_max:
             raise ValueError("Minimum pay must not exceed maximum pay.")
+        for link in self.job.links:
+            url = urlsplit(link.url)
+            if url.scheme not in {"http", "https"} or not url.hostname or url.username or url.password:
+                raise ValueError("Job links must be HTTP or HTTPS URLs without embedded credentials.")
         return self
 
 

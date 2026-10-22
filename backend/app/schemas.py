@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, field_serializer, model_validator
+from app.intake_facts import IntakeFacts
 
 from app.models import (
     InterviewMode,
@@ -104,9 +105,6 @@ class JobDuplicateCandidate(BaseModel):
     role_title: str
     status: JobStatus
     matched_on: list[str] = Field(default_factory=list)
-
-
-from app.intake_facts import IntakeFacts
 
 
 class JobExtractPreviewRequest(BaseModel):

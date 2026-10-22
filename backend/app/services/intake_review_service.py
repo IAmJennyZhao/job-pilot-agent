@@ -60,7 +60,7 @@ def preparation(db, job):
     full_description_ready = False
     if saved:
         review = IntakeReview.model_validate(saved.review)
-        for key in ("company", "role_title", "location", "remote_type", "pay_min", "pay_max", "pay_currency", "pay_period", "source_content"):
+        for key in ("company", "role_title", "location", "remote_type", "pay_min", "pay_max", "pay_currency", "pay_period", "pay_raw", "source_content", "summary", "responsibilities", "required_skills"):
             stale |= getattr(review.job, key) != getattr(job, key)
         stale |= sorted(str(x.url) for x in review.job.links) != sorted(x.url for x in job.links)
         if not stale:

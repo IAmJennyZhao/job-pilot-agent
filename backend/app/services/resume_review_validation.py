@@ -48,7 +48,15 @@ def build_content(edit: ResumeEdit, baseline, snapshot):
     return content
 
 
-def validate_revision(content, snapshot, parent=None):
+def bullet_identities(contents):
+    identities = {}
+    for content in contents:
+        for bullet in content["draft"]["bullets"]:
+            identities.setdefault(bullet["id"], (bullet["record_id"], bullet["evidence_ids"]))
+    return identities
+
+
+def validate_revision(content, snapshot, parent=None, identities=None):
     draft = EditedDraft.model_validate(content["draft"])
     errors = validate_draft(draft, snapshot)
     if not draft.bullets:
@@ -61,12 +69,11 @@ def validate_revision(content, snapshot, parent=None):
         errors.append("Protected employment/project metadata differs from the approved source.")
     if [r for r in content["records"] if r["kind"] == "employment"] != [r for r in protected["records"] if r["kind"] == "employment"]:
         errors.append("Employment must remain reverse chronological.")
-    if parent:
-        previous = {b["id"]: b for b in parent["draft"]["bullets"]}
-        for bullet in draft.bullets:
-            old = previous.get(bullet.id)
-            if old and (old["record_id"], old["evidence_ids"]) != (bullet.record_id, bullet.evidence_ids):
-                errors.append(f"Bullet {bullet.id} changes its source identity; add approved content as a new bullet instead.")
+    identities = identities if identities is not None else bullet_identities([parent] if parent else [])
+    for bullet in draft.bullets:
+        original = identities.get(bullet.id)
+        if original and original != (bullet.record_id, bullet.evidence_ids):
+            errors.append(f"Bullet {bullet.id} changes its source identity; add approved content as a new bullet instead.")
     issues = []
     for message in errors:
         match = re.match(r"Bullet (\S+) ", message)
@@ -76,9 +83,9 @@ def validate_revision(content, snapshot, parent=None):
             "unmet_requirement_ids": draft.unmet_requirement_ids, "human_review_required": True}
 
 
-def check_stored_edit(row, baseline, snapshot, parent):
+def check_stored_edit(row, baseline, snapshot, parent, identities):
     expected = build_content(ResumeEdit.model_validate(editable(row["content"])), baseline, snapshot)
     if row["content"] != expected or row["content_hash"] != digest(expected) or row["plain_text"] != plain_text(expected):
         raise ValueError("Edited resume content or derived text was altered")
-    if row["validation"] != validate_revision(expected, snapshot, parent):
+    if row["validation"] != validate_revision(expected, snapshot, parent, identities):
         raise ValueError("Edited resume validation was altered")

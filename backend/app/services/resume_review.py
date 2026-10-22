@@ -6,7 +6,7 @@ from app import models
 from app.services.intake_preferences import digest
 from app.services.resume_generation import now, aware, scoped_run
 from app.services import tailoring_source_service
-from app.services.resume_review_validation import editable, build_content, validate_revision, differences, VERSION
+from app.services.resume_review_validation import editable, build_content, validate_revision, differences, bullet_identities, VERSION
 from app.services.resume_validation import plain_text
 
 
@@ -55,7 +55,8 @@ def validation_for(row, baseline, edits, run):
     parent = None
     if row.id != baseline.id:
         parent = selected_revision(baseline, edits, row.parent_id or baseline.id).content
-    return validate_revision(row.content, run.snapshot, parent)
+    prior = [baseline.content, *[r.content for r in edits if r.sequence < getattr(row, "sequence", 0)]] if row.id != baseline.id else []
+    return validate_revision(row.content, run.snapshot, parent, bullet_identities(prior))
 
 
 def view(db, baseline_id, revision_id=None):
@@ -106,7 +107,7 @@ def save(db, baseline_id, payload, restore=False):
     else:
         edit = payload.edit
     content = build_content(edit, baseline.content, run.snapshot)
-    validation = validate_revision(content, run.snapshot, head.content)
+    validation = validate_revision(content, run.snapshot, head.content, bullet_identities([baseline.content, *[r.content for r in edits]]))
     row = models.ResumeEditRevision(baseline_id=baseline.id, parent_id=head.id if edits else None,
         sequence=len(edits)+1, origin="restored" if restore else "edited", restored_from_id=restored.id if restored else None,
         request_key=payload.request_key, request_hash=fingerprint, content=content, content_hash=digest(content),

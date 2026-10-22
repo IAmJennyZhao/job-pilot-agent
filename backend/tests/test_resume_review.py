@@ -197,3 +197,50 @@ def test_real_sqlite_concurrent_edits_and_immutable_history(client, completed, m
         restore(db, latest, hashlib.sha256(latest).hexdigest())
         restore(db, latest, hashlib.sha256(latest).hexdigest())
     engine.dispose()
+
+
+def test_invalid_provenance_cannot_be_laundered_and_original_can_be_restored(client, completed):
+    *_, url = completed
+    initial = client.get(url).json()
+    payload = save_payload(initial)
+    payload["edit"]["bullets"][0]["evidence_ids"] = ["C-BLOCKED"]
+    invalid = client.post(url + "/revisions", json=payload).json()
+    repeated = client.post(url + "/revisions", json=save_payload(invalid)).json()
+    assert not repeated["revision"]["validation"]["valid"]
+    restored = client.post(url + "/restore", json={"request_key": str(uuid.uuid4()), "expected_revision_id": repeated["current_revision_id"], "revision_id": initial["revision"]["id"]}).json()
+    assert restored["revision"]["validation"]["valid"]
+    assert client.post(url + "/review", json=approval_payload(restored)).status_code == 201
+
+
+def test_select_order_and_remove_approved_content_preserves_record_metadata(client, prepared):
+    from tailoring_fixtures import bank_data, import_payload
+    job, source = prepared
+    bank = bank_data(); bank["bank_version"] = "synthetic.extended"
+    bank["records"] += [
+        {"id": "R-OLD", "kind": "employment", "employer": "Earlier Co", "title_display": "Original title", "start": "2022-01", "end": "2023-01", "source_id": "S-1"},
+        {"id": "P-1", "kind": "project", "name": "Project One", "source_id": "S-1"},
+        {"id": "P-2", "kind": "project", "name": "Project Two", "source_id": "S-1"}]
+    for rid in ("R-OLD", "P-1", "P-2"):
+        cid = "C-" + rid
+        bank["claims"].append({"id": cid, "record_id": rid, "source_id": "S-1", "text": f"Built a fictional internal prototype for {rid}.", "evidence_status": "source_supported", "generation_eligible": True})
+        bank["approval"]["approved_claim_ids"].append(cid)
+    imported = client.post("/api/profile/tailoring-sources/import", json=import_payload(bank))
+    assert imported.status_code == 201, imported.text
+    new = imported.json()
+    assert client.post(f"/api/profile/tailoring-sources/{new['id']}/activate", json={"expected_hash": new["bundle_hash"], "expected_active_id": source["id"]}).status_code == 200
+    run = generate(client, job).json(); url = f"/api/tailoring/resumes/{run['revision']['id']}"
+    initial = client.get(url).json(); payload = save_payload(initial)
+    added = [{"id": "B-" + c["id"], "record_id": c["record_id"], "evidence_ids": [c["id"]], "requirement_ids": [], "text": c["text"]} for c in initial["evidence"] if c["id"] != "C-ALLOWED"]
+    payload["edit"]["bullets"] = added + payload["edit"]["bullets"]
+    payload["edit"]["project_order"] = ["P-2", "P-1"]
+    edited = client.post(url + "/revisions", json=payload)
+    assert edited.status_code == 201, edited.text
+    view = edited.json()
+    assert view["revision"]["validation"]["valid"]
+    records = view["revision"]["content"]["records"]
+    assert [r["id"] for r in records] == ["R-1", "R-OLD", "P-2", "P-1"]
+    assert records[1]["title_display"] == "Original title" and records[1]["end"] == "2023-01"
+    reduced = save_payload(view); reduced["edit"]["bullets"] = reduced["edit"]["bullets"][-1:]; reduced["edit"]["project_order"] = []; reduced["edit"]["skills"] = []
+    final = client.post(url + "/revisions", json=reduced).json()
+    assert final["revision"]["validation"]["valid"] and len(final["revision"]["content"]["records"]) == 1
+    assert final["revision"]["content"]["draft"]["skills"] == []

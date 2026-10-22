@@ -1,6 +1,6 @@
 """Validate review history before restore; never infer approval for legacy drafts."""
 from app.services.intake_preferences import digest
-from app.services.resume_review_validation import VERSION, validate_revision, check_stored_edit, editable
+from app.services.resume_review_validation import VERSION, validate_revision, check_stored_edit, editable, bullet_identities
 
 
 def validate_review_tables(tables):
@@ -14,6 +14,7 @@ def validate_review_tables(tables):
         snapshot = runs[baseline["run_id"]]["snapshot"]
         reports[baseline["id"]] = validate_revision(baseline["content"], snapshot)
         previous = baseline
+        previous_contents = [baseline["content"]]
         rows = sorted((r for r in tables["resume_edit_revisions"] if r["baseline_id"] == baseline["id"]), key=lambda r: r["sequence"])
         for number, row in enumerate(rows, 1):
             if row["id"] in indexed or row["sequence"] != number or row["parent_id"] != (previous["id"] if number > 1 else None):
@@ -27,12 +28,13 @@ def validate_review_tables(tables):
             payload.update({"revision_id": row["restored_from_id"]} if row["origin"] == "restored" else {"edit": editable(row["content"])})
             if row["request_hash"] != digest({"action": "restore" if row["origin"] == "restored" else "edit", "payload": payload}):
                 raise ValueError("Invalid edit request identity")
-            check_stored_edit(row, baseline["content"], snapshot, previous["content"])
+            check_stored_edit(row, baseline["content"], snapshot, previous["content"], bullet_identities(previous_contents))
             reports[row["id"]] = row["validation"]
             indexed[row["id"]] = row
             owners[row["id"]] = baseline["id"]
             ordered.append(row)
             previous = row
+            previous_contents.append(row["content"])
     if len(ordered) != len(tables["resume_edit_revisions"]):
         raise ValueError("Manual revision has no generated baseline")
     tables["resume_edit_revisions"] = ordered

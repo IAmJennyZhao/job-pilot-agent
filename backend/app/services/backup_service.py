@@ -6,6 +6,7 @@ import uuid
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import get_args, get_type_hints
+from types import SimpleNamespace
 
 from fastapi import HTTPException
 from pydantic import TypeAdapter
@@ -17,7 +18,50 @@ from app.database import Base, build_engine
 
 MAX_BYTES = 50 * 1024 * 1024
 FORMAT = "job-pilot-backup"
-VERSION = 1
+VERSION = 2
+TAILORING_TABLES = {"tailoring_source_versions", "tailoring_source_events", "tailoring_profile_states"}
+V1_TABLES = {"application_attributions", "asset_recommendation_snapshots", "cover_letter_templates",
+            "interview_messages", "interview_questions", "interview_sessions", "job_actions", "job_analyses",
+            "job_links", "job_status_events", "jobs", "resume_options", "resume_profiles", "resume_suggestions",
+            "saved_study_plans", "skill_gaps", "advanced_job_analyses", "company_research_snapshots"}
+
+
+def validate_tailoring_tables(tables):
+    """Restore cannot turn edited JSON or a stale activation pointer into trusted facts."""
+    from app.services.tailoring_source_service import validate_stored
+    versions = {row["id"]: row for row in tables["tailoring_source_versions"]}
+    histories = {key: [] for key in versions}
+    for row in versions.values():
+        validate_stored(SimpleNamespace(**row))
+    for event in tables["tailoring_source_events"]:
+        source = versions.get(event["source_id"])
+        if not source or event["content_hash"] != source["bundle_hash"]:
+            raise ValueError("Invalid source activation reference")
+        histories[source["id"]].append(event)
+    statuses = {}
+    for source_id, history in histories.items():
+        state = "pending"
+        for index, event in enumerate(sorted(history, key=lambda e: e["sequence"]), start=1):
+            action = event["action"]
+            allowed = {"pending": {"active", "revoked"}, "active": {"superseded", "revoked"},
+                       "superseded": {"active", "revoked"}, "revoked": set()}
+            if event["sequence"] != index or action not in allowed[state]:
+                raise ValueError("Invalid source activation history")
+            state = action
+        statuses[source_id] = state
+    seen_profiles = set()
+    for state in tables["tailoring_profile_states"]:
+        profile_id = state["profile_id"]
+        if profile_id in seen_profiles or state["revision"] < 0:
+            raise ValueError("Invalid source profile state")
+        seen_profiles.add(profile_id)
+        active = [key for key, row in versions.items() if row["profile_id"] == profile_id and statuses[key] == "active"]
+        if active != ([state["active_source_id"]] if state["active_source_id"] else []):
+            raise ValueError("Source activation pointer/history mismatch")
+        if active and versions[active[0]]["bank"]["approval"]["status"] not in {"approved", "approved_with_exclusions"}:
+            raise ValueError("Active bank lacks recorded approval")
+    if any(row["profile_id"] not in seen_profiles for row in versions.values()):
+        raise ValueError("Source has no profile state")
 
 
 def json_value(value):
@@ -61,8 +105,12 @@ def validate_archive(content: bytes):
         raise HTTPException(413, "Backup exceeds the 50 MB archive limit")
     try:
         archive = json.loads(content)
-        if archive.get("format") != FORMAT or archive.get("version") != VERSION:
+        if archive.get("format") != FORMAT or archive.get("version") not in {1, VERSION}:
             raise ValueError("Unsupported backup format or version")
+        if archive["version"] == 1:
+            if set(archive["tables"]) != V1_TABLES:
+                raise ValueError("Invalid legacy backup tables")
+            archive["tables"].update({name: [] for name in TAILORING_TABLES})
         if set(archive["tables"]) != set(Base.metadata.tables):
             raise ValueError("Backup tables do not match this app version")
         tables = {}
@@ -109,6 +157,7 @@ def validate_archive(content: bytes):
         missing = archive.get("missing_files", [])
         if not isinstance(missing, list) or not all(isinstance(item, str) for item in missing):
             raise ValueError("Invalid missing-file manifest")
+        validate_tailoring_tables(tables)
         # Validate IDs, foreign keys and SQL types before touching live records.
         engine = build_engine("sqlite://")
         try:

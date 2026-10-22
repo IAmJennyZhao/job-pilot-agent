@@ -12,6 +12,7 @@ from sqlalchemy import (
     JSON,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -748,3 +749,42 @@ class SavedStudyPlan(TimestampMixin, Base):
     plan: Mapped[dict] = mapped_column(JSON, nullable=False)
 
     resume_profile: Mapped[ResumeProfile] = relationship(back_populates="saved_study_plans")
+
+
+class TailoringSourceVersion(Base):
+    """Content is immutable; activation lifecycle is recorded separately."""
+    __tablename__ = "tailoring_source_versions"
+    __table_args__ = (UniqueConstraint("profile_id", "bundle_hash", name="uq_tailoring_source_bundle"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    profile_id: Mapped[str] = mapped_column(ForeignKey("resume_profiles.id", ondelete="RESTRICT"), nullable=False, index=True)
+    bank_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    bundle_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    bank_markdown: Mapped[str] = mapped_column(Text, nullable=False)
+    preferences_yaml: Mapped[str] = mapped_column(Text, nullable=False)
+    template_tex: Mapped[str] = mapped_column(Text, nullable=False)
+    style_guide: Mapped[str] = mapped_column(Text, nullable=False)
+    bank: Mapped[dict] = mapped_column(JSON, nullable=False)
+    preferences: Mapped[dict] = mapped_column(JSON, nullable=False)
+    projection: Mapped[dict] = mapped_column(JSON, nullable=False)
+    validation: Mapped[dict] = mapped_column(JSON, nullable=False)
+    hashes: Mapped[dict] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class TailoringSourceEvent(Base):
+    __tablename__ = "tailoring_source_events"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    source_id: Mapped[str] = mapped_column(ForeignKey("tailoring_source_versions.id", ondelete="RESTRICT"), nullable=False, index=True)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    action: Mapped[str] = mapped_column(String(32), nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    __table_args__ = (UniqueConstraint("source_id", "sequence", name="uq_tailoring_source_event"),)
+
+
+class TailoringProfileState(Base):
+    __tablename__ = "tailoring_profile_states"
+    profile_id: Mapped[str] = mapped_column(ForeignKey("resume_profiles.id", ondelete="RESTRICT"), primary_key=True)
+    active_source_id: Mapped[str | None] = mapped_column(ForeignKey("tailoring_source_versions.id", ondelete="RESTRICT"))
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

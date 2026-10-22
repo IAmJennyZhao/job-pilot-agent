@@ -13,6 +13,7 @@ from app.config import get_settings
 from app.logging_config import request_id_var, setup_logging
 from app.migrations import run_migrations
 from app.routers import actions, ai, dashboard, data, interview, jobs, profile, reports, skill_gaps, study_plans
+from app.routers import tailoring_sources
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +104,7 @@ def create_app() -> FastAPI:
     app.include_router(reports.router)
     app.include_router(data.router)
     app.include_router(profile.router)
+    app.include_router(tailoring_sources.router)
     app.include_router(skill_gaps.router)
     app.include_router(study_plans.router)
     app.include_router(dashboard.router)

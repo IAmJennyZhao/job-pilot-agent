@@ -4,6 +4,7 @@ scope.md
 .vscode/
 
 # Local databases and generated storage
+.private/
 *.db
 *.db.bak*
 *.sqlite

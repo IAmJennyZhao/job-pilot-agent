@@ -1,0 +1,74 @@
+import { test, expect } from "@playwright/test";
+import { execFileSync } from "node:child_process";
+import path from "node:path";
+import { readFile } from "node:fs/promises";
+
+const backend = "http://127.0.0.1:8100";
+// All model responses come from acceptance_fixtures; PDF compilation and persistence are real.
+for (const family of ["ai", "backend", "fullstack"]) {
+  test(`${family}: intake through both exports, then optional analysis`, async ({ page, request }, info) => {
+    test.setTimeout(120_000);
+    const args = [...(process.platform === "win32" ? ["-3"] : []), "-c",
+      `import sys,json;sys.path.insert(0,'tests');from acceptance_fixtures import bundle,CASES,posting;print(json.dumps({'bundle':bundle(),'case':CASES['${family}'],'posting':posting('${family}')}))`];
+    const fixture = JSON.parse(execFileSync(process.platform === "win32" ? "py" : "python", args, { cwd: path.resolve(process.cwd(), "../backend"), encoding: "utf8" }));
+    fixture.bundle.style_guide += ` ${info.project.name} ${Date.now()}`;
+    const source = await (await request.post(`${backend}/api/profile/tailoring-sources/import`, { data: fixture.bundle })).json();
+    const state = await (await request.get(`${backend}/api/profile/tailoring-sources`)).json();
+    expect((await request.post(`${backend}/api/profile/tailoring-sources/${source.id}/activate`, { data: { expected_hash: source.bundle_hash, expected_active_id: state.active_id } })).ok()).toBeTruthy();
+    let analysis = 0;
+    page.on("request", r => { if (r.method() === "POST" && r.url().includes("/api/ai/")) analysis++; });
+    await page.goto("/jobs");
+    await page.getByRole("button", { name: "Add job", exact: true }).click();
+    await page.getByLabel("Job URL", { exact: true }).fill(`https://example.test/${family}/${info.project.name}/${Date.now()}`);
+    await page.getByLabel("Pasted page content").fill(fixture.posting);
+    await page.getByRole("button", { name: "Extract fields", exact: true }).click();
+    await expect(page.getByLabel("Company", { exact: true })).toHaveValue(fixture.case.company);
+    await expect(page.getByLabel("Role title", { exact: true })).toHaveValue(fixture.case.title);
+    await page.getByLabel("Role title", { exact: true }).fill(`${fixture.case.title} ${info.project.name} ${Date.now()}`);
+    await expect(page.getByText(/Base pay is below your USD 135,000 target/)).toBeVisible();
+    await page.getByLabel("I reviewed the full job description for later tailoring.").check();
+    await page.getByRole("button", { name: "Continue to tailoring", exact: true }).click();
+    await expect(page).toHaveURL(/\/jobs\/.+tailoring=prepare/);
+    const id = new URL(page.url()).pathname.split("/").pop();
+    const original = await (await request.get(`${backend}/api/jobs/${id}`)).json();
+    expect(original.status).toBe("Saved"); expect(analysis).toBe(0);
+    await page.getByRole("button", { name: "Generate tailored resume", exact: true }).click();
+    const review = page.getByRole("region", { name: "Resume review and editing" });
+    await expect(review.getByLabel("Resume draft preview")).toContainText(fixture.case.claims[0]);
+    await expect(review).toContainText(fixture.case.gap);
+    await review.getByRole("button", { name: "Mark reviewed", exact: true }).click();
+    const exports = page.getByRole("region", { name: "Resume rendering and downloads" });
+    await exports.getByRole("button", { name: "Render saved revision", exact: true }).click();
+    await exports.getByRole("button", { name: "Open PDF preview", exact: true }).click();
+    await expect(exports.getByRole("img", { name: "Rendered resume page 1" })).toBeVisible();
+    await exports.getByLabel("I inspected this exact PDF and approve its layout.").check();
+    await exports.getByRole("button", { name: "Approve final exports", exact: true }).click();
+    const pdfEvent = page.waitForEvent("download");
+    await exports.getByRole("button", { name: "Download PDF", exact: true }).click();
+    const pdf = await pdfEvent; await pdf.saveAs(info.outputPath(`${family}.pdf`));
+    expect((await readFile(info.outputPath(`${family}.pdf`))).subarray(0, 5).toString()).toBe("%PDF-");
+    await page.getByRole("button", { name: "Generate tailored cover letters", exact: true }).click();
+    const letter = page.getByRole("region", { name: "Cover letter review", exact: true });
+    await expect(letter.getByLabel("Letter variant").locator("option")).toHaveCount(3);
+    await expect(letter).toContainText(fixture.case.letter_claims[0]);
+    await letter.getByLabel("I reviewed all 3 saved letter variants and their supporting evidence.").check();
+    await letter.getByRole("button", { name: "Approve exact letter revision", exact: true }).click();
+    const textEvent = page.waitForEvent("download");
+    await letter.getByRole("button", { name: "Download letter TXT", exact: true }).click();
+    const txt = await textEvent; await txt.saveAs(info.outputPath(`${family}.txt`));
+    expect(await readFile(info.outputPath(`${family}.txt`), "utf8")).toContain(fixture.case.letter_claims[0]);
+    expect(analysis).toBe(0);
+    const analysisResponse = page.waitForResponse(r => r.request().method() === "POST" && r.url().includes("/api/ai/run-advanced-analysis/"));
+    await page.getByRole("button", { name: "Run analysis", exact: true }).click();
+    expect((await (await analysisResponse).json()).status).toBe("complete");
+    await expect(page.getByRole("button", { name: "Run again", exact: true })).toBeVisible();
+    expect(analysis).toBe(1);
+    const after = await (await request.get(`${backend}/api/jobs/${id}`)).json();
+    expect(after.status).toBe("Saved");
+    expect(after.source_content).toBe(original.source_content);
+    await expect(exports.getByRole("button", { name: "Download PDF", exact: true })).toBeEnabled();
+    await expect(letter.getByRole("button", { name: "Download letter TXT", exact: true })).toBeEnabled();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBeTruthy();
+    await letter.screenshot({ path: info.outputPath("accepted-letter.png") });
+  });
+}

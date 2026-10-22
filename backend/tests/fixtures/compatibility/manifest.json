@@ -1,0 +1,76 @@
+[
+  {
+    "version": 1,
+    "downloads": {},
+    "job": "2e75dccc-d556-45b3-816c-fd5e907ff887",
+    "sha256": "4beffb5166fa5dc500ae368095dfe7f9f1da01315b165e7534a9354bc3838d5e",
+    "source_commit": "b1fcce62ca2eb6cf6d49fa1619cdf0f32f6e4872",
+    "file": "v1.json.gz"
+  },
+  {
+    "version": 2,
+    "downloads": {},
+    "job": "62e72323-173b-4fe6-a8c7-ec86aba1f591",
+    "sha256": "9150b1b7d242f57147f73def6c6f2ab87e61ff305a80be8d0fa745683c62f982",
+    "source_commit": "db65a3194dbe6fbfa96d1a7c0f296410a5dbaeb6",
+    "file": "v2.json.gz"
+  },
+  {
+    "version": 3,
+    "downloads": {},
+    "job": "3055938b-0329-448f-b4f8-8021eced994c",
+    "sha256": "4c2b41558d107eefab40269a92a41e693e954f8301c6da06ad506ff7fa468f16",
+    "source_commit": "59b6b283952735c3be1e3aa70d9a7b71ee98f9d1",
+    "file": "v3.json.gz"
+  },
+  {
+    "version": 4,
+    "downloads": {},
+    "baseline": "20090bc0-8cd3-4e0b-9c1f-cc2862aa61af",
+    "job": "05090751-78e6-47ea-bcd8-1189d78791ed",
+    "sha256": "3c2e4d575011b00af630b01f41fc57a903c55ca37c342394638b54f003cb2ff9",
+    "source_commit": "552db84de8b59ed0ae4183e8e2972601d252ebe8",
+    "file": "v4.json.gz"
+  },
+  {
+    "version": 5,
+    "downloads": {},
+    "baseline": "948ee860-cbab-48f6-89ed-e7f2321de848",
+    "job": "ff82d6ef-111e-4d85-9049-90ba99a0a819",
+    "sha256": "f872ee11913ab750c39391ec4cbc14641de71f3acc6930722d4a92ac6d40dfed",
+    "source_commit": "530138be953e9e4c7eb061d7636e750182f4a794",
+    "file": "v5.json.gz"
+  },
+  {
+    "version": 6,
+    "downloads": {
+      "/api/tailoring/resumes/7efb2fdc-5bac-4715-91df-999d61f487bf/renders/3620217d-7c06-492a-b971-63c36e14f3ce/download/pdf": "cc8d39562157ee96bbf23403a6cb54f3f34501ffce8fc4f5935f4db1843bc91f",
+      "/api/tailoring/resumes/7efb2fdc-5bac-4715-91df-999d61f487bf/renders/3620217d-7c06-492a-b971-63c36e14f3ce/download/tex": "0a95d92cb69d5012a6df575f132c344b5c1f0f708dc31930aa0e35db057f3120",
+      "/api/tailoring/resumes/7efb2fdc-5bac-4715-91df-999d61f487bf/renders/3620217d-7c06-492a-b971-63c36e14f3ce/download/txt": "c80608f9dff288f6ac0d99b0ad9a3d80b51e731182113b3bb001cd8e2368a471"
+    },
+    "baseline": "7efb2fdc-5bac-4715-91df-999d61f487bf",
+    "job": "f6123402-ff02-4299-b525-5442ac96e77a",
+    "sha256": "5a446ce4c2a164db6e7a55cd0391a4a3480a67ae99bb476bf5b74e451e93c0d9",
+    "source_commit": "b31d2126b4f57617e1a48bf4e8db8544d982d9ba",
+    "file": "v6.json.gz"
+  },
+  {
+    "version": 7,
+    "downloads": {
+      "/api/tailoring/resumes/aefef7a3-517f-4309-86db-47f5a7780da9/renders/7d94c277-1b56-4ad0-92ac-f6e1a094c357/download/pdf": "cc8d39562157ee96bbf23403a6cb54f3f34501ffce8fc4f5935f4db1843bc91f",
+      "/api/tailoring/resumes/aefef7a3-517f-4309-86db-47f5a7780da9/renders/7d94c277-1b56-4ad0-92ac-f6e1a094c357/download/tex": "0a95d92cb69d5012a6df575f132c344b5c1f0f708dc31930aa0e35db057f3120",
+      "/api/tailoring/resumes/aefef7a3-517f-4309-86db-47f5a7780da9/renders/7d94c277-1b56-4ad0-92ac-f6e1a094c357/download/txt": "c80608f9dff288f6ac0d99b0ad9a3d80b51e731182113b3bb001cd8e2368a471",
+      "/api/cover-letters/595ac6c2-c10d-4355-ae59-7b016f058c8e/revisions/595ac6c2-c10d-4355-ae59-7b016f058c8e/download/0/txt": "78bcf2bc691d29a7fef0f2dae5c24fc778138cb2fab1bc4469f226552361d927",
+      "/api/cover-letters/595ac6c2-c10d-4355-ae59-7b016f058c8e/revisions/595ac6c2-c10d-4355-ae59-7b016f058c8e/download/0/md": "eb5d0755f21f00876df8772884e9f55b1edf785b7680454f9420deb0baa56e4b",
+      "/api/cover-letters/595ac6c2-c10d-4355-ae59-7b016f058c8e/revisions/595ac6c2-c10d-4355-ae59-7b016f058c8e/download/1/txt": "8deb246de8f23d5d5e8baf1c1a22b7de5d20583c0f8c40883d0ac51a50b1ddf5",
+      "/api/cover-letters/595ac6c2-c10d-4355-ae59-7b016f058c8e/revisions/595ac6c2-c10d-4355-ae59-7b016f058c8e/download/1/md": "9af10f0fb07f1e3772a0cf4adcf946547055c96bb4e467ea9094474727f29487",
+      "/api/cover-letters/595ac6c2-c10d-4355-ae59-7b016f058c8e/revisions/595ac6c2-c10d-4355-ae59-7b016f058c8e/download/2/txt": "a729f41214b8df3bb94a204c585fa046a7807553034ae8ce9ef4effa73734497",
+      "/api/cover-letters/595ac6c2-c10d-4355-ae59-7b016f058c8e/revisions/595ac6c2-c10d-4355-ae59-7b016f058c8e/download/2/md": "2473e954bc2b9c15e376a8f90229cb90d704bfcb4398914d6d3d23efa1c147a5"
+    },
+    "baseline": "aefef7a3-517f-4309-86db-47f5a7780da9",
+    "job": "53e01045-6ed9-4dfa-964b-9337f1c31f36",
+    "sha256": "4cfae5e458bedce27468606fecc431b11f8611f0b16be5c79fbc8c61ee5b5300",
+    "source_commit": "7b205225b5d62ea75fb68f4b192cc04e7f5b08ae",
+    "file": "v7.json.gz"
+  }
+]

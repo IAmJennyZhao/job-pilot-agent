@@ -26,9 +26,15 @@ from app.services import ai_service
 from generation_fixtures import fake_generation
 from letter_fixtures import fake_letter
 from app.letter_schemas import LetterDraft, LetterAssessment
+from acceptance_fixtures import provider as acceptance_provider, extraction as acceptance_extraction, case_key
 from app.generation_schemas import RevisedResume
 from app.services.tailoring_provider import ProviderFailure
 from test_api import create_job, fake_analysis_output, fake_resume_suggestion_output
+from test_api import fake_job_insights_output, fake_resume_fit_output, fake_advanced_interview_output, fake_company_research_output
+from app.services.advanced_analysis_service import CompanyResearchRetrievalAgent
+from types import SimpleNamespace
+
+CompanyResearchRetrievalAgent.run = lambda *_: SimpleNamespace(prompt_text=lambda: "Fictional company research fixture.", warnings=[])
 
 ready_for_ui = False
 failed_generation_jobs = set()
@@ -39,6 +45,8 @@ def fixture_generation(output_model, system, payload, **kwargs):
     import time
     data = json.loads(payload)
     time.sleep(0.35)
+    if "[acceptance:" in payload or (output_model is LetterAssessment and any(s["sentence"]["id"].startswith(("ai-v", "backend-v", "fullstack-v")) for s in data.get("sentences", []))):
+        return acceptance_provider(output_model, system, payload, **kwargs)
     if output_model in {LetterDraft, LetterAssessment}:
         return fake_letter(output_model, system, payload, **kwargs)
     if output_model is RevisedResume and "SYNTHETIC_FAIL_ONCE" in data["job"]["source_content"] and data["job"]["id"] not in failed_generation_jobs:
@@ -58,7 +66,14 @@ async def optional_ui_latency(request, call_next):
 
 
 def fake_output(output_model, *_args):
+    advanced = {schemas.JobInsightsOutput: fake_job_insights_output, schemas.ResumeFitOutput: fake_resume_fit_output,
+                schemas.AdvancedInterviewPrepOutput: fake_advanced_interview_output, schemas.CompanyResearchOutput: fake_company_research_output}
+    if output_model in advanced:
+        return advanced[output_model]()
     if output_model is schemas.JobExtractionOutput:
+        key = case_key(" ".join(str(arg) for arg in _args))
+        if key:
+            return acceptance_extraction(key)
         return schemas.JobExtractionOutput(company="Synthetic Intake Employer", role_title="Backend Engineer", summary="Build APIs.", confidence=90,
             pay_min=100000, pay_max=120000, pay_currency="USD", pay_period="year",
             preference_facts={key: {"value": value, "origin": "posting", "quote": quote} for key, value, quote in [

@@ -41,7 +41,10 @@ def compile_pdf(tex, executable):
         raise ValueError("Two previews are already rendering. Retry after they finish.")
     try:
         # OS-managed private temporary directories; no paths derived from imported data.
-        scratch = Path(get_settings().asset_storage_dir).resolve() / "render-tmp"
+        storage = Path(get_settings().asset_storage_dir).resolve()
+        scratch = storage / "render-tmp"
+        if scratch.is_symlink() or scratch.is_junction() or not scratch.resolve().is_relative_to(storage):
+            raise ValueError("The rendering temporary directory must stay inside private application storage.")
         scratch.mkdir(parents=True, exist_ok=True, mode=0o700)
         cleanup_stale_workspaces(scratch)
         with tempfile.TemporaryDirectory(prefix="job-pilot-render-", dir=scratch) as directory:
@@ -82,6 +85,8 @@ def compile_pdf(tex, executable):
             if "Missing character:" in log:
                 warnings.append("The font could not display every character.")
             return pdf, warnings
+    except OSError:
+        raise ValueError("The local renderer could not access its compiler or temporary files. Check installation and storage permissions, then retry.") from None
     finally:
         _slots.release()
 

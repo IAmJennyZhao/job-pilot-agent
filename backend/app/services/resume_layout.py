@@ -110,7 +110,8 @@ def document(content, snapshot, metadata=None):
 
 
 def exports(doc):
-    tex = [PREAMBLE, r"\begin{document}", r"\begin{center}"]
+    name = escape(doc["header"][0][0]["text"])
+    tex = [PREAMBLE, r"\hypersetup{pdftitle={" + name + r" -- Resume},pdfauthor={" + name + "}}", r"\begin{document}", r"\begin{center}"]
     lines = []
     def link(c):
         label = escape(c["text"])

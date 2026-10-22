@@ -3,12 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 
 /** Per-record durable browser drafts survive remounts without leaking edits between records. */
-export function useDraft<T>(key: string, initial: T) {
+export function useDraft<T>(key: string, initial: T, accepts?: (value: unknown) => boolean) {
   const storageKey = `job-pilot:draft:${key}`;
   const initialJson = JSON.stringify(initial);
   const persisted = useRef<{ key: string; value: string | null }>({ key: storageKey, value: null });
   const [state, setState] = useState({ key: storageKey, value: initial, dirty: false, ready: false, base: initialJson });
   const [storageError, setStorageError] = useState(false);
+  const [recovery, setRecovery] = useState<{ key: string; raw: string } | null>(null);
   useEffect(() => {
     let value = JSON.parse(initialJson) as T;
     let dirty = false;
@@ -16,7 +17,18 @@ export function useDraft<T>(key: string, initial: T) {
       // Each tab keeps its own recovery copy. The shared copy also supports
       // recovery in a newly opened tab or browser session.
       const saved = sessionStorage.getItem(storageKey) ?? localStorage.getItem(storageKey);
-      if (saved !== null) { value = JSON.parse(saved) as T; dirty = true; }
+      setRecovery(null);
+      if (saved !== null) {
+        try {
+          const parsed: unknown = JSON.parse(saved);
+          if (accepts && !accepts(parsed)) throw new Error("Unsupported draft format");
+          value = parsed as T; dirty = true;
+        } catch {
+          // Preserve incompatible/corrupt work byte-for-byte for explicit recovery.
+          if (accepts) setRecovery({ key: storageKey, raw: saved });
+          else setStorageError(true);
+        }
+      }
       persisted.current = { key: storageKey, value: saved };
     } catch { setStorageError(true); }
     setState({ key: storageKey, value, dirty, ready: true, base: initialJson });
@@ -29,7 +41,7 @@ export function useDraft<T>(key: string, initial: T) {
       : current);
   }, [initialJson, storageKey]);
   useEffect(() => {
-    if (!state.ready || state.key !== storageKey) return;
+    if (!state.ready || state.key !== storageKey || recovery?.key === storageKey) return;
     try {
       if (state.dirty) {
         const serialized = JSON.stringify(state.value);
@@ -42,7 +54,7 @@ export function useDraft<T>(key: string, initial: T) {
         persisted.current = { key: storageKey, value: null };
       }
     } catch { setStorageError(true); }
-  }, [state, storageKey]);
+  }, [state, storageKey, recovery]);
   useEffect(() => {
     const warn = (event: BeforeUnloadEvent) => { if (state.dirty && storageError) { event.preventDefault(); event.returnValue = ""; } };
     window.addEventListener("beforeunload", warn);
@@ -55,6 +67,7 @@ export function useDraft<T>(key: string, initial: T) {
     });
   };
   const clear = () => {
+    setRecovery(null);
     setState(current => ({ ...current, dirty: false }));
     try {
       sessionStorage.removeItem(storageKey);
@@ -66,5 +79,7 @@ export function useDraft<T>(key: string, initial: T) {
     clear();
     setState(current => ({ ...current, value: JSON.parse(initialJson) as T, dirty: false, base: initialJson }));
   };
-  return { value: state.key === storageKey ? state.value : initial, setValue: update, clear, discard, dirty: state.key === storageKey && state.dirty, ready: state.key === storageKey && state.ready, storageError };
+  return { value: state.key === storageKey ? state.value : initial, setValue: update, clear, discard, dirty: state.key === storageKey && state.dirty,
+    ready: state.key === storageKey && state.ready && recovery?.key !== storageKey, storageError,
+    recoveryRaw: recovery?.key === storageKey ? recovery.raw : null };
 }

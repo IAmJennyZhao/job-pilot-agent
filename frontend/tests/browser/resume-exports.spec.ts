@@ -81,3 +81,25 @@ test("unapproved preview removal and content review cannot bypass final approval
   expect(await (await request.get(url + `/renders?revision_id=${run.revision.id}`)).json()).toEqual([]);
   await expect(page.getByLabel("Resume draft preview")).toContainText("Python prototype");
 });
+
+test("incompatible recovered drafts stay downloadable and never reach rendering", async ({ page, request }, info) => {
+  const { job, url } = await prepare(request);
+  const view = await (await request.get(url)).json();
+  const key = `job-pilot:draft:resume-edit-${view.profile_id}-${view.baseline_id}`;
+  const raw = '{"old_format":true,"text":"Keep my unsaved accomplishment"}';
+  await page.goto(`/jobs/${job.id}`);
+  await page.evaluate(({ key, raw }) => { localStorage.setItem(key, raw); sessionStorage.setItem(key, raw); }, { key, raw });
+  await page.reload();
+  const panel = page.getByRole("region", { name: "Resume review and editing" });
+  await expect(panel.getByText(/A recovered edit uses an incompatible/)).toBeVisible();
+  await expect(panel.getByRole("button", { name: "Render saved revision", exact: true })).toBeDisabled();
+  expect(await page.evaluate(key => sessionStorage.getItem(key), key)).toBe(raw);
+  const event = page.waitForEvent("download");
+  await panel.getByRole("button", { name: "Download recovered edit", exact: true }).click();
+  const download = await event;
+  const filename = info.outputPath("recovered-draft.json"); await download.saveAs(filename);
+  expect(await readFile(filename, "utf8")).toBe(raw);
+  await panel.getByRole("button", { name: "Discard incompatible edit", exact: true }).click();
+  await expect(panel.getByRole("button", { name: "Render saved revision", exact: true })).toBeEnabled();
+  expect(await page.evaluate(key => localStorage.getItem(key), key)).toBeNull();
+});

@@ -132,3 +132,47 @@ def test_missing_compiler_and_invalid_content_do_not_publish_artifacts(client, c
     bad = save_payload(view); bad["edit"]["bullets"][0]["text"] = "Invented production scale of 500 million users."
     invalid = client.post(url + "/revisions", json=bad).json()
     assert client.post(url + "/renders", json=approval_payload(invalid)).status_code == 409
+
+
+def test_multi_page_preview_is_saved_but_cannot_be_final_approved(client, completed, monkeypatch):
+    import pymupdf
+    *_, url = completed
+    original = resume_compiler.compile_pdf
+    def two_pages(*args):
+        pdf, warnings = original(*args)
+        with pymupdf.open(stream=pdf, filetype="pdf") as document:
+            document.new_page(width=612, height=792)
+            return document.tobytes(), warnings
+    monkeypatch.setattr(resume_compiler, "compile_pdf", two_pages)
+    view, render = rendered(client, url)
+    assert render["validation"]["pages"] == 2 and not render["validation"]["valid"]
+    assert client.post(url + "/review", json=approval_payload(view)).status_code == 201
+    path = url + f"/renders/{render['id']}"
+    preview = client.post(path + "/preview").json()
+    assert len(preview["page_images"]) == 2
+    response = client.post(path + "/approve", json={"preview_receipt_id": preview["preview_receipt_id"], "manifest_hash": render["manifest_hash"], "layout_reviewed": True})
+    assert response.status_code == 409 and "page-fit" in response.text
+    assert client.get(path + "/download/pdf").status_code == 409
+
+
+def test_artifact_migration_and_immutable_rows(client, completed, tmp_path, monkeypatch):
+    from app.migrations import run_migrations
+    from app.database import build_engine
+    from app.services.backup_service import restore
+    from sqlalchemy import text
+    from sqlalchemy.orm import Session
+    from sqlalchemy.exc import IntegrityError
+    *_, url = completed
+    monkeypatch.setattr(get_settings(), "asset_storage_dir", str(tmp_path / "assets"))
+    view, render = rendered(client, url); final(client, url, view, render)
+    archive = client.get("/api/data/backup").content
+    db_url = "sqlite:///" + (tmp_path / "migration.db").as_posix()
+    run_migrations(db_url); run_migrations(db_url)
+    engine = build_engine(db_url)
+    with Session(engine) as db:
+        restore(db, archive, hashlib.sha256(archive).hexdigest())
+        for table in ("resume_renders", "resume_preview_receipts", "resume_export_approvals"):
+            with pytest.raises(IntegrityError):
+                db.execute(text(f"UPDATE {table} SET manifest_hash = 'changed'")); db.commit()
+            db.rollback()
+    engine.dispose()

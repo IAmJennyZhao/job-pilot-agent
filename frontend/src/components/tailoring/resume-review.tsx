@@ -9,6 +9,7 @@ import type { ReviewWorkspace, ResumeEdit, ResumeChange, SaveResumeEdit, Restore
 import { Button } from "@/components/ui/button";
 import { Field, Select, Textarea } from "@/components/ui/field";
 import { ResumeExports } from "./resume-exports";
+import { acceptsResumeDraft, acceptsResumeRestore } from "@/lib/resume-draft";
 
 export function ResumeReview({ baselineId, sourceKey }: { baselineId: string; sourceKey?: string | null }) {
   const [selected, setSelected] = useState<string>();
@@ -28,8 +29,8 @@ function ReviewContent({ view, onSelect, onSaved, onRefresh, refreshing, refresh
   onRefresh: () => void; refreshing: boolean; refreshError?: string;
 }) {
   const revision = view.revision;
-  const draft = useDraft<SaveResumeEdit>(`resume-edit-${view.profile_id}-${view.baseline_id}`, { expected_revision_id: revision.id, request_key: "", edit: revision.edit });
-  const restoreRequest = useDraft<RestoreResumeRevision | null>(`resume-restore-${view.profile_id}-${view.baseline_id}`, null);
+  const draft = useDraft<SaveResumeEdit>(`resume-edit-${view.profile_id}-${view.baseline_id}`, { expected_revision_id: revision.id, request_key: "", edit: revision.edit }, acceptsResumeDraft);
+  const restoreRequest = useDraft<RestoreResumeRevision | null>(`resume-restore-${view.profile_id}-${view.baseline_id}`, null, acceptsResumeRestore);
   const [editing, setEditing] = useState(false);
   const [comparedRevision, setComparedRevision] = useState<string | null>(null);
   const [comparison, setComparison] = useState("baseline");
@@ -69,6 +70,13 @@ function ReviewContent({ view, onSelect, onSaved, onRefresh, refreshing, refresh
   edit.skills.forEach(s => { if (!skills.has(s.name.toLowerCase())) skills.set(s.name.toLowerCase(), s); });
   return <section aria-label="Resume review and editing" className="grid min-w-0 gap-4 border-t border-border pt-4">
     <h3 className="font-semibold">Generated resume draft</h3>
+    {[draft, restoreRequest].map((recovery, index) => recovery.recoveryRaw !== null ? <div key={index} role="alert" className="grid gap-2 rounded border border-border p-3 text-sm">
+      <p>A recovered {index === 0 ? "edit" : "restore request"} uses an incompatible or damaged format. Its original text is preserved. Download it before discarding if you need to recover your work.</p>
+      <div className="flex flex-wrap gap-2"><Button variant="secondary" onClick={() => {
+        const url = URL.createObjectURL(new Blob([recovery.recoveryRaw!], { type: "application/json" }));
+        const link = document.createElement("a"); link.href = url; link.download = "recovered-resume-draft.json"; document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }}>Download recovered {index === 0 ? "edit" : "restore request"}</Button><Button variant="ghost" onClick={recovery.discard}>Discard incompatible {index === 0 ? "edit" : "restore request"}</Button></div>
+    </div> : null)}
     <Field label="Resume revision history"><Select disabled={busy || isEditing} value={revision.id} onChange={e => { onSelect(e.target.value); review.reset(); restore.reset(); }}>
       {view.history.map(r => <option key={r.id} value={r.id}>{r.sequence === 0 ? "Original generated draft" : `Revision ${r.sequence} · ${r.origin}`} · {r.reviewed ? "Reviewed" : r.valid ? "Awaiting review" : "Needs correction"}{r.id === view.current_revision_id ? " · Current" : ""}</option>)}
     </Select></Field>

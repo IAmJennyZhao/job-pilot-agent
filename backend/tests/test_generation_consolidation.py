@@ -128,6 +128,15 @@ def test_v1_reviewed_history_restores_alongside_v2(client, prepared, monkeypatch
     assert edited["revision"]["validation"]["validator_version"] == "resume-review-v1"
     reviewed = client.post(url + "/review", json=approval_payload(edited))
     assert reviewed.status_code == 201, reviewed.text
+    # Phase 5 must render and preserve legacy content without rewriting its v1 history.
+    render = client.post(url + "/renders", json=approval_payload(edited))
+    assert render.status_code == 200, render.text
+    artifact = render.json()
+    artifact_url = url + f"/renders/{artifact['id']}"
+    pdf_preview = client.post(artifact_url + "/preview").json()
+    final_review = client.post(artifact_url + "/approve", json={"preview_receipt_id": pdf_preview["preview_receipt_id"], "manifest_hash": artifact["manifest_hash"], "layout_reviewed": True})
+    assert final_review.status_code == 200, final_review.text
+    historical_pdf = client.get(artifact_url + "/download/pdf").content
     current = generate(client, job).json()
     assert current["state"] == "completed", current
     assert current["revision"]["validation"]["validator_version"] == "resume-v2"
@@ -137,6 +146,7 @@ def test_v1_reviewed_history_restores_alongside_v2(client, prepared, monkeypatch
     restored = client.post("/api/data/restore", files={"file": ("backup.json", archive)}, data={"sha256": preview.json()["sha256"], "confirmation": "RESTORE"})
     assert restored.status_code == 200, restored.text
     assert client.get(url).json() == reviewed.json()
+    assert client.get(artifact_url + "/download/pdf").content == historical_pdf
     bad = json.loads(archive)
     bad["tables"]["tailoring_runs"][0]["snapshot"]["generation_version"] = 999
     assert client.post("/api/data/restore-preview", files={"file": ("bad.json", json.dumps(bad).encode())}).status_code == 400

@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from app import models
 from app.services import resume_review as review, resume_layout as layout, resume_compiler
 from app.services.intake_preferences import digest
+from app.services.resume_generation import aware
 
 
 def sha(value):
@@ -74,8 +75,8 @@ def get_render(db, baseline_id, render_id):
 def details(db, row):
     approval = db.scalar(select(models.ResumeExportApproval).where(models.ResumeExportApproval.render_id == row.id))
     return {"id": row.id, "revision_id": row.revision_id, "manifest_hash": row.manifest_hash, "content_hash": row.content_hash,
-            "created_at": row.created_at, "renderer_version": row.bundle["renderer_version"], "engine": row.bundle["engine"],
-            "validation": row.bundle["validation"], "approved_at": approval.approved_at if approval else None,
+            "created_at": aware(row.created_at), "renderer_version": row.bundle["renderer_version"], "engine": row.bundle["engine"],
+            "validation": row.bundle["validation"], "approved_at": aware(approval.approved_at) if approval else None,
             "hashes": row.bundle["hashes"]}
 
 

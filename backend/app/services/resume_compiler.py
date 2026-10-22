@@ -109,6 +109,15 @@ def normalized(text):
 
 
 def inspect_pdf(pdf, text, compiler_warnings=()):
+    try:
+        return _inspect_pdf(pdf, text, compiler_warnings)
+    except RuntimeError as exc:
+        # PyMuPDF raises FileDataError/RuntimeError for malformed artifacts.
+        # Keep corruption on the same fail-closed validation path as unsafe PDFs.
+        raise ValueError("Invalid or unreadable PDF artifact. Restore an intact backup or render the saved revision again.") from exc
+
+
+def _inspect_pdf(pdf, text, compiler_warnings=()):
     issues = list(compiler_warnings)
     if len(pdf) > MAX_PDF_BYTES or not pdf.startswith(b"%PDF-"):
         raise ValueError("Invalid or oversized PDF artifact.")

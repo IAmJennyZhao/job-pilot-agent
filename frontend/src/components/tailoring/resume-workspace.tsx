@@ -5,6 +5,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import { useDraft } from "@/lib/use-draft";
+import { isRequestDraft } from "@/lib/intake-draft";
+import { DraftRecovery } from "@/components/draft-recovery";
 import type { GenerationRequest, GenerationRun } from "@/lib/generation-types";
 import { PreferenceFlags } from "@/components/intake-review";
 import { Button } from "@/components/ui/button";
@@ -20,7 +22,7 @@ export function ResumeWorkspace({ jobId, updatedAt }: { jobId: string; updatedAt
   const [selected, setSelected] = useState<string | null>(null);
   const [reviewedHash, setReviewedHash] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
-  const saveKey = useDraft<{ fingerprint: string; key: string } | null>(`resume-request-${jobId}`, null);
+  const saveKey = useDraft<{ fingerprint: string; key: string } | null>(`resume-request-${jobId}`, null, isRequestDraft);
   const generate = useMutation({
     mutationFn: ({ payload, parent }: { payload: GenerationRequest; parent?: string }) => parent ? api.retryResume(parent, payload) : api.generateResume(jobId, payload),
     onSuccess: run => {
@@ -35,7 +37,7 @@ export function ResumeWorkspace({ jobId, updatedAt }: { jobId: string; updatedAt
     refetchInterval: query => generate.isPending || query.state.data?.runs.some(run => active(run.state)) ? 1500 : false });
   const current = workspace.data;
   const ready = current?.readiness;
-  const description = useDraft(`tailoring-description-${jobId}`, ready?.source_content ?? "");
+  const description = useDraft(`tailoring-description-${jobId}`, ready?.source_content ?? "", value => typeof value === "string");
   const saveDescription = useMutation({ mutationFn: () => api.updateJob(jobId, { source_content: description.value }), onSuccess: () => {
     description.clear(); setEditing(false); setReviewedHash(null);
     cache.invalidateQueries({ queryKey: ["job", jobId] });
@@ -47,7 +49,7 @@ export function ResumeWorkspace({ jobId, updatedAt }: { jobId: string; updatedAt
   const run = runQuery.data;
   const running = generate.isPending || current?.runs.some(r => active(r.state));
   const reviewed = Boolean(ready?.description_reviewed || ready?.description_hash === reviewedHash);
-  const canGenerate = ready?.ready && reviewed && !running && !editing && !workspace.isFetching && saveKey.ready;
+  const canGenerate = ready?.ready && reviewed && !running && !editing && !workspace.isFetching && saveKey.ready && description.ready && !description.dirty;
   const start = (parent?: string) => {
     if (!canGenerate || !ready?.input_hash) return;
     const values = { expected_input_hash: ready.input_hash, reviewed_description_hash: ready.description_hash, acknowledged_evaluation_hash: ready.evaluation.evaluation_hash };
@@ -58,6 +60,8 @@ export function ResumeWorkspace({ jobId, updatedAt }: { jobId: string; updatedAt
   };
   return <Panel><section id="tailoring-preparation" aria-label="Resume tailoring" className="grid gap-4 scroll-mt-4">
     <h2 className="font-semibold">Tailoring preparation</h2>
+    <DraftRecovery name="resume generation request" draft={saveKey} />
+    <DraftRecovery name="job description" draft={description} />
     <p className="text-sm text-muted-foreground">Generate a saved resume draft in four passes. Detailed job analysis remains a separate optional action.</p>
     {workspace.isPending ? <p role="status">Loading tailoring readiness…</p> : workspace.error ? <p role="alert">{workspace.error.message} <Button onClick={() => workspace.refetch()}>Refresh readiness</Button></p> : ready ? <>
       <PreferenceFlags evaluation={ready.evaluation} />
@@ -67,7 +71,7 @@ export function ResumeWorkspace({ jobId, updatedAt }: { jobId: string; updatedAt
       <details><summary className="cursor-pointer text-sm font-medium">Review full saved job description</summary><pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words text-xs">{ready.source_content || "No description saved."}</pre></details>
       {editing ? <div className="grid gap-2">
         <Field label="Full job description for tailoring"><Textarea className="min-h-48" value={description.value} onChange={e => description.setValue(e.target.value)} /></Field>
-        <div className="flex gap-2"><Button disabled={saveDescription.isPending || !description.value.trim() || description.value.length > 100000} onClick={() => saveDescription.mutate()}>Save description</Button><Button variant="ghost" disabled={saveDescription.isPending} onClick={() => { description.discard(); setEditing(false); }}>Cancel description edit</Button></div>
+        <div className="flex gap-2"><Button disabled={!description.ready || saveDescription.isPending || !description.value.trim() || description.value.length > 100000} onClick={() => saveDescription.mutate()}>Save description</Button><Button variant="ghost" disabled={!description.ready || saveDescription.isPending} onClick={() => { description.discard(); setEditing(false); }}>Cancel description edit</Button></div>
         {saveDescription.error ? <p role="alert" className="text-sm text-destructive">{saveDescription.error.message}</p> : null}
       </div> : <Button className="w-fit" variant="secondary" disabled={Boolean(running)} onClick={() => setEditing(true)}>{description.dirty ? "Resume description edit" : "Edit full description"}</Button>}
       {ready.description_reviewed ? <p className="text-sm">Full job description reviewed.</p> : <label className="flex items-start gap-2 text-sm"><input type="checkbox" disabled={!ready.source_content.trim() || editing} checked={reviewed} onChange={e => setReviewedHash(e.target.checked ? ready.description_hash : null)} />I reviewed this complete saved job description.</label>}

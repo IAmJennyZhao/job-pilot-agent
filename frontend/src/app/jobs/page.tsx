@@ -11,6 +11,8 @@ import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useDraft } from "@/lib/use-draft";
+import { isIntakeDraft, isIntakeReviewDraft } from "@/lib/intake-draft";
+import { DraftRecovery } from "@/components/draft-recovery";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { ListEditor } from "@/components/ui/list-editor";
@@ -113,10 +115,10 @@ function JobsContent() {
   const [savedJob, setSavedJob] = useState<{ id: string; company: string } | null>(null);
   const returnTo = `/jobs${params.size ? `?${params}` : ""}`;
   const [selectedJob, setSelectedJob] = useState<JobListItem | null>(null);
-  const intakeDraft = useDraft<IntakeState>("job-intake", { source_url: "", source_content: "" });
+  const intakeDraft = useDraft<IntakeState>("job-intake", { source_url: "", source_content: "" }, isIntakeDraft);
   const { value: intake, setValue: setIntake } = intakeDraft;
   const [preview, setPreview] = useState<JobExtractPreview | null>(null);
-  const reviewDraft = useDraft<ReviewState | null>("job-review", null);
+  const reviewDraft = useDraft<ReviewState | null>("job-review", null, isIntakeReviewDraft);
   const { value: review, setValue: setReview } = reviewDraft;
 
   const { data: rawJobs = [], isLoading, error, isFetching, refetch } = useQuery({
@@ -143,7 +145,6 @@ function JobsContent() {
       setReview(null);
       intakeDraft.clear();
       reviewDraft.clear();
-      try { localStorage.removeItem("job-pilot:draft:job-intake-save"); } catch { /* Saving still succeeded if browser storage is unavailable. */ }
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -205,7 +206,10 @@ function JobsContent() {
 
       {savedJob ? <Panel className="text-sm"><div role="status">Saved {savedJob.company}. <Link className="font-semibold underline" href={`/jobs/${savedJob.id}`}>Open saved job</Link></div></Panel> : null}
       <div className="grid min-w-0 gap-4">
-        <section id="job-intake" hidden={!showIntake}><Panel><fieldset disabled={extractMutation.isPending || createMutation.isPending} className="min-w-0">
+        <section id="job-intake" hidden={!showIntake}><Panel>
+          <DraftRecovery name="job intake" draft={intakeDraft} />
+          <DraftRecovery name="job review" draft={reviewDraft} />
+          <fieldset disabled={!intakeDraft.ready || !reviewDraft.ready || extractMutation.isPending || createMutation.isPending} className="min-w-0">
           <div className="mb-4 flex items-center gap-2">
             <Plus className="h-4 w-4 text-primary" />
             <h2 className="text-base font-semibold">Add Job</h2>

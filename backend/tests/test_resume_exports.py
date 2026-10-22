@@ -12,6 +12,21 @@ from test_resume_generation import prepared
 from test_resume_review import completed, approval_payload, save_payload
 
 
+def test_malformed_pdf_reports_validation_failure():
+    with pytest.raises(ValueError, match="Invalid or unreadable PDF"):
+        resume_compiler.inspect_pdf(b"%PDF-1.7\ntruncated artifact", "Resume")
+
+
+def test_unreadable_compiler_output_preserves_review_without_publishing(client, completed, monkeypatch):
+    *_, url = completed
+    view = client.get(url).json()
+    monkeypatch.setattr(resume_compiler, "compile_pdf", lambda *a: (b"%PDF-1.7\ntruncated artifact", []))
+    response = client.post(url + "/renders", json=approval_payload(view))
+    assert response.status_code == 422 and "Invalid or unreadable PDF" in response.text
+    assert client.get(url).json() == view
+    assert client.get(url + "/renders", params={"revision_id": view["revision"]["id"]}).json() == []
+
+
 def rendered(client, url):
     view = client.get(url).json()
     response = client.post(url + "/renders", json=approval_payload(view))

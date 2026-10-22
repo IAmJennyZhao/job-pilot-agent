@@ -19,6 +19,52 @@ async function prepare(request: APIRequestContext) {
   return { job, source, run, url: `${backend}/api/tailoring/resumes/${run.revision.id}` };
 }
 
+test("lost render response and export failures recover the same saved artifact", async ({ page, request }, info) => {
+  const { job, url, run } = await prepare(request);
+  let models = 0, lost = false;
+  page.on("request", r => { if (r.method() === "POST" && /tailoring\/resume$|\/api\/ai\//.test(r.url())) models++; });
+  await page.route("**/api/tailoring/resumes/*/renders", async route => {
+    if (route.request().method() === "POST" && !lost) { lost = true; await route.fetch(); await route.abort("failed"); }
+    else await route.continue();
+  });
+  await page.goto(`/jobs/${job.id}`);
+  const review = page.getByRole("region", { name: "Resume review and editing" });
+  const exports = page.getByRole("region", { name: "Resume rendering and downloads" });
+  await review.getByRole("button", { name: "Mark reviewed", exact: true }).click();
+  await exports.getByRole("button", { name: "Render saved revision", exact: true }).click();
+  await expect(exports.getByRole("alert")).toContainText(/fetch|network/i);
+  await page.reload();
+  await exports.getByRole("button", { name: "Render saved revision", exact: true }).click();
+  await exports.getByRole("button", { name: "Open PDF preview", exact: true }).click();
+  await exports.getByLabel("I inspected this exact PDF and approve its layout.").check();
+  await exports.getByRole("button", { name: "Approve final exports", exact: true }).click();
+  await expect(exports.getByRole("button", { name: "Download PDF", exact: true })).toBeEnabled();
+  const renders = await (await request.get(url + `/renders?revision_id=${run.revision.id}`)).json();
+  expect(renders).toHaveLength(1);
+  let attempts = 0;
+  await page.route("**/api/tailoring/resumes/*/renders/*/download/pdf", route => {
+    attempts++;
+    if (attempts === 1) return route.fulfill({ status: 503, contentType: "text/html", body: "<html>Proxy unavailable</html>" });
+    if (attempts === 2) return route.abort("failed");
+    if (attempts === 3) return route.fulfill({ status: 200, contentType: "application/pdf", body: "" });
+    return route.continue();
+  });
+  for (let i = 0; i < 3; i++) {
+    await exports.getByRole("button", { name: "Download PDF", exact: true }).click();
+    await expect(exports.getByRole("alert")).toContainText("Retry from this saved version.");
+  }
+  const event = page.waitForEvent("download");
+  await exports.getByRole("button", { name: "Download PDF", exact: true }).click();
+  const file = info.outputPath("recovered.pdf"); await (await event).saveAs(file);
+  expect(createHash("sha256").update(await readFile(file)).digest("hex")).toBe(renders[0].hashes.pdf);
+  await page.evaluate(() => { Object.defineProperty(navigator.clipboard, "writeText", { value: async () => { throw new Error("Clipboard permission denied"); } }); });
+  await exports.getByRole("button", { name: "Copy approved text", exact: true }).click();
+  await expect(exports.getByRole("alert")).toContainText("Clipboard permission denied");
+  await expect(exports.getByRole("button", { name: "Download text", exact: true })).toBeEnabled();
+  expect(models).toBe(0);
+  expect(await (await request.get(url + `/renders?revision_id=${run.revision.id}`)).json()).toEqual(renders);
+});
+
 test("preview, final approval, exact downloads and historical exports", async ({ page, request }, info) => {
   const { job, source, run, url } = await prepare(request);
   let modelRequests = 0;
@@ -102,4 +148,27 @@ test("incompatible recovered drafts stay downloadable and never reach rendering"
   await panel.getByRole("button", { name: "Discard incompatible edit", exact: true }).click();
   await expect(panel.getByRole("button", { name: "Render saved revision", exact: true })).toBeEnabled();
   expect(await page.evaluate(key => localStorage.getItem(key), key)).toBeNull();
+});
+
+test("recovered description edits block generation until saved or discarded", async ({ page, request }) => {
+  const { job } = await prepare(request);
+  await page.goto(`/jobs/${job.id}`);
+  const key = `job-pilot:draft:tailoring-description-${job.id}`;
+  await page.evaluate(key => { localStorage.setItem(key, JSON.stringify({ legacy_text: "Preserve this description" })); }, key);
+  await page.reload();
+  const panel = page.getByRole("region", { name: "Resume tailoring", exact: true });
+  await expect(panel.getByRole("link", { name: "Download job description recovery" })).toBeVisible();
+  await panel.getByLabel("I reviewed this complete saved job description.").check();
+  await expect(panel.getByRole("button", { name: "Generate tailored resume", exact: true })).toBeDisabled();
+  await panel.getByRole("button", { name: "Discard incompatible job description" }).click();
+  await panel.getByRole("button", { name: "Edit full description" }).click();
+  await panel.getByLabel("Full job description for tailoring").fill("An unsaved, changed description");
+  await page.reload();
+  await panel.getByLabel("I reviewed this complete saved job description.").check();
+  await expect(panel.getByRole("button", { name: "Generate tailored resume", exact: true })).toBeDisabled();
+  await panel.getByRole("button", { name: "Resume description edit" }).click();
+  await expect(panel.getByLabel("Full job description for tailoring")).toHaveValue("An unsaved, changed description");
+  await panel.getByRole("button", { name: "Cancel description edit" }).click();
+  await expect(panel.getByRole("button", { name: "Generate tailored resume", exact: true })).toBeEnabled();
+  expect((await (await request.get(`${backend}/api/jobs/${job.id}`)).json()).source_content).toBe(job.source_content);
 });

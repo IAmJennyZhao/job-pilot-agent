@@ -41,6 +41,22 @@ import type { LetterRequest, LetterRun, LetterWorkspace, LetterReview, LetterEdi
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
+async function downloadArtifact(path: string): Promise<Blob> {
+  let response: Response;
+  try { response = await fetch(`${API_BASE_URL}${path}`, { cache: "no-store" }); }
+  catch { throw new Error("Download interrupted. Retry from this saved version."); }
+  if (!response.ok) {
+    let message = `Download failed (${response.status}). Retry from this saved version.`;
+    try { const error = await response.json(); if (typeof error.detail === "string") message = error.detail; } catch { /* Proxies may return HTML or plain text. */ }
+    throw new ApiError(message, response.status);
+  }
+  try {
+    const blob = await response.blob();
+    if (!blob.size) throw new Error("Empty download");
+    return blob;
+  } catch { throw new Error("Download interrupted. Retry from this saved version."); }
+}
+
 export class ApiError extends Error {
   status: number;
 
@@ -168,9 +184,7 @@ export const api = {
   checkLetter: (id: string, payload: { request_key: string; expected_revision_id: string; content_hash: string }) => request<LetterReview>(`/api/cover-letters/${id}/check`, { method: "POST", body: JSON.stringify(payload) }),
   reviewLetter: (id: string, payload: ReviewResume) => request<LetterReview>(`/api/cover-letters/${id}/review`, { method: "POST", body: JSON.stringify(payload) }),
   downloadLetter: async (id: string, revision: string, variant: number, format: "txt" | "md") => {
-    const response = await fetch(`${API_BASE_URL}/api/cover-letters/${id}/revisions/${revision}/download/${variant}/${format}`, { cache: "no-store" });
-    if (!response.ok) { const error = await response.json(); throw new Error(error.detail || "Letter download failed."); }
-    return response.blob();
+    return downloadArtifact(`/api/cover-letters/${id}/revisions/${revision}/download/${variant}/${format}`);
   },
   resumeReview: (id: string, revisionId?: string) => request<ReviewWorkspace>(`/api/tailoring/resumes/${id}${revisionId ? `?revision_id=${encodeURIComponent(revisionId)}` : ""}`),
   saveResumeEdit: (id: string, payload: SaveResumeEdit) => request<ReviewWorkspace>(`/api/tailoring/resumes/${id}/revisions`, { method: "POST", body: JSON.stringify(payload) }),
@@ -182,9 +196,7 @@ export const api = {
   approveResumeRender: (id: string, renderId: string, payload: { preview_receipt_id: string; manifest_hash: string; layout_reviewed: boolean }) => request<ResumeRender>(`/api/tailoring/resumes/${id}/renders/${renderId}/approve`, { method: "POST", body: JSON.stringify(payload) }),
   deleteResumeRender: (id: string, renderId: string) => request<void>(`/api/tailoring/resumes/${id}/renders/${renderId}`, { method: "DELETE" }),
   downloadResumeRender: async (id: string, renderId: string, format: "pdf" | "tex" | "txt") => {
-    const response = await fetch(`${API_BASE_URL}/api/tailoring/resumes/${id}/renders/${renderId}/download/${format}`, { cache: "no-store" });
-    if (!response.ok) { const error = await response.json(); throw new Error(error.detail || "Download failed. Retry from this saved artifact."); }
-    return response.blob();
+    return downloadArtifact(`/api/tailoring/resumes/${id}/renders/${renderId}/download/${format}`);
   },
   generationRun: (runId: string) => request<GenerationRun>(`/api/tailoring/runs/${runId}`),
   generateResume: (jobId: string, payload: GenerationRequest) => request<GenerationRun>(`/api/jobs/${jobId}/tailoring/resume`, { method: "POST", body: JSON.stringify(payload) }),

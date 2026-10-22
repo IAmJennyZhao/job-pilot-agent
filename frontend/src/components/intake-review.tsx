@@ -5,6 +5,8 @@ import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import { useDraft } from "@/lib/use-draft";
+import { isRequestDraft } from "@/lib/intake-draft";
+import { DraftRecovery } from "@/components/draft-recovery";
 import type { IntakeEvaluation, IntakeFactKey, IntakeFacts, IntakeReview, IntakeSave } from "@/lib/intake-types";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/field";
@@ -47,7 +49,7 @@ export function IntakeDecisions({ review, valid, stale, busy, error, onFacts, on
   const [debounced, setDebounced] = useState(serialized);
   useEffect(() => { const timer = setTimeout(() => setDebounced(serialized), 250); return () => clearTimeout(timer); }, [serialized]);
   const checks = useQuery({ queryKey: ["intake-evaluation", debounced], queryFn: () => api.evaluateIntake(JSON.parse(debounced)), enabled: valid && !stale && serialized === debounced, retry: false, refetchInterval: 30_000 });
-  const retryDraft = useDraft<{ fingerprint: string; key: string } | null>("job-intake-save", null);
+  const retryDraft = useDraft<{ fingerprint: string; key: string } | null>("job-intake-save", null, isRequestDraft);
   const [allowDuplicate, setAllowDuplicate] = useState(false);
   useEffect(() => { setAllowDuplicate(false); }, [serialized]);
   const ready = valid && !stale && !busy && serialized === debounced && !checks.isFetching && !!checks.data && !checks.error && retryDraft.ready;
@@ -61,6 +63,7 @@ export function IntakeDecisions({ review, valid, stale, busy, error, onFacts, on
   };
   return <div className="mt-5 grid gap-4 border-t border-border pt-5">
     <h3 className="font-semibold">Review preferences and choose your next step</h3>
+    <DraftRecovery name="intake save request" draft={retryDraft} />
     {stale ? <p role="alert" className="text-sm text-warning-foreground">The source changed or this is an older draft. Extract again or start manual entry before saving.</p> : !valid ? <p className="text-sm">Enter a valid company, title, salary range and links to check preferences.</p> : checks.isFetching || serialized !== debounced ? <p role="status" className="text-sm">Checking preferences…</p> : checks.data ? <PreferenceFlags evaluation={checks.data} /> : null}
     {checks.error ? <p role="alert" className="text-sm text-destructive">{checks.error.message} <Button variant="secondary" onClick={() => checks.refetch()}>Retry checks</Button></p> : null}
     <details><summary className="cursor-pointer text-sm font-medium">Review or correct preference facts</summary>

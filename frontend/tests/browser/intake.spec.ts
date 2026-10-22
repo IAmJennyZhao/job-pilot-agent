@@ -5,6 +5,34 @@ import path from "node:path";
 const backend = "http://127.0.0.1:8100";
 const description = "  Synthetic Backend Engineer\n\nUSD 100000-120000 annual base salary; NYC salary band.\nRemote anywhere including NYC. Minimum 2 years required.\n  ";
 
+test("incompatible intake recovery preserves exact bytes and another tab's draft", async ({ page, context }, info) => {
+  const key = "job-pilot:draft:job-intake";
+  const raw = '{"source_content":"unfinished legacy draft';
+  await page.goto("/jobs");
+  await page.evaluate(({ key, raw }) => { localStorage.setItem(key, raw); sessionStorage.setItem(key, raw); }, { key, raw });
+  await page.reload();
+  await page.getByRole("button", { name: "Add job", exact: true }).click();
+  await expect(page.getByText("The saved job intake has an incompatible format.", { exact: false })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Extract fields", exact: true })).toBeDisabled();
+  expect(await page.evaluate(key => localStorage.getItem(key), key)).toBe(raw);
+  const event = page.waitForEvent("download");
+  await page.getByRole("link", { name: "Download job intake recovery", exact: true }).click();
+  const filename = info.outputPath("intake-recovery.json"); await (await event).saveAs(filename);
+  const { readFile } = await import("node:fs/promises");
+  expect(await readFile(filename, "utf8")).toBe(raw);
+  const other = await context.newPage();
+  await other.goto("/jobs");
+  await other.getByRole("button", { name: "Add job", exact: true }).click();
+  await other.getByRole("button", { name: "Discard incompatible job intake", exact: true }).click();
+  await other.getByLabel("Pasted page content").fill("Other tab's unfinished posting");
+  await expect.poll(() => other.evaluate(key => localStorage.getItem(key), key)).toContain("Other tab");
+  await page.getByRole("button", { name: "Discard incompatible job intake", exact: true }).click();
+  await other.reload();
+  await other.getByRole("button", { name: "Add job", exact: true }).click();
+  await expect(other.getByLabel("Pasted page content")).toHaveValue("Other tab's unfinished posting");
+  await other.close();
+});
+
 async function activate(request: APIRequestContext) {
   const command = process.platform === "win32" ? "py" : "python";
   const args = [...(process.platform === "win32" ? ["-3"] : []), "-c", "import sys,json,yaml;sys.path.insert(0,'tests');from tailoring_fixtures import import_payload;from test_intake_preferences import preferences;p=import_payload();p['preferences_yaml']=yaml.safe_dump(preferences().model_dump(by_alias=True));print(json.dumps(p))"];

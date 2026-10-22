@@ -14,6 +14,36 @@ async function prepare(request: APIRequestContext) {
   return (await request.post(`${backend}/api/jobs`, { data: { company: `Letter ${Date.now()}`, role_title: "Backend Engineer", source_content: "Build Python services.", status: "Applied" } })).json();
 }
 
+test("letter export failure and denied clipboard preserve exact reviewed downloads", async ({ page, request }, info) => {
+  const job = await prepare(request);
+  const ready = (await (await request.get(`${backend}/api/jobs/${job.id}/cover-letters`)).json()).readiness;
+  const run = await (await request.post(`${backend}/api/jobs/${job.id}/cover-letters`, { data: { request_key: crypto.randomUUID(), expected_input_hash: ready.input_hash, reviewed_description_hash: ready.description_hash, acknowledged_evaluation_hash: ready.evaluation.evaluation_hash, options: { count: 1, length: "short" } } })).json();
+  expect(run.state).toBe("completed");
+  await page.goto(`/jobs/${job.id}`);
+  const review = page.getByRole("region", { name: "Cover letter review", exact: true });
+  await review.getByLabel("I reviewed all 1 saved letter variants and their supporting evidence.").check();
+  await review.getByRole("button", { name: "Approve exact letter revision", exact: true }).click();
+  let failures = 0, writes = 0;
+  page.on("request", r => { if (r.method() === "POST") writes++; });
+  await page.route("**/api/cover-letters/*/revisions/*/download/0/txt", route => {
+    failures++;
+    return failures === 1 ? route.fulfill({ status: 503, contentType: "text/plain", body: "Temporary proxy failure" }) : route.continue();
+  });
+  await review.getByRole("button", { name: "Download letter TXT", exact: true }).click();
+  await expect(review.getByRole("alert")).toContainText("Download failed (503). Retry from this saved version.");
+  const event = page.waitForEvent("download");
+  await review.getByRole("button", { name: "Download letter TXT", exact: true }).click();
+  const file = info.outputPath("retried-letter.txt"); await (await event).saveAs(file);
+  const { readFile } = await import("node:fs/promises");
+  const expected = await request.get(`${backend}/api/cover-letters/${run.revision.id}/revisions/${run.revision.id}/download/0/txt`);
+  expect(await readFile(file)).toEqual(await expected.body());
+  await page.evaluate(() => { Object.defineProperty(navigator.clipboard, "writeText", { value: async () => { throw new Error("Clipboard permission denied"); } }); });
+  await review.getByRole("button", { name: "Copy reviewed letter", exact: true }).click();
+  await expect(review.getByRole("alert")).toContainText("Clipboard permission denied");
+  await expect(review.getByRole("button", { name: "Download letter Markdown", exact: true })).toBeEnabled();
+  expect(writes).toBe(0);
+});
+
 test.afterEach(async ({ page }, info) => {
   if (info.status === "passed") {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBeTruthy();

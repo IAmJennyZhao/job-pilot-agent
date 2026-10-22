@@ -50,6 +50,8 @@ def upgrade():
             sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()))
     if op.get_bind().dialect.name == "sqlite":
         op.execute("CREATE TRIGGER IF NOT EXISTS tailored_revision_immutable BEFORE UPDATE ON tailored_revisions BEGIN SELECT RAISE(ABORT, 'Generated revisions are immutable'); END")
+        op.execute("CREATE TRIGGER IF NOT EXISTS tailoring_run_inputs_immutable BEFORE UPDATE ON tailoring_runs WHEN OLD.snapshot != NEW.snapshot OR OLD.input_hash != NEW.input_hash OR OLD.request_hash != NEW.request_hash OR OLD.request_key != NEW.request_key OR OLD.source_id != NEW.source_id OR OLD.profile_id != NEW.profile_id OR OLD.job_id != NEW.job_id OR OLD.parent_run_id IS NOT NEW.parent_run_id BEGIN SELECT RAISE(ABORT, 'Run inputs are immutable'); END")
+        op.execute("CREATE TRIGGER IF NOT EXISTS tailoring_stage_immutable BEFORE UPDATE ON tailoring_stage_attempts WHEN OLD.state != 'running' OR OLD.input_data != NEW.input_data OR OLD.input_hash != NEW.input_hash OR OLD.run_id != NEW.run_id OR OLD.stage != NEW.stage OR OLD.attempt != NEW.attempt BEGIN SELECT RAISE(ABORT, 'Completed stages and stage inputs are immutable'); END")
 
 
 def downgrade():

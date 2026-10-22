@@ -1,6 +1,7 @@
 """Verify persisted generation checkpoints before any destructive restore."""
 from app.services.intake_preferences import digest
 from app.services.resume_validation import STAGES, OUTPUT_MODELS, PROMPT_VERSIONS, validate_stage, assemble_content, plain_text, accuracy_report
+from app.resume_prompts import system_for
 
 
 def validate_generation_tables(tables):
@@ -33,6 +34,8 @@ def validate_generation_tables(tables):
                 raise ValueError("Generation source snapshot differs from approved source")
         if snapshot["identity"] != source["bank"]["identity"] or snapshot["source_hashes"] != source["hashes"]:
             raise ValueError("Invalid protected identity or source hashes")
+        if snapshot["prompt_versions"] != PROMPT_VERSIONS or snapshot["prompt_hashes"] != {stage: digest(system_for(stage)) for stage in STAGES}:
+            raise ValueError("Unsupported generation prompt version")
         if run["state"] not in {"pending", "running", "completed", "failed", "interrupted"}:
             raise ValueError("Invalid run state")
         expected_key = f"{run['profile_id']}:{run['job_id']}:resume" if run["state"] in {"pending", "running"} else None
@@ -43,10 +46,15 @@ def validate_generation_tables(tables):
         for stage in STAGES:
             rows = sorted((a for a in attempts if a["stage"] == stage), key=lambda a: a["attempt"])
             for index, attempt in enumerate(rows, 1):
+                if not set(STAGES[:STAGES.index(stage)]) <= set(accepted):
+                    raise ValueError("Stage has missing predecessors")
                 if index > 2 or attempt["attempt"] != index or attempt["prompt_version"] != PROMPT_VERSIONS[stage]:
                     raise ValueError("Invalid stage attempt identity")
                 if attempt["input_hash"] != digest(attempt["input_data"]) or attempt["input_data"]["dependencies_hash"] != digest({"input": run["input_hash"], "stage": stage, "prior": accepted}):
                     raise ValueError("Invalid stage dependencies")
+                data = attempt["input_data"]
+                if data["job"] != snapshot["job"] or data["approved_evidence"] != snapshot["projection"] or data["prior_outputs"] != accepted or data["stage"] != stage:
+                    raise ValueError("Invalid stage input snapshot")
                 if attempt["state"] not in {"running", "passed", "failed", "interrupted"}:
                     raise ValueError("Invalid stage state")
                 output = attempt["output_data"]

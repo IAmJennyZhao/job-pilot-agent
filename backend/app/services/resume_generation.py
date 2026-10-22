@@ -28,9 +28,12 @@ def aware(value):
 def expire_runs(db):
     expired = list(db.scalars(select(models.TailoringRun).where(models.TailoringRun.state.in_(["pending", "running"]), models.TailoringRun.deadline_at <= now())))
     for run in expired:
-        run.state, run.active_key, run.finished_at = "interrupted", None, now()
-        run.error = "Run deadline expired or the server was interrupted. No automatic retry was made."
-        db.execute(update(models.TailoringStageAttempt).where(models.TailoringStageAttempt.run_id == run.id, models.TailoringStageAttempt.state == "running").values(state="interrupted", finished_at=now(), error=run.error))
+        message = "Run deadline expired or the server was interrupted. No automatic retry was made."
+        changed = db.execute(update(models.TailoringRun).where(models.TailoringRun.id == run.id,
+            models.TailoringRun.state.in_(["pending", "running"]), models.TailoringRun.deadline_at <= now())
+            .values(state="interrupted", active_key=None, finished_at=now(), error=message).execution_options(synchronize_session=False))
+        if changed.rowcount:
+            db.execute(update(models.TailoringStageAttempt).where(models.TailoringStageAttempt.run_id == run.id, models.TailoringStageAttempt.state == "running").values(state="interrupted", finished_at=now(), error=message))
     if expired:
         db.commit()
 
@@ -74,6 +77,7 @@ def start(db, job, request, parent_id=None):
     run = models.TailoringRun(job_id=job.id, profile_id=pid, source_id=snapshot["source_id"],
         parent_run_id=parent_id, request_key=request.request_key, request_hash=fingerprint,
         input_hash=digest(snapshot), snapshot=snapshot, state="pending", active_key=key,
+        created_at=now(),
         deadline_at=now() + timedelta(seconds=snapshot["limits"]["run_seconds"]))
     db.add(run)
     try:
@@ -152,7 +156,7 @@ def execute(engine, run_id):
                 with Session(engine) as db:
                     lock_live(db, run_id)
                     attempt = models.TailoringStageAttempt(run_id=run_id, stage=stage, attempt=attempt_number,
-                        state="running", input_data=data, input_hash=digest(data), prompt_version=PROMPT_VERSIONS[stage])
+                        state="running", input_data=data, input_hash=digest(data), prompt_version=PROMPT_VERSIONS[stage], started_at=now())
                     db.add(attempt); db.commit(); attempt_id = attempt.id
                 output, metadata, error, report = None, {}, None, None
                 repairable = True
@@ -167,6 +171,7 @@ def execute(engine, run_id):
                     if not report["valid"]:
                         error = "Stage validation failed. See the recorded findings."
                 except ValidationError:
+                    output = None
                     error = "Output did not match the required stage schema."
                     report = {"valid": False, "blocking_issues": [error], "validator_version": "resume-v1"}
                 except ProviderFailure as exc:

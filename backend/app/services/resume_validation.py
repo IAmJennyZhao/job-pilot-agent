@@ -13,7 +13,7 @@ def fact_tokens(text):
     text = text.casefold().replace("utilized", "used").replace("utilizing", "using")
     text = re.sub(r"\bin order to\b", "to", text)
     text = re.sub(r"\b(successfully|effectively)\b", "", text)
-    return re.findall(r"[\w]+(?:[./+#%-][\w]+)*|[%+#]", text, flags=re.UNICODE)
+    return re.findall(r"[\w]+(?:[./+#%-][\w]+)*|[%+#]", text, flags=re.UNICODE) + ["#metrics#"] + re.findall(r"(?<!\w)[+-]?\d+(?:[.,/]\d+)*(?:%|x)?", text)
 
 
 def unique(values, label, errors):
@@ -34,9 +34,13 @@ def validate_draft(draft, snapshot):
         if requirement.quote not in snapshot["job"]["source_content"]:
             errors.append(f"Requirement {requirement.id} lacks an exact posting quote.")
     covered = set()
+    selected_claims = set()
     for bullet in draft.bullets:
         unique(bullet.evidence_ids, "bullet evidence IDs", errors)
         source_claims = [claims.get(cid) for cid in bullet.evidence_ids]
+        if selected_claims.intersection(bullet.evidence_ids):
+            errors.append(f"Bullet {bullet.id} duplicates a claim already selected elsewhere.")
+        selected_claims.update(bullet.evidence_ids)
         if bullet.record_id not in records or any(not c or c["record_id"] != bullet.record_id for c in source_claims):
             errors.append(f"Bullet {bullet.id} references unavailable or unrelated record evidence.")
             continue
@@ -58,6 +62,9 @@ def validate_draft(draft, snapshot):
             errors.append(f"Skill {skill.name} lacks matching approved skill provenance.")
     if set(draft.unmet_requirement_ids) != requirements - covered:
         errors.append("Unmet requirements must equal requirements without selected bullet evidence.")
+    for overlap in projection["claim_overlap_groups"]:
+        if len(selected_claims.intersection(overlap["claim_ids"])) > 1:
+            errors.append(f"Overlap group {overlap['id']} needs one representative claim to avoid double-counting.")
     return errors
 
 
@@ -141,15 +148,31 @@ def assemble_content(draft, snapshot):
 
 
 def plain_text(content):
-    lines = [content["identity"].get("name", ""), "Education"]
+    identity = content["identity"]
+    lines = [identity.get("name", "")]
+    contact = " | ".join(str(identity[k]) for k in ("location", "phone", "email", "website", "github", "linkedin") if identity.get(k))
+    if contact:
+        lines.append(contact)
+    lines.append("Education")
     for education in content["education"]:
-        lines.append(" | ".join(str(education[k]) for k in ("institution", "degree", "field", "dates_display", "gpa") if education.get(k)))
+        parts = [education["institution"], education["degree"]]
+        if education.get("graduation_display") or education.get("graduation"):
+            parts.append(education.get("graduation_display") or education["graduation"])
+        if education.get("gpa"):
+            parts.append("GPA " + education["gpa"])
+        if education.get("minors"):
+            parts.append("Minors: " + ", ".join(education["minors"]))
+        lines.append(" | ".join(parts))
     lines += ["Technical Skills", ", ".join(s["name"] for s in content["draft"]["skills"])]
     for section, kind in (("Experience", "employment"), ("Projects", "project")):
         lines.append(section)
         for record in content["records"]:
             if record["kind"] != kind:
                 continue
-            lines.append(" | ".join(str(record[k]) for k in ("employer", "title_display", "name", "location", "dates_display") if record.get(k)))
+            parts = [str(record[k]) for k in ("employer", "title_display", "name", "location") if record.get(k)]
+            dates = record.get("dates_display") or " - ".join(record[k] for k in ("start", "end") if record.get(k))
+            if dates:
+                parts.append(dates)
+            lines.append(" | ".join(parts))
             lines.extend("- " + b["text"] for b in content["draft"]["bullets"] if b["record_id"] == record["id"])
     return "\n".join(lines)

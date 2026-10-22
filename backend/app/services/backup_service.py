@@ -230,6 +230,12 @@ def restore(db: Session, content: bytes, expected_hash: str):
     recovery_id = uuid.uuid4().hex
     recovery = recovery_dir / f"{recovery_id}.json"
     recovery.write_bytes(export_archive(db))
+    for run in tables["tailoring_runs"]:
+        if run["state"] in {"pending", "running"}:
+            run.update(state="interrupted", active_key=None, finished_at=datetime.now(timezone.utc), error="Restored in-flight run; resume only with an explicit retry.")
+    for attempt in tables["tailoring_stage_attempts"]:
+        if attempt["state"] == "running":
+            attempt.update(state="interrupted", finished_at=datetime.now(timezone.utc), error="Restored in-flight stage; provider completion may be unknown.")
     restored_dir = root / "restores" / uuid.uuid4().hex
     staged = []
     try:
@@ -242,7 +248,16 @@ def restore(db: Session, content: bytes, expected_hash: str):
                 staged.append(path)
                 row["file_path"] = str(path)
         for table in reversed(Base.metadata.sorted_tables):
-            db.execute(table.delete())
+            if table.name == "tailoring_runs":
+                remaining = {row.id: row.parent_run_id for row in db.execute(select(table.c.id, table.c.parent_run_id))}
+                while remaining:
+                    leaves = set(remaining) - set(remaining.values())
+                    if not leaves:
+                        raise ValueError("Cannot restore over cyclic retry history")
+                    db.execute(table.delete().where(table.c.id.in_(leaves)))
+                    remaining = {key: parent for key, parent in remaining.items() if key not in leaves}
+            else:
+                db.execute(table.delete())
         for table in Base.metadata.sorted_tables:
             if tables[table.name]:
                 db.execute(insert(table), tables[table.name])

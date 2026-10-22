@@ -2,6 +2,8 @@ from fastapi import HTTPException
 from app import models, schemas
 from app.config import get_settings
 from app.intake_schemas import IntakeReview
+from app.intake_facts import IntakeFacts
+from pydantic import ValidationError
 from app.services import intake_review_service, tailoring_source_service
 from app.services.intake_preferences import active_preferences, digest, evaluate
 from app.services.resume_validation import PROMPT_VERSIONS
@@ -25,9 +27,13 @@ def capture(db, job):
     if saved and not prep["review_stale"]:
         review = IntakeReview.model_validate(saved.review)
     else:
-        review = IntakeReview(job=schemas.JobCreate(
+        review = IntakeReview.model_construct(job=schemas.JobCreate(
             **{key: getattr(job, key) for key in ("company", "role_title", "location", "remote_type", "pay_min", "pay_max", "pay_currency", "pay_period", "source_content")},
-            links=[schemas.JobLinkCreate(kind=link.kind, label=link.label, url=link.url) for link in job.links]))
+            links=[schemas.JobLinkCreate(kind=link.kind, label=link.label, url=link.url) for link in job.links]), facts=IntakeFacts(), full_description_reviewed=False)
+        try:
+            IntakeReview.model_validate(review.model_dump())
+        except ValidationError:
+            missing.append("Fix the saved job's description length, salary range or links before generation.")
     evaluation = evaluate(db, review)
     snapshot = None
     if source:

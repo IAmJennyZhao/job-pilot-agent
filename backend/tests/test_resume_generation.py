@@ -164,3 +164,163 @@ def test_generation_backup_and_v3_compatibility(client, monkeypatch, prepared, t
         del legacy["tables"][name]
     assert restore(legacy).status_code == 200
     assert client.get(f"/api/jobs/{job['id']}/tailoring").json()["runs"] == []
+
+
+@pytest.mark.parametrize("stage,change", [
+    ("select", lambda out: out.bullets[0].evidence_ids.append("C-BLOCKED")),
+    ("select", lambda out: setattr(out.bullets[0], "record_id", "UNRELATED")),
+    ("select", lambda out: setattr(out.skills[0], "name", "Kubernetes")),
+    ("select", lambda out: setattr(out.requirements[0], "quote", "Invented job requirement")),
+    ("critique", lambda out: setattr(out.issues[0], "field_path", "invalid.path")),
+    ("revise", lambda out: out.decisions.clear()),
+    ("polish", lambda out: setattr(out.draft.bullets[0], "text", "Built a production Python system.")),
+    ("polish", lambda out: out.draft.bullets[0].requirement_ids.clear()),
+    ("polish", lambda out: out.edits.clear()),
+])
+def test_invalid_stage_outputs_stop_pipeline(client, monkeypatch, prepared, stage, change):
+    job, _ = prepared
+    def bad(output_model, system, payload, **kwargs):
+        output, metadata = fake_generation(output_model, system, payload, **kwargs)
+        if json.loads(payload)["stage"] == stage:
+            change(output)
+        return output, metadata
+    monkeypatch.setattr(ai_service, "get_tailoring_output", bad)
+    run = generate(client, job).json()
+    assert run["state"] == "failed" and run["revision"] is None
+    failed = [a for a in run["stages"] if a["stage"] == stage]
+    assert len(failed) == 2 and all(a["state"] == "failed" for a in failed)
+
+
+def test_revocation_during_provider_call_blocks_publication(client, monkeypatch, prepared):
+    job, source = prepared
+    def provider(*args, **kwargs):
+        response = client.post(f"/api/profile/tailoring-sources/{source['id']}/revoke", json={"expected_hash": source["bundle_hash"], "expected_active_id": source["id"]})
+        assert response.status_code == 200  # No generation transaction blocks this write.
+        return fake_generation(*args, **kwargs)
+    monkeypatch.setattr(ai_service, "get_tailoring_output", provider)
+    run = generate(client, job).json()
+    assert run["state"] == "failed" and "revoked" in run["error"] and run["revision"] is None
+
+
+def test_late_provider_output_cannot_revive_interrupted_run(client, monkeypatch, prepared):
+    from datetime import timedelta
+    job, _ = prepared
+    def provider(*args, **kwargs):
+        with next(app.dependency_overrides[get_db]()) as db:
+            db.execute(update(models.TailoringRun).values(deadline_at=service.now()-timedelta(seconds=1)))
+            db.commit()
+            service.expire_runs(db)
+        return fake_generation(*args, **kwargs)
+    monkeypatch.setattr(ai_service, "get_tailoring_output", provider)
+    run = generate(client, job).json()
+    assert run["state"] == "interrupted" and run["revision"] is None
+    assert run["stages"][0]["state"] == "interrupted" and run["stages"][0]["output"] is None
+
+
+def test_retry_backup_restore_with_real_foreign_keys(client, monkeypatch, prepared, tmp_path):
+    from sqlalchemy.orm import Session
+    from app.database import build_engine
+    from app.migrations import run_migrations
+    from app.services.backup_service import restore
+    monkeypatch.setattr(get_settings(), "asset_storage_dir", str(tmp_path / "assets"))
+    job, _ = prepared
+    def provider(output_model, *args, **kwargs):
+        if output_model is RevisedResume:
+            raise ProviderFailure("Synthetic provider interruption")
+        return fake_generation(output_model, *args, **kwargs)
+    monkeypatch.setattr(ai_service, "get_tailoring_output", provider)
+    failed = generate(client, job).json()
+    monkeypatch.setattr(ai_service, "get_tailoring_output", fake_generation)
+    run = client.post(f"/api/tailoring/runs/{failed['id']}/retry", json=request_for(client, job["id"])).json()
+    assert run["state"] == "completed"
+    content = client.get("/api/data/backup").content
+    import hashlib
+    url = "sqlite:///" + (tmp_path / "restore.db").as_posix()
+    run_migrations(url)
+    engine = build_engine(url)
+    with Session(engine) as db:
+        restore(db, content, hashlib.sha256(content).hexdigest())
+        restore(db, content, hashlib.sha256(content).hexdigest())
+        assert len(list(db.scalars(select(models.TailoringRun)))) == 2
+    engine.dispose()
+
+
+def test_schema_repair_recovers_without_discarding_core_content(client, monkeypatch, prepared):
+    job, _ = prepared
+    calls = []
+    def provider(output_model, system, payload, **kwargs):
+        calls.append(output_model)
+        if len(calls) == 1:
+            return {"unexpected": "malformed draft"}, {}
+        return fake_generation(output_model, system, payload, **kwargs)
+    monkeypatch.setattr(ai_service, "get_tailoring_output", provider)
+    run = generate(client, job).json()
+    assert run["state"] == "completed", run
+    assert len(calls) == 5 and len(run["revision"]["content"]["draft"]["bullets"]) == 1
+
+
+def test_style_guard_preserves_numeric_signs_and_negation():
+    from app.services.resume_validation import fact_tokens
+    assert fact_tokens("Measured -10% change; not production.") != fact_tokens("Measured 10% change; production.")
+    assert fact_tokens("Successfully utilized Python.") == fact_tokens("used Python")
+
+
+def test_input_limits_and_missing_configuration_fail_before_provider(client, monkeypatch, prepared):
+    job, _ = prepared
+    monkeypatch.setattr(ai_service, "get_tailoring_output", lambda *a, **k: pytest.fail("unexpected provider call"))
+    payload = request_for(client, job["id"])
+    client.patch(f"/api/jobs/{job['id']}", json={"source_content": "Python " * 15000})
+    readiness = client.get(f"/api/jobs/{job['id']}/tailoring")
+    assert readiness.status_code == 200 and not readiness.json()["readiness"]["ready"]
+    assert generate(client, job, payload).status_code == 422
+    client.patch(f"/api/jobs/{job['id']}", json={"source_content": "Python"})
+    monkeypatch.setattr(get_settings(), "openai_api_key", None)
+    assert generate(client, job, payload).status_code == 422
+
+
+def test_restore_interrupts_active_runs_and_blocks_stale_executor(client, monkeypatch, prepared, tmp_path):
+    monkeypatch.setattr(get_settings(), "asset_storage_dir", str(tmp_path))
+    job, _ = prepared
+    execute = service.execute
+    monkeypatch.setattr(service, "execute", lambda *args: None)
+    run = generate(client, job).json()
+    content = client.get("/api/data/backup").content
+    preview = client.post("/api/data/restore-preview", files={"file": ("active.json", content)}).json()
+    response = client.post("/api/data/restore", files={"file": ("active.json", content)}, data={"sha256": preview["sha256"], "confirmation": "RESTORE"})
+    assert response.status_code == 200
+    with next(app.dependency_overrides[get_db]()) as db:
+        execute(db.get_bind(), run["id"])
+    restored = client.get(f"/api/tailoring/runs/{run['id']}").json()
+    assert restored["state"] == "interrupted" and restored["stages"] == []
+
+
+def test_concurrent_start_serializes_on_real_sqlite(client, monkeypatch, prepared, tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    from sqlalchemy.orm import Session
+    from fastapi import HTTPException
+    from app.database import build_engine
+    from app.migrations import run_migrations
+    from app.generation_schemas import GenerateResume
+    from app.services.backup_service import restore
+    import hashlib
+    job, _ = prepared
+    payload = request_for(client, job["id"])
+    content = client.get("/api/data/backup").content
+    monkeypatch.setattr(get_settings(), "asset_storage_dir", str(tmp_path / "assets"))
+    url = "sqlite:///" + (tmp_path / "concurrent.db").as_posix()
+    run_migrations(url); engine = build_engine(url)
+    with Session(engine) as db:
+        restore(db, content, hashlib.sha256(content).hexdigest())
+    barrier = Barrier(2)
+    def start_one(_):
+        barrier.wait()
+        with Session(engine) as db:
+            try:
+                return service.start(db, db.get(models.Job, job["id"]), GenerateResume(**{**payload, "request_key": str(uuid.uuid4())}))[1]
+            except HTTPException as error:
+                return error.status_code
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(start_one, range(2)))
+    assert results.count(True) == 1 and results.count(409) == 1
+    engine.dispose()

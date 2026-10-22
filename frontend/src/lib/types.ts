@@ -633,3 +633,41 @@ export type JobIntelligenceResponse = {
   asset_recommendation: AssetRecommendation | null;
   errors: string[];
 };
+export interface TailoringSourceImport {
+  bank_markdown: string;
+  preferences_yaml: string;
+  template_tex: string;
+  style_guide: string;
+}
+
+export interface TailoringSourceSummary {
+  id: string;
+  profile_id: string;
+  bank_version: string;
+  bundle_hash: string;
+  status: "pending" | "active" | "superseded" | "revoked";
+  eligible_count: number;
+  excluded_count: number;
+  created_at: string;
+}
+
+export interface TailoringSourcePreview extends TailoringSourceSummary {
+  validation: { status: "pass"; eligible_claim_ids: string[]; excluded_claim_ids: string[]; warnings: string[]; validator_version: string };
+  claims: Array<{ id: string; record_id: string; text: string; constraints: string[]; evidence_status: string; generation_eligible: boolean; confirmation_note?: string | null }>;
+  identity: { name: string; location?: string | null; email?: string | null; phone?: string | null; website?: string | null; github?: string | null; linkedin?: string | null };
+  education: Array<{ id: string; institution: string; degree: string; graduation_display?: string | null; gpa?: string | null; minors: string[] }>;
+  records: Array<{ id: string; kind: string; employer?: string | null; title_display?: string | null; name?: string | null; start?: string | null; end?: string | null; dates_display?: string | null }>;
+  unknowns: Record<string, null>;
+  preferences: Record<string, unknown>;
+  template_hash: string;
+  style_hash: string;
+  template_tex: string;
+  style_guide: string;
+  approval: { status: string; approved_by?: string | null; approved_at?: string | null; scope?: string | null };
+  events: Array<{ action: string; sequence: number; created_at: string; content_hash: string }>;
+}
+
+export interface TailoringSourceList {
+  active_id: string | null;
+  versions: TailoringSourceSummary[];
+}

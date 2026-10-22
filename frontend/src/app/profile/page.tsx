@@ -1,6 +1,7 @@
 "use client";
 
 import { useConfirm } from "@/components/ui/confirm-provider";
+import { TailoringSourceManager } from "@/components/tailoring/source-manager";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -104,7 +105,7 @@ function ProfileContent() {
           );
         })}
       </div>
-      <section id="asset-content" tabIndex={-1} className="scroll-mt-36">{activeTab === "base" && !isLoading && !error ? <BaseProfileTab profile={profile ?? null} onSaved={invalidateProfileAssets} /> : null}
+      <section id="asset-content" tabIndex={-1} className="scroll-mt-36">{activeTab === "base" && !isLoading && !error ? <><BaseProfileTab profile={profile ?? null} onSaved={invalidateProfileAssets} />{profile ? <TailoringSourceManager key={profile.id} profileId={profile.id} /> : null}</> : null}
       {activeTab === "resumes" && !resumesLoading && !resumesError ? <ResumeVariantsTab resumeOptions={resumeOptions} onChanged={invalidateProfileAssets} /> : null}
       {activeTab === "templates" && !templatesLoading && !templatesError ? <CoverLetterTemplatesTab templates={templates} onChanged={invalidateProfileAssets} /> : null}
       {activeTab === "coverage" ? <CoverageAuditTab /> : null}

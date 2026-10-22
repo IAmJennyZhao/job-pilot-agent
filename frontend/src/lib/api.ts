@@ -1,4 +1,7 @@
 import type {
+  TailoringSourceImport,
+  TailoringSourceList,
+  TailoringSourcePreview,
   AIReadiness,
   AdvancedAnalysisResponse,
   AssetRecommendation,
@@ -93,6 +96,11 @@ async function requestForm<T>(path: string, formData: FormData): Promise<T> {
 }
 
 export const api = {
+  tailoringSources: () => request<TailoringSourceList>("/api/profile/tailoring-sources"),
+  tailoringSource: (id: string) => request<TailoringSourcePreview>(`/api/profile/tailoring-sources/${id}`),
+  importTailoringSource: (payload: TailoringSourceImport) => request<TailoringSourcePreview>("/api/profile/tailoring-sources/import", { method: "POST", body: JSON.stringify(payload) }),
+  activateTailoringSource: (id: string, expected_hash: string, expected_active_id: string | null) => request<TailoringSourcePreview>(`/api/profile/tailoring-sources/${id}/activate`, { method: "POST", body: JSON.stringify({ expected_hash, expected_active_id }) }),
+  revokeTailoringSource: (id: string, expected_hash: string, expected_active_id: string | null) => request<TailoringSourcePreview>(`/api/profile/tailoring-sources/${id}/revoke`, { method: "POST", body: JSON.stringify({ expected_hash, expected_active_id }) }),
   recoveryBackups: () => request<Array<{ id: string; created_at: string; bytes: number }>>("/api/data/recoveries"),
   downloadData: async (path: "backup" | "jobs.csv" | `recovery/${string}`) => {
     const response = await fetch(`${API_BASE_URL}/api/data/${path}`);

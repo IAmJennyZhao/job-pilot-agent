@@ -316,6 +316,8 @@ class SourcePreview(SourceSummary):
     claims: list[Claim]
     identity: Identity
     education: list[Education]
+    records: list[Record]
+    unknowns: dict[str, None]
     preferences: dict
     template_hash: str
     style_hash: str

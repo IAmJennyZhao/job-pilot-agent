@@ -59,6 +59,7 @@ def list_sources(db: Session):
 def preview(db: Session, source):
     return {**summary(db, source), "validation": source.validation, "claims": source.bank["claims"],
             "identity": source.bank["identity"], "education": source.bank["education"],
+            "records": source.bank["records"], "unknowns": source.bank["unknowns"],
             "preferences": source.preferences, "template_hash": source.hashes["template_tex"],
             "style_hash": source.hashes["style_guide"], "template_tex": source.template_tex,
             "style_guide": source.style_guide, "approval": source.bank["approval"],

@@ -13,7 +13,7 @@ from app.resume_prompts import system_for
 from app.services import ai_service, profile_service, tailoring_source_service
 from app.services.generation_inputs import capture, require_capture
 from app.services.intake_preferences import digest
-from app.services.resume_validation import STAGES, OUTPUT_MODELS, PROMPT_VERSIONS, validate_stage, accuracy_report, assemble_content, plain_text
+from app.services.resume_validation import STAGES, validate_stage, accuracy_report, assemble_content, plain_text, generation_version, output_models, prompt_versions
 from app.services.tailoring_provider import ProviderFailure
 
 
@@ -89,10 +89,20 @@ def start(db, job, request, parent_id=None):
 
 
 def stage_input(snapshot, stage, accepted, repair=None):
-    return {"job": snapshot["job"], "approved_evidence": snapshot["projection"],
+    data = {"job": snapshot["job"], "approved_evidence": snapshot["projection"],
             "presentation": {"section_order": ["Education", "Technical Skills", "Experience", "Projects"], "target_pages": 1},
             "prior_outputs": accepted, "stage": stage, "repair": repair,
             "dependencies_hash": digest({"input": digest(snapshot), "stage": stage, "prior": accepted})}
+    if generation_version(snapshot) == 2:
+        projection = snapshot["projection"]
+        data["contract"] = {
+            "critique_targets": ["draft", "skills", *[f"bullets.{b['id']}" for b in accepted.get("select", {}).get("bullets", [])]],
+            "claim_ids": [c["id"] for c in projection["claims"]],
+            "skill_source_ids": [c["id"] for key in ("technology_catalog", "skill_groups") for c in projection[key]],
+            "overlap_policy": "At most one bullet per overlap group. Prefer one representative; permitted complementary claims may share that bullet up to 45 words.",
+            "lineage_policy": "New bullet IDs require explicit parents and accepted critique issue links; retire every replaced parent.",
+        }
+    return data
 
 
 def lock_live(db, run_id):
@@ -138,16 +148,16 @@ def execute(engine, run_id):
                     parent_stage = db.scalar(select(models.TailoringStageAttempt).where(models.TailoringStageAttempt.run_id == parent_id,
                         models.TailoringStageAttempt.stage == stage, models.TailoringStageAttempt.state == "passed").order_by(models.TailoringStageAttempt.attempt.desc()))
                     if parent_stage and parent_stage.input_data.get("dependencies_hash") == base_input["dependencies_hash"]:
-                        candidate = OUTPUT_MODELS[stage].model_validate(parent_stage.output_data)
+                        candidate = output_models(snapshot)[stage].model_validate(parent_stage.output_data)
                         if validate_stage(stage, candidate, snapshot, accepted)["valid"]:
                             reused = (candidate, parent_stage.id)
             repair = None
             for attempt_number in (1, 2):
                 data = stage_input(snapshot, stage, accepted, repair)
-                output_model = OUTPUT_MODELS[stage]
+                output_model = output_models(snapshot)[stage]
                 payload = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
                 # Bytes are a conservative token bound; reserve space for schema/output.
-                bound = len(payload.encode()) + len(system_for(stage).encode()) + len(json.dumps(output_model.model_json_schema()).encode()) + snapshot["limits"]["output_tokens"]
+                bound = len(payload.encode()) + len(system_for(stage, generation_version(snapshot)).encode()) + len(json.dumps(output_model.model_json_schema()).encode()) + snapshot["limits"]["output_tokens"]
                 if bound > snapshot["limits"]["context_tokens"]:
                     raise ProviderFailure("This stage exceeds the configured context budget. Sources and outputs were not truncated.")
                 timeout = min(snapshot["limits"]["attempt_seconds"], (deadline - now()).total_seconds())
@@ -156,7 +166,7 @@ def execute(engine, run_id):
                 with Session(engine) as db:
                     lock_live(db, run_id)
                     attempt = models.TailoringStageAttempt(run_id=run_id, stage=stage, attempt=attempt_number,
-                        state="running", input_data=data, input_hash=digest(data), prompt_version=PROMPT_VERSIONS[stage], started_at=now())
+                        state="running", input_data=data, input_hash=digest(data), prompt_version=prompt_versions(snapshot)[stage], started_at=now())
                     db.add(attempt); db.commit(); attempt_id = attempt.id
                 output, metadata, error, report = None, {}, None, None
                 repairable = True
@@ -164,7 +174,7 @@ def execute(engine, run_id):
                     if reused:
                         output, metadata = reused[0], {"reused_from_attempt": reused[1], "provider_call": False}
                     else:
-                        output, metadata = ai_service.get_tailoring_output(output_model, system_for(stage), payload,
+                        output, metadata = ai_service.get_tailoring_output(output_model, system_for(stage, generation_version(snapshot)), payload,
                             model=snapshot["model"], timeout=timeout)
                     output = output_model.model_validate(output)
                     report = validate_stage(stage, output, snapshot, accepted)
@@ -173,7 +183,7 @@ def execute(engine, run_id):
                 except ValidationError:
                     output = None
                     error = "Output did not match the required stage schema."
-                    report = {"valid": False, "blocking_issues": [error], "validator_version": "resume-v1"}
+                    report = {"valid": False, "blocking_issues": [error], "validator_version": f"resume-v{generation_version(snapshot)}"}
                 except ProviderFailure as exc:
                     error, repairable = exc.safe_message, exc.repairable
                 with Session(engine) as db:
@@ -193,7 +203,7 @@ def execute(engine, run_id):
                           "previous_output": output.model_dump(mode="json") if output is not None else None}
             else:
                 raise ProviderFailure("Stage did not finish successfully.")
-        final = PolishedResume.model_validate(accepted["polish"]).draft
+        final = output_models(snapshot)["polish"].model_validate(accepted["polish"]).draft
         report = accuracy_report(final, snapshot, accepted)
         if not report["valid"]:
             raise ProviderFailure("Final evidence validation failed; no successful revision was created.")

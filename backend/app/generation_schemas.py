@@ -30,7 +30,7 @@ class ResumeDraft(StrictModel):
 class CritiqueIssue(StrictModel):
     issue_id: str
     severity: Literal["blocking", "improvement"]
-    field_path: str
+    field_path: str = Field(pattern=r"^(draft|skills|bullets\.[^.]+)$", description="Exact target: draft, skills, or bullets.<existing bullet ID>. Never append .text; use draft for gaps.")
     requirement_ids: list[str]
     evidence_ids: list[str]
     finding: str = Field(max_length=800)
@@ -45,9 +45,15 @@ class RevisionDecision(StrictModel):
     action: Literal["accepted", "rejected"]
     reason: str = Field(min_length=1, max_length=800)
 
+class BulletLineage(StrictModel):
+    bullet_id: str
+    parent_bullet_ids: list[str] = Field(max_length=20, description="Replaced original bullet IDs for a split/merge; empty for wholly new evidence.")
+    issue_ids: list[str] = Field(min_length=1, max_length=30, description="Accepted critique issues authorizing this new bullet.")
+
 class RevisedResume(StrictModel):
     draft: ResumeDraft
     decisions: list[RevisionDecision] = Field(max_length=30)
+    lineage: list[BulletLineage] = Field(default_factory=list, max_length=20, description="Exactly one entry for each new bullet ID; none for retained IDs. Changed evidence requires new IDs.")
 
 class PolishEdit(StrictModel):
     bullet_id: str
@@ -65,7 +71,7 @@ class GenerateResume(StrictModel):
     acknowledged_evaluation_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
 
 class FactualAccuracyReport(StrictModel):
-    validator_version: Literal["resume-v1"] = "resume-v1"
+    validator_version: Literal["resume-v1", "resume-v2"] = "resume-v2"
     valid: bool
     blocking_issues: list[str]
     supported_claim_ids: list[str]

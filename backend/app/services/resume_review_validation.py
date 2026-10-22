@@ -4,7 +4,7 @@ import re
 from fastapi import HTTPException
 from app.review_schemas import EditedDraft, ResumeEdit
 from app.services.intake_preferences import digest
-from app.services.resume_validation import validate_draft, assemble_content, plain_text
+from app.services.resume_validation import validate_draft, assemble_content, plain_text, generation_version
 
 VERSION = "resume-review-v1"
 
@@ -78,7 +78,7 @@ def validate_revision(content, snapshot, parent=None, identities=None):
     for message in errors:
         match = re.match(r"Bullet (\S+) ", message)
         issues.append({"field_path": f"bullets.{match.group(1)}" if match else "draft", "message": message})
-    return {"validator_version": VERSION, "valid": not errors, "issues": issues,
+    return {"validator_version": VERSION if generation_version(snapshot) == 1 else "resume-review-v2", "valid": not errors, "issues": issues,
             "validated_content_hash": digest(content), "input_hash": digest(snapshot),
             "unmet_requirement_ids": draft.unmet_requirement_ids, "human_review_required": True}
 

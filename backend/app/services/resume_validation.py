@@ -1,10 +1,26 @@
 """Conservative source-preserving checks, never a claim of semantic proof."""
 import re
+from app.services.generation_v1 import validation as legacy
 from app.generation_schemas import ResumeDraft, CritiqueReport, RevisedResume, PolishedResume, FactualAccuracyReport
 
 STAGES = ("select", "critique", "revise", "polish")
 OUTPUT_MODELS = dict(zip(STAGES, (ResumeDraft, CritiqueReport, RevisedResume, PolishedResume)))
-PROMPT_VERSIONS = {stage: f"resume-{stage}-v1" for stage in STAGES}
+PROMPT_VERSIONS = {stage: f"resume-{stage}-v2" for stage in STAGES}
+
+
+def generation_version(snapshot):
+    version = snapshot.get("generation_version", 1)
+    if type(version) is not int or version not in (1, 2):
+        raise ValueError("Unsupported generation version")
+    return version
+
+
+def output_models(snapshot):
+    return legacy.OUTPUT_MODELS if generation_version(snapshot) == 1 else OUTPUT_MODELS
+
+
+def prompt_versions(snapshot):
+    return legacy.PROMPT_VERSIONS if generation_version(snapshot) == 1 else PROMPT_VERSIONS
 
 
 def fact_tokens(text):
@@ -22,7 +38,11 @@ def unique(values, label, errors):
 
 
 def validate_draft(draft, snapshot):
+    if generation_version(snapshot) == 1:
+        return legacy.validate_draft(draft, snapshot)
     errors = []
+    if not draft.requirements:
+        errors.append("Map at least one actual posting requirement, including unsupported requirements.")
     projection = snapshot["projection"]
     claims = {c["id"]: c for c in projection["claims"]}
     records = {r["id"] for r in projection["records"]}
@@ -47,6 +67,8 @@ def validate_draft(draft, snapshot):
         if not set(bullet.requirement_ids) <= requirements:
             errors.append(f"Bullet {bullet.id} references an unknown requirement.")
         covered.update(bullet.requirement_ids)
+        if len(bullet.evidence_ids) > 1 and len(bullet.text.split()) > 45:
+            errors.append(f"Bullet {bullet.id} combines too much text. Use separate nonoverlapping complete claims or select one representative; multi-claim bullets allow at most 45 words.")
         source_text = " ".join(c["text"] for c in source_claims)
         if fact_tokens(bullet.text) != fact_tokens(source_text):
             errors.append(f"Bullet {bullet.id} changes source facts or uses an unverified paraphrase. Use the cited claim text with wording-only edits; do not remove qualifiers, clauses, metrics or units.")
@@ -63,8 +85,9 @@ def validate_draft(draft, snapshot):
     if set(draft.unmet_requirement_ids) != requirements - covered:
         errors.append("Unmet requirements must equal requirements without selected bullet evidence.")
     for overlap in projection["claim_overlap_groups"]:
-        if len(selected_claims.intersection(overlap["claim_ids"])) > 1:
-            errors.append(f"Overlap group {overlap['id']} needs one representative claim to avoid double-counting.")
+        matching = [b.id for b in draft.bullets if set(b.evidence_ids).intersection(overlap["claim_ids"])]
+        if len(matching) > 1:
+            errors.append(f"Overlap group {overlap['id']} occurs in bullets {matching}. Keep one representative or combine permitted complementary claims in ONE bullet of at most 45 words.")
     return errors
 
 
@@ -74,6 +97,8 @@ def polish_diff(before, after):
 
 
 def validate_stage(stage, output, snapshot, accepted):
+    if generation_version(snapshot) == 1:
+        return legacy.validate_stage(stage, output, snapshot, accepted)
     errors = []
     draft = output if stage == "select" else output.draft if stage in {"revise", "polish"} else None
     if draft:
@@ -85,8 +110,13 @@ def validate_stage(stage, output, snapshot, accepted):
         req_ids = {r.id for r in original.requirements}
         unique([i.issue_id for i in output.issues], "critique issue IDs", errors)
         for issue in output.issues:
-            if issue.field_path not in fields or not set(issue.evidence_ids) <= claim_ids or not set(issue.requirement_ids) <= req_ids:
-                errors.append(f"Critique {issue.issue_id} has invalid field or evidence references.")
+            if issue.field_path not in fields:
+                errors.append(f"Critique {issue.issue_id} has invalid target {issue.field_path!r}. Allowed targets: {sorted(fields)}. Never append .text; use draft for gaps.")
+            allowed = claim_ids | {x["id"] for key in ("technology_catalog", "skill_groups") for x in snapshot["projection"][key]} if issue.field_path == "skills" else claim_ids
+            if not set(issue.evidence_ids) <= allowed:
+                errors.append(f"Critique {issue.issue_id} has invalid evidence IDs {sorted(set(issue.evidence_ids)-allowed)}. Allowed evidence IDs for this target: {sorted(allowed)}.")
+            if not set(issue.requirement_ids) <= req_ids:
+                errors.append(f"Critique {issue.issue_id} has invalid requirement IDs. Allowed: {sorted(req_ids)}.")
     if stage == "revise":
         original = ResumeDraft.model_validate(accepted["select"])
         critique = CritiqueReport.model_validate(accepted["critique"])
@@ -107,11 +137,16 @@ def validate_stage(stage, output, snapshot, accepted):
                 errors.append(f"Blocking critique {issue.issue_id} remains unresolved.")
         old = {b.id: b for b in original.bullets}
         new = {b.id: b for b in draft.bullets}
+        from app.services.resume_lineage import validate_lineage
+        authorized_new, lineage_errors = validate_lineage(output, old, new, issues)
+        errors.extend(lineage_errors)
         for bid in old.keys() | new.keys():
-            if old.get(bid) != new.get(bid) and "draft" not in accepted_fields and f"bullets.{bid}" not in accepted_fields:
+            if old.get(bid) != new.get(bid) and "draft" not in accepted_fields and f"bullets.{bid}" not in accepted_fields and bid not in authorized_new:
                 errors.append(f"Bullet {bid} changed without an accepted critique recommendation.")
             if bid in old and bid in new and (old[bid].record_id, old[bid].evidence_ids) != (new[bid].record_id, new[bid].evidence_ids):
                 errors.append(f"Bullet {bid} changed its source identity; a new claim needs a new bullet ID.")
+        if [b.id for b in original.bullets] != [b.id for b in draft.bullets] and old.keys() == new.keys() and "draft" not in accepted_fields:
+            errors.append("Reordering bullets needs an accepted draft recommendation.")
         if original.skills != draft.skills and not {"draft", "skills"} & accepted_fields:
             errors.append("Skills changed without an accepted recommendation.")
         if original.requirements != draft.requirements:
@@ -127,10 +162,12 @@ def validate_stage(stage, output, snapshot, accepted):
         changes = polish_diff(original, draft)
         if [e.model_dump() for e in output.edits] != changes:
             errors.append("Polish edit log does not match computed changes.")
-    return {"valid": not errors, "blocking_issues": errors, "validator_version": "resume-v1"}
+    return {"valid": not errors, "blocking_issues": errors, "validator_version": "resume-v2"}
 
 
 def accuracy_report(draft, snapshot, accepted):
+    if generation_version(snapshot) == 1:
+        return legacy.accuracy_report(draft, snapshot, accepted)
     errors = validate_draft(draft, snapshot)
     before = RevisedResume.model_validate(accepted["revise"]).draft
     return FactualAccuracyReport(valid=not errors, blocking_issues=errors,
@@ -139,6 +176,10 @@ def accuracy_report(draft, snapshot, accepted):
 
 
 def assemble_content(draft, snapshot):
+    if generation_version(snapshot) == 1:
+        return legacy.assemble_content(draft, snapshot)
+    draft = draft.model_copy(deep=True)
+    draft.change_summary = [f"Selected {len(draft.bullets)} supported bullets from {len({b.record_id for b in draft.bullets})} records.", f"Selected {len(draft.skills)} supported skills; {len(draft.unmet_requirement_ids)} mapped requirements remain unmet."]
     selected = {b.record_id for b in draft.bullets}
     records = [r for r in snapshot["projection"]["records"] if r["id"] in selected]
     records.sort(key=lambda r: r.get("start") or "", reverse=True)

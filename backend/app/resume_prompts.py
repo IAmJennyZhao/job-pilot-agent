@@ -13,5 +13,26 @@ INSTRUCTIONS = {
 }
 
 
-def system_for(stage):
-    return SYSTEM + "\n" + INSTRUCTIONS[stage]
+V2_RULES = """
+COMPOSITION CONTRACT (applies to all stages):
+Prefer ONE approved claim per bullet and roughly 6-10 focused bullets overall. Never concatenate several accomplishments into a paragraph. A multi-claim bullet must be at most 45 whitespace-separated words and must include complete claims in evidence_ids order. Prefer 8-12 directly relevant skills. These are selection decisions, not permission to erase qualifiers or invent facts.
+Overlap groups: represent each group in at most ONE bullet. Select a single representative wherever possible. Complementary claims from the same group may appear together in that one concise bullet when the supplied group rule permits combining them; do not repeat them across bullets. Alternative descriptions of the same accomplishment should use one representative. Do not treat the rule's text as permission to exceed the word limit.
+Extract atomic requirements: separate distinct preferred qualifications. A link means the bullet actually supports the requirement, not merely adjacent experience. Leave unsupported qualifications unmet. Review links against full claim text, not keywords alone. Do not infer production, deployment, ownership, metrics or accessibility from adjacent experience.
+Treat repair.findings as precise instructions to fix the previous output, not as a request to repeat it. Check every listed error before returning.
+"""
+
+V2_INSTRUCTIONS = {
+    "select": "Prefer individual claims over combined bullets. Keep roles distinguishable through selection and priority. Return change_summary=[]; the application computes the content summary.",
+    "critique": "Use only contract.critique_targets as field_path values, exactly. Never use bullets.<id>.text or unmet_requirement_ids. For skills targets, evidence_ids may contain claim, technology, or skill-group IDs listed in contract; all other targets cite claim IDs only. Use [] when no evidence applies. Every action must be possible under the composition contract. Recommend splitting multi-claim bullets into complete claims, not splitting one claim or deleting its clauses. For new selection, cross-bullet changes or overall ordering target draft. Missing qualifications are gaps, not defects to fix; do not mix supported edits and requests for new facts in the same issue. Judge relevance against the actual posting, including SDKs when requested.",
+    "revise": "For a split or merge, retire the old IDs and assign NEW IDs to ALL resulting bullets. Emit lineage entries with bullet_id, parent_bullet_ids and accepted issue_ids for every new ID. Parent-specific issues authorize children using a subset of those parents' evidence; wholly new evidence needs an accepted draft issue. Retained IDs must retain record and evidence identity exactly. Each removed parent needs an accepted parent or draft issue. Do not reuse a parent ID for a shortened evidence list. Preserve requirements; recompute unmet IDs. Return change_summary=[]; the application computes it.",
+    "polish": "An empty edit log is expected when complete source claims are already concise. Do not rephrase merely to demonstrate activity. Keep change_summary unchanged.",
+}
+
+
+def system_for(stage, version=2):
+    if version == 1:
+        from app.services.generation_v1.prompts import system_for as legacy
+        return legacy(stage)
+    if version != 2:
+        raise ValueError("Unsupported generation version")
+    return SYSTEM + "\n" + V2_RULES + "\n" + INSTRUCTIONS[stage] + "\n" + V2_INSTRUCTIONS[stage]

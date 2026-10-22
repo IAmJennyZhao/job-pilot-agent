@@ -1,6 +1,6 @@
 """Verify persisted generation checkpoints before any destructive restore."""
 from app.services.intake_preferences import digest
-from app.services.resume_validation import STAGES, OUTPUT_MODELS, PROMPT_VERSIONS, validate_stage, assemble_content, plain_text, accuracy_report
+from app.services.resume_validation import STAGES, validate_stage, assemble_content, plain_text, accuracy_report, generation_version, output_models, prompt_versions
 from app.resume_prompts import system_for
 
 
@@ -34,7 +34,7 @@ def validate_generation_tables(tables):
                 raise ValueError("Generation source snapshot differs from approved source")
         if snapshot["identity"] != source["bank"]["identity"] or snapshot["source_hashes"] != source["hashes"]:
             raise ValueError("Invalid protected identity or source hashes")
-        if snapshot["prompt_versions"] != PROMPT_VERSIONS or snapshot["prompt_hashes"] != {stage: digest(system_for(stage)) for stage in STAGES}:
+        if snapshot["prompt_versions"] != prompt_versions(snapshot) or snapshot["prompt_hashes"] != {stage: digest(system_for(stage, generation_version(snapshot))) for stage in STAGES}:
             raise ValueError("Unsupported generation prompt version")
         if run["state"] not in {"pending", "running", "completed", "failed", "interrupted"}:
             raise ValueError("Invalid run state")
@@ -48,7 +48,7 @@ def validate_generation_tables(tables):
             for index, attempt in enumerate(rows, 1):
                 if not set(STAGES[:STAGES.index(stage)]) <= set(accepted):
                     raise ValueError("Stage has missing predecessors")
-                if index > 2 or attempt["attempt"] != index or attempt["prompt_version"] != PROMPT_VERSIONS[stage]:
+                if index > 2 or attempt["attempt"] != index or attempt["prompt_version"] != prompt_versions(snapshot)[stage]:
                     raise ValueError("Invalid stage attempt identity")
                 if attempt["input_hash"] != digest(attempt["input_data"]) or attempt["input_data"]["dependencies_hash"] != digest({"input": run["input_hash"], "stage": stage, "prior": accepted}):
                     raise ValueError("Invalid stage dependencies")
@@ -61,7 +61,7 @@ def validate_generation_tables(tables):
                 if attempt["output_hash"] != (digest(output) if output is not None else None):
                     raise ValueError("Invalid stage output hash")
                 if output is not None:
-                    parsed = OUTPUT_MODELS[stage].model_validate(output)
+                    parsed = output_models(snapshot)[stage].model_validate(output)
                     report = validate_stage(stage, parsed, snapshot, accepted)
                     if report != attempt["validation"] or (attempt["state"] == "passed" and not report["valid"]):
                         raise ValueError("Invalid stage validation report")
@@ -79,7 +79,7 @@ def validate_generation_tables(tables):
         for revision in revisions:
             if set(accepted) != set(STAGES):
                 raise ValueError("Revision lacks all four validated stages")
-            draft = OUTPUT_MODELS["polish"].model_validate(accepted["polish"]).draft
+            draft = output_models(snapshot)["polish"].model_validate(accepted["polish"]).draft
             content = assemble_content(draft, snapshot)
             if revision["content"] != content or revision["content_hash"] != digest(content) or revision["plain_text"] != plain_text(content) or revision["validation"] != accuracy_report(draft, snapshot, accepted):
                 raise ValueError("Generated revision was altered")

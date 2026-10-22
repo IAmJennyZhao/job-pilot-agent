@@ -1,6 +1,6 @@
 """Validate review history before restore; never infer approval for legacy drafts."""
 from app.services.intake_preferences import digest
-from app.services.resume_review_validation import VERSION, validate_revision, check_stored_edit, editable, bullet_identities
+from app.services.resume_review_validation import validate_revision, check_stored_edit, editable, bullet_identities
 
 
 def validate_review_tables(tables):
@@ -44,5 +44,5 @@ def validate_review_tables(tables):
         report = reports[row["id"]]
         if owners[row["id"]] != baseline["id"] or approval["edit_revision_id"] != (None if row["id"] == baseline["id"] else row["id"]):
             raise ValueError("Approval belongs to a different resume")
-        if not report["valid"] or approval["content_hash"] != digest(row["content"]) or approval["validation_hash"] != digest(report) or approval["validator_version"] != VERSION or approval["input_hash"] != runs[baseline["run_id"]]["input_hash"]:
+        if not report["valid"] or approval["content_hash"] != digest(row["content"]) or approval["validation_hash"] != digest(report) or approval["validator_version"] != report["validator_version"] or approval["input_hash"] != runs[baseline["run_id"]]["input_hash"]:
             raise ValueError("Approval does not match a valid exact revision")

@@ -6,7 +6,7 @@ from app import models
 from app.services.intake_preferences import digest
 from app.services.resume_generation import now, aware, scoped_run
 from app.services import tailoring_source_service
-from app.services.resume_review_validation import editable, build_content, validate_revision, differences, bullet_identities, VERSION
+from app.services.resume_review_validation import editable, build_content, validate_revision, differences, bullet_identities
 from app.services.resume_validation import plain_text
 
 
@@ -142,6 +142,6 @@ def approve(db, baseline_id, payload):
         return False
     db.add(models.ResumeReviewApproval(baseline_id=baseline.id, edit_revision_id=head.id if edits else None,
         revision_id=head.id, content_hash=payload.content_hash, validation_hash=payload.validation_hash,
-        input_hash=payload.input_hash, validator_version=VERSION, reviewed_at=now()))
+        input_hash=payload.input_hash, validator_version=validation["validator_version"], reviewed_at=now()))
     db.commit()
     return True

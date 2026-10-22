@@ -78,7 +78,8 @@ test("resume concurrent editing keeps stale local work for explicit comparison",
   await second.getByLabel("Bullet 1", { exact: true }).fill("Effectively built an internal Python prototype.");
   await second.getByRole("button", { name: "Save and validate", exact: true }).click();
   await expect(second.getByText("Awaiting review — automated checks passed.", { exact: true })).toBeVisible();
-  await first.getByRole("button", { name: "Refresh resume", exact: true }).click();
+  // Saving in the second tab must not erase the first tab's recovery copy.
+  await page.reload();
   await expect(first.getByText(/A newer revision exists/)).toBeVisible();
   await expect(first.getByLabel("Bullet 1", { exact: true })).toHaveValue("Successfully built an internal Python prototype.");
   await first.getByRole("button", { name: "Save and validate", exact: true }).click();
@@ -89,6 +90,26 @@ test("resume concurrent editing keeps stale local work for explicit comparison",
   await expect(first.getByText("Awaiting review — automated checks passed.", { exact: true })).toBeVisible();
   expect((await (await request.get(url)).json()).history).toHaveLength(3);
   await secondPage.close();
+});
+
+test("discard in one tab preserves another tab's unsaved resume after reload", async ({ page, context, request }) => {
+  const { job } = await prepare(request);
+  await page.goto(`/jobs/${job.id}`);
+  const first = page.getByRole("region", { name: "Resume review and editing" });
+  await first.getByRole("button", { name: "Edit resume", exact: true }).click();
+  await first.getByLabel("Bullet 1", { exact: true }).fill("Successfully built an internal Python prototype.");
+  const other = await context.newPage();
+  await other.goto(`/jobs/${job.id}`);
+  const second = other.getByRole("region", { name: "Resume review and editing" });
+  await second.getByLabel("Bullet 1", { exact: true }).fill("Effectively built an internal Python prototype.");
+  await second.getByRole("button", { name: "Discard unsaved edits", exact: true }).click();
+  await page.reload();
+  await expect(first.getByLabel("Bullet 1", { exact: true })).toHaveValue("Successfully built an internal Python prototype.");
+  await other.reload();
+  // A clean tab may recover the shared draft, but must not overwrite the other tab's copy.
+  await page.reload();
+  await expect(first.getByLabel("Bullet 1", { exact: true })).toHaveValue("Successfully built an internal Python prototype.");
+  await other.close();
 });
 
 test("resume lost save response retries once without duplicating revision", async ({ page, request }) => {

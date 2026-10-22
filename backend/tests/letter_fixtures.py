@@ -17,6 +17,7 @@ def fake_letter(output_model, system, payload, **kwargs):
                 ["I would welcome a conversation about the priorities for this position and how my experience might fit the needs described in the posting.",
                  "Thank you for considering my application and taking the time to review the work presented here, and I would appreciate learning more about the opportunity."],
             ]
+            texts[0].append("The role involves building Python services.")
             texts[1].append("I would appreciate the chance to hear more about the team's current priorities and consider how the work described here relates to those needs.")
             if length == "standard":
                 texts.append(["I would value an opportunity to discuss the practical questions facing the team and learn more about the expectations for someone joining in this role.",
@@ -28,8 +29,8 @@ def fake_letter(output_model, system, payload, **kwargs):
             paragraphs = []
             for p, entries in enumerate(texts):
                 paragraphs.append({"sentences": [{"id": f"v{i}-p{p}-s{s}", "text": text,
-                    "sentence_kind": "candidate_claim" if p == 0 and s == 1 else "motivation",
-                    "candidate_evidence_ids": [claim["id"]] if p == 0 and s == 1 else [], "job_evidence_ids": []}
+                    "sentence_kind": "candidate_claim" if p == 0 and s == 1 else "job_context" if p == 0 and s == 2 else "motivation",
+                    "candidate_evidence_ids": [claim["id"]] if p == 0 and s == 1 else [], "job_evidence_ids": [data["job_evidence"][0]["id"]] if p == 0 and s == 2 else []}
                     for s, text in enumerate(entries)]})
             variants.append({"variant_id": f"variant-{i+1}", "angle": ANGLES[i], "paragraphs": paragraphs})
         return LetterDraft.model_validate({"variants": variants}), {"provider_call": False}

@@ -6,6 +6,7 @@ from app.letter_prompts import VERSION
 from app.services.intake_preferences import digest
 
 ANGLES = ["concise professional", "technical contribution", "product/user impact"]
+NUMBER = r"(?<!\w)(?:[-+−$€£]\s*)?\d[\d,.]*(?:%|\+)?"
 
 
 def is_letter(snapshot):
@@ -16,7 +17,11 @@ def job_evidence(snapshot):
     # Stable, exact excerpts, constructed by trusted code rather than the writer.
     text = snapshot["job"]["source_content"]
     parts = [p.strip() for p in re.split(r"\n+|(?<=[.!?])\s+", text) if p.strip()]
-    return [{"id": f"job-{i+1}", "text": p} for i, p in enumerate(parts)]
+    evidence = [{"id": f"job-{i+1}", "text": p} for i, p in enumerate(parts)]
+    context = snapshot["letter_options"].get("company_context")
+    if context:
+        evidence.append({"id": "company-1", "text": context["text"], "source_url": context["source_url"]})
+    return evidence
 
 
 def sentences(content):
@@ -57,6 +62,7 @@ def assessment_payload(content, snapshot):
     records = {r["id"]: r for r in snapshot["projection"]["records"]}
     return {"content_hash": digest(content), "sentences": [{"sentence": s,
         "candidate_sources": [claims[i] for i in s["candidate_evidence_ids"] if i in claims],
+        "protected_metrics": [m for m in snapshot["projection"]["protected_metrics"] if m["claim_id"] in s["candidate_evidence_ids"]],
         "record_constraints": [records[r] for r in sorted({claims[i]["record_id"] for i in s["candidate_evidence_ids"] if i in claims}) if r in records],
         "job_sources": [jobs[i] for i in s["job_evidence_ids"] if i in jobs]}
         for s in sentences(content)]}
@@ -95,6 +101,9 @@ def validate(content, snapshot, assessment=None):
         openings = [v.paragraphs[0].sentences[0].text.casefold().strip() for v in parsed.variants]
         if len(set(openings)) != len(openings):
             issue("variants", "Use distinct openings for each variant.")
+        evidence_sets = {tuple(sorted({i for p in v.paragraphs for s in p.sentences for i in s.candidate_evidence_ids})) for v in parsed.variants}
+        if len(evidence_sets) < min(len(claims), len(parsed.variants)):
+            issue("variants", "Vary the selected candidate evidence across variants when approved sources permit it.")
         low, high = (100, 150) if options["length"] == "short" else (180, 250)
         for v in parsed.variants:
             words = sum(len(s.text.split()) for p in v.paragraphs for s in p.sentences)
@@ -102,6 +111,10 @@ def validate(content, snapshot, assessment=None):
                 issue(v.variant_id, f"Body has {words} words; {options['length']} letters require {low}–{high}.")
             if not (2 if options["length"] == "short" else 3) <= len(v.paragraphs) <= (3 if options["length"] == "short" else 4):
                 issue(v.variant_id, "Use 2–3 short or 3–4 standard paragraphs.")
+            if not any(s.candidate_evidence_ids for p in v.paragraphs for s in p.sentences):
+                issue(v.variant_id, "Include specific approved candidate evidence in each variant.")
+            if not any(s.job_evidence_ids for p in v.paragraphs for s in p.sentences):
+                issue(v.variant_id, "Connect each variant to cited posting or company context.")
         all_sentences = sentences(content)
         ids = [s["id"] for s in all_sentences]
         if len(set(ids)) != len(ids):
@@ -121,9 +134,16 @@ def validate(content, snapshot, assessment=None):
                 issue(path, "Company and role facts require job evidence.")
             if re.search(r"[\x00-\x1f<>]|https?://|\[[^\]]+\]\(|```", s["text"]):
                 issue(path, "Use plain sentence text without markup, links or control characters.")
+            protected = [snapshot["identity"]["name"]]
+            for record in snapshot["projection"]["records"]:
+                protected.extend(record.get(k) for k in ("employer", "title_display", "name", "dates_display") if record.get(k))
+            for education in snapshot["projection"]["education"]:
+                protected.extend(education.get(k) for k in ("institution", "degree", "graduation_display") if education.get(k))
+            if any(re.search(r"(?<!\w)" + re.escape(value) + r"(?!\w)", s["text"], re.I) for value in protected):
+                issue(path, "Keep protected names, titles, education and dates in trusted metadata; describe the supported work in the body.")
             source_text = " ".join(claims[i]["text"] for i in candidate_ids if i in claims) + " " + " ".join(jobs[i]["text"] for i in job_ids if i in jobs)
-            for number in re.findall(r"(?<!\w)\d[\d,.]*(?:%|\+)?", s["text"]):
-                if number not in re.findall(r"(?<!\w)\d[\d,.]*(?:%|\+)?", source_text):
+            for number in re.findall(NUMBER, s["text"]):
+                if number not in re.findall(NUMBER, source_text):
                     issue(path, "Numeric claims must preserve a cited source's values and units.")
             for tech in snapshot["projection"]["technology_catalog"]:
                 names = [tech["name"], *tech.get("aliases", [])]

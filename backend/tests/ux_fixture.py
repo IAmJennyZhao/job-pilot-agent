@@ -24,6 +24,8 @@ from app.database import Base, get_engine
 from app.main import app
 from app.services import ai_service
 from generation_fixtures import fake_generation
+from letter_fixtures import fake_letter
+from app.letter_schemas import LetterDraft, LetterAssessment
 from app.generation_schemas import RevisedResume
 from app.services.tailoring_provider import ProviderFailure
 from test_api import create_job, fake_analysis_output, fake_resume_suggestion_output
@@ -37,6 +39,8 @@ def fixture_generation(output_model, system, payload, **kwargs):
     import time
     data = json.loads(payload)
     time.sleep(0.35)
+    if output_model in {LetterDraft, LetterAssessment}:
+        return fake_letter(output_model, system, payload, **kwargs)
     if output_model is RevisedResume and "SYNTHETIC_FAIL_ONCE" in data["job"]["source_content"] and data["job"]["id"] not in failed_generation_jobs:
         failed_generation_jobs.add(data["job"]["id"])
         raise ProviderFailure("Synthetic provider timeout. Retry explicitly from saved checkpoints.")

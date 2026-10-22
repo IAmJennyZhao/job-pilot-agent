@@ -1,6 +1,6 @@
 """Cover-letter prose contracts; deliberately independent of resume bullet matching."""
 from typing import Literal
-from pydantic import Field
+from pydantic import Field, field_validator
 from app.tailoring_schemas import StrictModel
 from app.generation_schemas import GenerateResume
 from app.review_schemas import RevisionRequest
@@ -8,10 +8,33 @@ from app.review_schemas import RevisionRequest
 Kind = Literal["candidate_claim", "job_context", "motivation", "transition"]
 
 
+class CompanyContext(StrictModel):
+    text: str = Field(min_length=1, max_length=4000)
+    source_url: str = Field(min_length=1, max_length=2000)
+    confirmed: Literal[True]
+
+    @field_validator("source_url")
+    @classmethod
+    def source_location(cls, value):
+        from urllib.parse import urlsplit
+        url = urlsplit(value)
+        if url.scheme not in {"https", "http"} or not url.hostname or url.username or url.password or any(ord(c) < 32 for c in value):
+            raise ValueError("Use a public HTTP(S) source URL without credentials.")
+        return value
+
+    @field_validator("text")
+    @classmethod
+    def nonblank(cls, value):
+        if not value.strip():
+            raise ValueError("Enter the exact company-source excerpt.")
+        return value
+
+
 class LetterOptions(StrictModel):
     count: int = Field(default=3, ge=1, le=3)
     length: Literal["short", "standard"] = "standard"
     template_id: str | None = Field(default=None, max_length=36)
+    company_context: CompanyContext | None = None
 
 
 class GenerateLetter(GenerateResume):

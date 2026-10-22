@@ -110,6 +110,10 @@ def stage_call(engine, run_id, stage, number, data, snapshot, deadline, content=
     except Exception:
         error, repairable = "Evidence provider stopped unexpectedly. Retry explicitly after checking progress.", False
     with Session(engine) as db:
+        claimed = db.execute(update(models.TailoringStageAttempt).where(models.TailoringStageAttempt.id == existing_id,
+            models.TailoringStageAttempt.state == "running").values(state="running").execution_options(synchronize_session=False))
+        if claimed.rowcount != 1:
+            raise ProviderFailure("Late evidence output discarded; the attempt is no longer active.")
         row = db.get(models.TailoringStageAttempt, existing_id)
         run = db.get(models.TailoringRun, run_id)
         if row.state != "running":
@@ -214,6 +218,7 @@ def view(db, baseline_id, revision_id=None):
             models.TailoringStageAttempt.stage == "letter_check").order_by(models.TailoringStageAttempt.attempt.desc()))]
     chosen = review.selected_revision(base, review.revisions(db, base), result["revision"]["id"])
     result["sentence_assessment"] = assessment_for(db, run, chosen)
+    result["variant_texts"] = [policy.text_for(chosen.content, run.snapshot, index) for index in range(len(chosen.content["variants"]))]
     return result
 
 

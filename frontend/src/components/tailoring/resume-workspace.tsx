@@ -95,7 +95,7 @@ export function ResumeWorkspace({ jobId, updatedAt }: { jobId: string; updatedAt
           <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words text-xs">{JSON.stringify(attempt.output, null, 2)}</pre>
         </details>)}</div></details>
       </> : running ? <p role="status" className="text-sm">Waiting for the server to persist the new run…</p> : null}
-      <p className="text-sm text-muted-foreground">Review applies to the saved resume content. PDF layout and downloads will follow in a later phase.</p>
+      <p className="text-sm text-muted-foreground">Review the saved content, then inspect its PDF preview before approving final downloads.</p>
     </> : null}
   </section></Panel>;
 }

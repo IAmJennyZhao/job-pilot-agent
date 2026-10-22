@@ -1,0 +1,150 @@
+import { test, expect, type APIRequestContext } from "@playwright/test";
+import { execFileSync } from "node:child_process";
+import path from "node:path";
+
+const backend = "http://127.0.0.1:8100";
+async function prepare(request: APIRequestContext) {
+  const command = process.platform === "win32" ? "py" : "python";
+  const args = [...(process.platform === "win32" ? ["-3"] : []), "-c", "import sys,json;sys.path.insert(0,'tests');from tailoring_fixtures import import_payload;print(json.dumps(import_payload()))"];
+  const bundle = JSON.parse(execFileSync(command, args, { cwd: path.resolve(process.cwd(), "../backend"), encoding: "utf8" }));
+  bundle.style_guide += ` letters ${Date.now()}`;
+  const source = await (await request.post(`${backend}/api/profile/tailoring-sources/import`, { data: bundle })).json();
+  const state = await (await request.get(`${backend}/api/profile/tailoring-sources`)).json();
+  expect((await request.post(`${backend}/api/profile/tailoring-sources/${source.id}/activate`, { data: { expected_hash: source.bundle_hash, expected_active_id: state.active_id } })).ok()).toBeTruthy();
+  return (await request.post(`${backend}/api/jobs`, { data: { company: `Letter ${Date.now()}`, role_title: "Backend Engineer", source_content: "Build Python services.", status: "Applied" } })).json();
+}
+
+test.afterEach(async ({ page }, info) => {
+  if (info.status === "passed") {
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBeTruthy();
+    await page.getByRole("region", { name: "Cover letter review", exact: true }).screenshot({ path: info.outputPath("letter-review.png") });
+  }
+});
+
+test("letters generate independently, recover edits, check evidence and export exact reviewed history", async ({ page, request, context }) => {
+  const job = await prepare(request);
+  let generations = 0, analysis = 0;
+  page.on("request", r => { if (r.method() === "POST" && r.url().endsWith(`/jobs/${job.id}/cover-letters`)) generations++; if (r.method() === "POST" && /tailoring\/resume|\/api\/ai\//.test(r.url())) analysis++; });
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto(`/jobs/${job.id}`);
+  const panel = page.getByRole("region", { name: "Cover letters", exact: true });
+  await expect(panel.getByRole("button", { name: "Generate tailored cover letters", exact: true })).toBeDisabled();
+  await panel.getByLabel("I reviewed the full saved posting for this letter.").check();
+  await panel.getByLabel("Letter length", { exact: true }).selectOption("short");
+  await panel.getByText("Optional company-source excerpt", { exact: true }).click();
+  await panel.getByLabel("Company context source URL", { exact: true }).fill("https://example.test/about");
+  await panel.getByLabel("Company source excerpt", { exact: true }).fill("The company develops educational software.");
+  await expect(panel.getByRole("button", { name: "Generate tailored cover letters", exact: true })).toBeDisabled();
+  await panel.getByLabel("I checked this excerpt against its source and approve using it as company context.").check();
+  await panel.getByRole("button", { name: "Generate tailored cover letters", exact: true }).click();
+  await expect(panel.getByText("Letter run: completed", { exact: true })).toBeVisible();
+  const review = panel.getByRole("region", { name: "Cover letter review", exact: true });
+  await expect(review.getByLabel("Letter variant", { exact: true }).locator("option")).toHaveCount(3);
+  await expect(review.getByRole("button", { name: "Download letter TXT", exact: true })).toBeDisabled();
+  const original = await review.getByLabel("Letter revision history").inputValue();
+  await review.getByText("Edit letter sentences", { exact: true }).click();
+  const sentence = review.getByLabel("Paragraph 1, sentence 1", { exact: true });
+  const changed = (await sentence.inputValue()).replace("thoughtful work", "careful work");
+  await sentence.fill(changed);
+  await page.reload();
+  await review.getByText("Edit letter sentences", { exact: true }).click();
+  await expect(sentence).toHaveValue(changed);
+  await review.getByRole("button", { name: "Save letter edits", exact: true }).click();
+  await expect(review.getByRole("button", { name: "Approve exact letter revision", exact: true })).toBeDisabled();
+  await review.getByRole("button", { name: "Check sentence evidence", exact: true }).click();
+  await expect(review.getByText("Sentence evidence checks passed. Human review is still required.", { exact: true })).toBeVisible();
+  await review.getByLabel("I reviewed all 3 saved letter variants and their supporting evidence.").check();
+  await review.getByRole("button", { name: "Check sentence evidence", exact: true }).click();
+  await expect(review.getByLabel("I reviewed all 3 saved letter variants and their supporting evidence.")).not.toBeChecked();
+  await expect(review.getByLabel("I reviewed all 3 saved letter variants and their supporting evidence.")).toBeEnabled();
+  await review.getByLabel("I reviewed all 3 saved letter variants and their supporting evidence.").check();
+  await review.getByRole("button", { name: "Approve exact letter revision", exact: true }).click();
+  await expect(review.getByText("This saved letter revision was reviewed.", { exact: true })).toBeVisible();
+  const reviewed = await review.getByLabel("Letter revision history").inputValue();
+  await review.getByLabel("Letter variant", { exact: true }).selectOption("1");
+  const file = page.waitForEvent("download");
+  await review.getByRole("button", { name: "Download letter TXT", exact: true }).click();
+  expect((await file).suggestedFilename()).toContain("-2.txt");
+  await review.getByRole("button", { name: "Copy reviewed letter", exact: true }).click();
+  await expect(review.getByText("Reviewed letter copied.", { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toContain("Dear Hiring Team,");
+  await review.getByLabel("Letter variant", { exact: true }).selectOption("0");
+  await review.getByLabel("Paragraph 1, sentence 2", { exact: true }).fill("I deployed the prototype to production.");
+  await review.getByRole("button", { name: "Save letter edits", exact: true }).click();
+  await review.getByRole("button", { name: "Check sentence evidence", exact: true }).click();
+  await expect(review.getByLabel("Letter validation issues")).toContainText("Unsupported personal history or changed scope.");
+  await expect(review.getByRole("button", { name: "Approve exact letter revision", exact: true })).toBeDisabled();
+  await review.getByLabel("Letter revision history").selectOption(reviewed);
+  await expect(review.getByRole("button", { name: "Download letter TXT", exact: true })).toBeEnabled();
+  await review.getByLabel("Letter revision history").selectOption(original);
+  await review.getByRole("button", { name: "Restore letter as new revision", exact: true }).click();
+  await expect(review.getByRole("button", { name: "Approve exact letter revision", exact: true })).toBeDisabled();
+  await page.reload();
+  expect(generations).toBe(1); expect(analysis).toBe(0);
+  expect(await (await request.get(`${backend}/api/jobs/${job.id}`)).json()).toEqual(job);
+});
+
+test("letter lost-save response retries without a duplicate revision", async ({ page, request }) => {
+  const job = await prepare(request);
+  const ready = (await (await request.get(`${backend}/api/jobs/${job.id}/cover-letters`)).json()).readiness;
+  const run = await (await request.post(`${backend}/api/jobs/${job.id}/cover-letters`, { data: { request_key: crypto.randomUUID(), expected_input_hash: ready.input_hash, reviewed_description_hash: ready.description_hash, acknowledged_evaluation_hash: ready.evaluation.evaluation_hash, options: { count: 1, length: "short" } } })).json();
+  expect(run.state).toBe("completed");
+  await page.goto(`/jobs/${job.id}`);
+  const review = page.getByRole("region", { name: "Cover letter review", exact: true });
+  await review.getByText("Edit letter sentences", { exact: true }).click();
+  const sentence = review.getByLabel("Paragraph 1, sentence 1", { exact: true });
+  await sentence.fill((await sentence.inputValue()).replace("thoughtful work", "careful work"));
+  let lost = false;
+  await page.route("**/api/cover-letters/*/revisions", async route => {
+    if (!lost) { lost = true; await route.fetch(); await route.abort("failed"); } else await route.continue();
+  });
+  await review.getByRole("button", { name: "Save letter edits", exact: true }).click();
+  await expect(review.getByRole("alert").filter({ hasText: "A newer letter revision exists" })).toBeVisible();
+  await page.reload();
+  await review.getByText("Edit letter sentences", { exact: true }).click();
+  await expect(sentence).toContainText(/careful work/);
+  await review.getByRole("button", { name: "Save letter edits", exact: true }).click();
+  await expect(review.getByRole("button", { name: "Save letter edits", exact: true })).toBeDisabled();
+  const view = await (await request.get(`${backend}/api/cover-letters/${run.revision.id}`)).json();
+  expect(view.history).toHaveLength(2);
+});
+
+test("incompatible letter drafts remain downloadable and concurrent edits stay recoverable", async ({ page, request, context }) => {
+  const job = await prepare(request);
+  const ready = (await (await request.get(`${backend}/api/jobs/${job.id}/cover-letters`)).json()).readiness;
+  const run = await (await request.post(`${backend}/api/jobs/${job.id}/cover-letters`, { data: { request_key: crypto.randomUUID(), expected_input_hash: ready.input_hash, reviewed_description_hash: ready.description_hash, acknowledged_evaluation_hash: ready.evaluation.evaluation_hash, options: { count: 1, length: "short" } } })).json();
+  const view = await (await request.get(`${backend}/api/cover-letters/${run.revision.id}`)).json();
+  await page.goto(`/jobs/${job.id}`);
+  const storageKey = `job-pilot:draft:letter-edit-${view.profile_id}-${run.revision.id}`;
+  await page.evaluate(key => localStorage.setItem(key, '{"future_version":99,"work":"keep this"}'), storageKey);
+  await page.reload();
+  const panel = page.getByRole("region", { name: "Cover letter review", exact: true });
+  await expect(panel.getByText("A saved local letter draft has an incompatible format. Download it before discarding.", { exact: true })).toBeVisible();
+  const recovery = page.waitForEvent("download");
+  await panel.getByRole("button", { name: "Download letter recovery", exact: true }).click();
+  expect((await recovery).suggestedFilename()).toBe("letter-draft-recovery.json");
+  expect(await page.evaluate(key => localStorage.getItem(key), storageKey)).toContain("keep this");
+  await panel.getByRole("button", { name: "Discard incompatible letter draft", exact: true }).click();
+  await panel.getByText("Edit letter sentences", { exact: true }).click();
+  const first = panel.getByLabel("Paragraph 1, sentence 1", { exact: true });
+  const original = await first.inputValue();
+  await first.fill(original.replace("thoughtful work", "careful work"));
+  const other = await context.newPage();
+  await other.goto(`/jobs/${job.id}`);
+  const second = other.getByRole("region", { name: "Cover letter review", exact: true });
+  await second.getByText("Edit letter sentences", { exact: true }).click();
+  await second.getByLabel("Paragraph 1, sentence 1", { exact: true }).fill(original.replace("thoughtful work", "practical work"));
+  await second.getByRole("button", { name: "Save letter edits", exact: true }).click();
+  await expect(second.getByRole("button", { name: "Save letter edits", exact: true })).toBeDisabled();
+  await page.reload();
+  await expect(panel.getByRole("alert").filter({ hasText: "A newer letter revision exists" })).toBeVisible();
+  await panel.getByText("Edit letter sentences", { exact: true }).click();
+  await expect(first).toHaveValue(original.replace("thoughtful work", "careful work"));
+  await panel.getByRole("button", { name: "Save letter edits", exact: true }).click();
+  await expect(panel.getByRole("alert").filter({ hasText: "A newer revision was saved" })).toBeVisible();
+  await panel.getByRole("button", { name: "Keep my edits on current revision", exact: true }).click();
+  await panel.getByRole("button", { name: "Save letter edits", exact: true }).click();
+  await expect(panel.getByRole("button", { name: "Save letter edits", exact: true })).toBeDisabled();
+  expect((await (await request.get(`${backend}/api/cover-letters/${run.revision.id}`)).json()).history).toHaveLength(3);
+  await other.close();
+});

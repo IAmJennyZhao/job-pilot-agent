@@ -2,6 +2,7 @@
 
 import { validateJobFields } from "@/lib/job-validation";
 import { ResumeWorkspace } from "@/components/tailoring/resume-workspace";
+import { LetterWorkspace } from "@/components/tailoring/letter-workspace";
 import { JobActionEditor } from "@/components/job-action";
 import { useConfirm } from "@/components/ui/confirm-provider";
 
@@ -252,6 +253,7 @@ export default function JobDetailPage() {
       {job ? (
         <>
           {!isEditing ? <ResumeWorkspace jobId={job.id} updatedAt={job.updated_at} /> : null}
+          {!isEditing ? <LetterWorkspace jobId={job.id} updatedAt={job.updated_at} /> : null}
           <JobActionEditor jobId={job.id} />
           <Panel>
             {isEditing && form ? (

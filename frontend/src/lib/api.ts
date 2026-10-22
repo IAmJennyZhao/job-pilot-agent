@@ -37,6 +37,7 @@ import type {
 import type { IntakeReview, IntakeSave, IntakeEvaluation, IntakePreparation } from "./intake-types";
 import type { GenerationRequest, GenerationRun, GenerationWorkspace } from "./generation-types";
 import type { ReviewWorkspace, SaveResumeEdit, RestoreResumeRevision, ReviewResume, ResumeRender, ResumeRenderPreview } from "./review-types";
+import type { LetterRequest, LetterRun, LetterWorkspace, LetterReview, LetterEdit } from "./letter-types";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
@@ -157,6 +158,20 @@ export const api = {
   saveIntake: (payload: IntakeSave) => request<JobDetail>("/api/jobs/intake/save", { method: "POST", body: JSON.stringify(payload) }),
   intakePreparation: (id: string) => request<IntakePreparation>(`/api/jobs/${id}/intake`),
   generationWorkspace: (jobId: string) => request<GenerationWorkspace>(`/api/jobs/${jobId}/tailoring`),
+  letterWorkspace: (jobId: string) => request<LetterWorkspace>(`/api/jobs/${jobId}/cover-letters`),
+  letterRun: (id: string) => request<LetterRun>(`/api/cover-letters/runs/${id}`),
+  generateLetter: (jobId: string, payload: LetterRequest) => request<LetterRun>(`/api/jobs/${jobId}/cover-letters`, { method: "POST", body: JSON.stringify(payload) }),
+  retryLetter: (id: string, payload: LetterRequest) => request<LetterRun>(`/api/cover-letters/runs/${id}/retry`, { method: "POST", body: JSON.stringify(payload) }),
+  letterReview: (id: string, revision?: string) => request<LetterReview>(`/api/cover-letters/${id}${revision ? `?revision_id=${encodeURIComponent(revision)}` : ""}`),
+  saveLetter: (id: string, payload: { request_key: string; expected_revision_id: string; edit: LetterEdit }) => request<LetterReview>(`/api/cover-letters/${id}/revisions`, { method: "POST", body: JSON.stringify(payload) }),
+  restoreLetter: (id: string, payload: RestoreResumeRevision) => request<LetterReview>(`/api/cover-letters/${id}/restore`, { method: "POST", body: JSON.stringify(payload) }),
+  checkLetter: (id: string, payload: { request_key: string; expected_revision_id: string; content_hash: string }) => request<LetterReview>(`/api/cover-letters/${id}/check`, { method: "POST", body: JSON.stringify(payload) }),
+  reviewLetter: (id: string, payload: ReviewResume) => request<LetterReview>(`/api/cover-letters/${id}/review`, { method: "POST", body: JSON.stringify(payload) }),
+  downloadLetter: async (id: string, revision: string, variant: number, format: "txt" | "md") => {
+    const response = await fetch(`${API_BASE_URL}/api/cover-letters/${id}/revisions/${revision}/download/${variant}/${format}`, { cache: "no-store" });
+    if (!response.ok) { const error = await response.json(); throw new Error(error.detail || "Letter download failed."); }
+    return response.blob();
+  },
   resumeReview: (id: string, revisionId?: string) => request<ReviewWorkspace>(`/api/tailoring/resumes/${id}${revisionId ? `?revision_id=${encodeURIComponent(revisionId)}` : ""}`),
   saveResumeEdit: (id: string, payload: SaveResumeEdit) => request<ReviewWorkspace>(`/api/tailoring/resumes/${id}/revisions`, { method: "POST", body: JSON.stringify(payload) }),
   restoreResumeRevision: (id: string, payload: RestoreResumeRevision) => request<ReviewWorkspace>(`/api/tailoring/resumes/${id}/restore`, { method: "POST", body: JSON.stringify(payload) }),

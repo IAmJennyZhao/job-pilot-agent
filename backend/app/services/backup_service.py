@@ -18,7 +18,8 @@ from app.database import Base, build_engine
 
 MAX_BYTES = 50 * 1024 * 1024
 FORMAT = "job-pilot-backup"
-VERSION = 3
+VERSION = 4
+GENERATION_TABLES = {"tailoring_runs", "tailoring_stage_attempts", "tailored_revisions"}
 INTAKE_TABLES = {"job_intake_reviews"}
 TAILORING_TABLES = {"tailoring_source_versions", "tailoring_source_events", "tailoring_profile_states"}
 V1_TABLES = {"application_attributions", "asset_recommendation_snapshots", "cover_letter_templates",
@@ -132,7 +133,7 @@ def validate_archive(content: bytes):
         raise HTTPException(413, "Backup exceeds the 50 MB archive limit")
     try:
         archive = json.loads(content)
-        if archive.get("format") != FORMAT or archive.get("version") not in {1, 2, VERSION}:
+        if archive.get("format") != FORMAT or archive.get("version") not in {1, 2, 3, VERSION}:
             raise ValueError("Unsupported backup format or version")
         if archive["version"] == 1:
             if set(archive["tables"]) != V1_TABLES:
@@ -142,6 +143,10 @@ def validate_archive(content: bytes):
             if set(archive["tables"]) != V1_TABLES | TAILORING_TABLES:
                 raise ValueError("Invalid legacy backup tables")
             archive["tables"].update({name: [] for name in INTAKE_TABLES})
+        if archive["version"] in {1, 2, 3}:
+            if set(archive["tables"]) != V1_TABLES | TAILORING_TABLES | INTAKE_TABLES:
+                raise ValueError("Invalid legacy backup tables")
+            archive["tables"].update({name: [] for name in GENERATION_TABLES})
         if set(archive["tables"]) != set(Base.metadata.tables):
             raise ValueError("Backup tables do not match this app version")
         tables = {}
@@ -190,6 +195,8 @@ def validate_archive(content: bytes):
             raise ValueError("Invalid missing-file manifest")
         validate_tailoring_tables(tables)
         validate_intake_tables(tables)
+        from app.services.generation_backup import validate_generation_tables
+        validate_generation_tables(tables)
         # Validate IDs, foreign keys and SQL types before touching live records.
         engine = build_engine("sqlite://")
         try:

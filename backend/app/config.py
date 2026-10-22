@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     auto_migrate: bool = Field(default=True, alias="AUTO_MIGRATE")
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
     openai_model: str | None = Field(default=None, alias="OPENAI_MODEL")
+    tailoring_context_tokens: int = Field(default=128000, ge=16000, le=1000000, alias="TAILORING_CONTEXT_TOKENS")
     tavily_api_key: str | None = Field(default=None, alias="TAVILY_API_KEY")
     asset_storage_dir: str = Field(default_factory=_default_asset_storage_dir, alias="ASSET_STORAGE_DIR")
     backend_cors_origins: str = Field(

@@ -127,6 +127,8 @@ def test_intake_backup_roundtrip_and_legacy_v2(client, monkeypatch, tmp_path):
         if legacy:
             candidate["version"] = 2
             del candidate["tables"]["job_intake_reviews"]
+            for name in ("tailoring_runs", "tailoring_stage_attempts", "tailored_revisions"):
+                del candidate["tables"][name]
         content = json.dumps(candidate).encode()
         preview = client.post("/api/data/restore-preview", files={"file": ("backup.json", content)})
         assert preview.status_code == 200, preview.text

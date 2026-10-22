@@ -14,6 +14,9 @@ from app.services import profile_asset_service, profile_service, skill_gap_servi
 
 logger = logging.getLogger(__name__)
 
+# Tailoring has bounded calls and metadata while existing callers retain their contract.
+from app.services.tailoring_provider import get_tailoring_output
+
 T = TypeVar("T", bound=BaseModel)
 OPENAI_TIMEOUT_SECONDS = 60.0
 

@@ -37,6 +37,57 @@ def new_uuid() -> str:
     return str(uuid.uuid4())
 
 
+class TailoringRun(Base):
+    __tablename__ = "tailoring_runs"
+    __table_args__ = (UniqueConstraint("profile_id", "job_id", "request_key", name="uq_tailoring_request"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    job_id: Mapped[str] = mapped_column(String(36), ForeignKey("jobs.id", ondelete="RESTRICT"))
+    profile_id: Mapped[str] = mapped_column(String(36), ForeignKey("resume_profiles.id", ondelete="RESTRICT"))
+    source_id: Mapped[str] = mapped_column(String(36), ForeignKey("tailoring_source_versions.id", ondelete="RESTRICT"))
+    parent_run_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("tailoring_runs.id", ondelete="RESTRICT"), nullable=True)
+    request_key: Mapped[str] = mapped_column(String(128))
+    request_hash: Mapped[str] = mapped_column(String(64))
+    input_hash: Mapped[str] = mapped_column(String(64))
+    snapshot: Mapped[dict] = mapped_column(JSON)
+    state: Mapped[str] = mapped_column(String(32), default="pending")
+    active_key: Mapped[str | None] = mapped_column(String(128), unique=True, nullable=True)
+    error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    deadline_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class TailoringStageAttempt(Base):
+    __tablename__ = "tailoring_stage_attempts"
+    __table_args__ = (UniqueConstraint("run_id", "stage", "attempt", name="uq_tailoring_attempt"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    run_id: Mapped[str] = mapped_column(String(36), ForeignKey("tailoring_runs.id", ondelete="RESTRICT"))
+    stage: Mapped[str] = mapped_column(String(16))
+    attempt: Mapped[int] = mapped_column(Integer)
+    state: Mapped[str] = mapped_column(String(32), default="running")
+    input_data: Mapped[dict] = mapped_column(JSON)
+    input_hash: Mapped[str] = mapped_column(String(64))
+    output_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    output_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    validation: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    provider_metadata: Mapped[dict] = mapped_column(JSON, default=dict)
+    prompt_version: Mapped[str] = mapped_column(String(64))
+    error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class TailoredRevision(Base):
+    __tablename__ = "tailored_revisions"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    run_id: Mapped[str] = mapped_column(String(36), ForeignKey("tailoring_runs.id", ondelete="RESTRICT"), unique=True)
+    content: Mapped[dict] = mapped_column(JSON)
+    content_hash: Mapped[str] = mapped_column(String(64))
+    plain_text: Mapped[str] = mapped_column(Text)
+    validation: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 def enum_values(enum_cls: type[enum.Enum]) -> list[str]:
     return [member.value for member in enum_cls]
 

@@ -115,6 +115,11 @@ class JobExtractPreviewRequest(BaseModel):
 
     @model_validator(mode="after")
     def has_source_material(self) -> "JobExtractPreviewRequest":
+        if self.source_url:
+            from urllib.parse import urlsplit
+            url = urlsplit(str(self.source_url))
+            if url.scheme not in {"http", "https"} or not url.hostname or url.username or url.password:
+                raise ValueError("Use an HTTP or HTTPS job URL without embedded credentials.")
         if not self.source_url and not (self.source_content and self.source_content.strip()):
             raise ValueError("Provide a job URL, pasted job content, or both.")
         return self

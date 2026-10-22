@@ -11,6 +11,16 @@ from app.services.intake_preferences import flags_for
 from tailoring_fixtures import import_payload
 
 
+def activate_preferences(client):
+    client.post("/api/profile", json={"name": "Synthetic Tester", "skills": []})
+    bundle = import_payload()
+    bundle["preferences_yaml"] = yaml.safe_dump(preferences().model_dump(by_alias=True))
+    source = client.post("/api/profile/tailoring-sources/import", json=bundle).json()
+    activated = client.post(f"/api/profile/tailoring-sources/{source['id']}/activate", json={"expected_hash": source["bundle_hash"], "expected_active_id": None})
+    assert activated.status_code == 200, activated.text
+    return source
+
+
 def preferences():
     data = yaml.safe_load(import_payload()["preferences_yaml"])
     data["compensation"].update(currency="USD", minimum=135000)
@@ -82,3 +92,72 @@ def test_save_retry_duplicates_stale_evaluation_and_preparation(client):
     assert preparation["full_description_ready"] and not preparation["generation_available"]
     client.patch(f"/api/jobs/{job['id']}", json={"source_content": "Changed"})
     assert client.get(f"/api/jobs/{job['id']}/intake").json()["review_stale"]
+
+
+def test_active_preferences_red_override_and_changed_preferences(client):
+    source = activate_preferences(client)
+    payload = review().model_dump(mode="json")
+    payload["job"].update(pay_min=100000, pay_max=120000, status="Applied")
+    evaluation = client.post("/api/jobs/intake/evaluate", json=payload).json()
+    assert evaluation["flags"][0]["level"] == "red"
+    request = {**payload, "request_key": str(uuid.uuid4()), "decision": "continue", "expected_evaluation_hash": evaluation["evaluation_hash"]}
+    response = client.post("/api/jobs/intake/save", json=request)
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "Saved"
+    client.post(f"/api/profile/tailoring-sources/{source['id']}/revoke", json={"expected_hash": source["bundle_hash"], "expected_active_id": source["id"]})
+    request["request_key"] = str(uuid.uuid4())
+    assert client.post("/api/jobs/intake/save", json=request).status_code == 409
+    preparation = client.get(f"/api/jobs/{response.json()['id']}/intake").json()
+    assert not preparation["sources_ready"] and preparation["saved_evaluation"]["available"]
+    assert not preparation["current_evaluation"]["available"]
+
+
+def test_intake_backup_roundtrip_and_legacy_v2(client, monkeypatch, tmp_path):
+    import json
+    from app.config import get_settings
+    monkeypatch.setattr(get_settings(), "asset_storage_dir", str(tmp_path))
+    activate_preferences(client)
+    payload = review().model_dump(mode="json")
+    evaluation = client.post("/api/jobs/intake/evaluate", json=payload).json()
+    response = client.post("/api/jobs/intake/save", json={**payload, "request_key": str(uuid.uuid4()), "decision": "save_later", "expected_evaluation_hash": evaluation["evaluation_hash"]})
+    assert response.status_code == 200
+    archive = client.get("/api/data/backup").json()
+    for legacy in (False, True):
+        candidate = copy.deepcopy(archive)
+        if legacy:
+            candidate["version"] = 2
+            del candidate["tables"]["job_intake_reviews"]
+        content = json.dumps(candidate).encode()
+        preview = client.post("/api/data/restore-preview", files={"file": ("backup.json", content)})
+        assert preview.status_code == 200, preview.text
+        restored = client.post("/api/data/restore", files={"file": ("backup.json", content)}, data={"sha256": preview.json()["sha256"], "confirmation": "RESTORE"})
+        assert restored.status_code == 200, restored.text
+        rows = client.get("/api/data/backup").json()["tables"]["job_intake_reviews"]
+        assert len(rows) == (0 if legacy else 1)
+    archive["tables"]["job_intake_reviews"][0]["evaluation"]["flags"][0]["level"] = "green"
+    bad = client.post("/api/data/restore-preview", files={"file": ("bad.json", json.dumps(archive).encode())})
+    assert bad.status_code == 400
+
+
+def test_failed_intake_save_rolls_back_job_and_events(client, monkeypatch):
+    from app import models
+    from app.database import get_db
+    from app.main import app
+    from sqlalchemy import select, event
+    from sqlalchemy.orm import Session
+    payload = review().model_dump(mode="json")
+    evaluation = client.post("/api/jobs/intake/evaluate", json=payload).json()
+    request = {**payload, "request_key": str(uuid.uuid4()), "decision": "save_later", "expected_evaluation_hash": evaluation["evaluation_hash"]}
+    def fail(session, _context, _instances):
+        if any(isinstance(row, models.JobIntakeReview) for row in session.new):
+            raise RuntimeError("Synthetic save interruption")
+    event.listen(Session, "before_flush", fail)
+    try:
+        with pytest.raises(RuntimeError, match="Synthetic save interruption"):
+            client.post("/api/jobs/intake/save", json=request)
+    finally:
+        event.remove(Session, "before_flush", fail)
+    assert client.get("/api/jobs").json() == []
+    with next(app.dependency_overrides[get_db]()) as db:
+        assert list(db.scalars(select(models.JobStatusEvent))) == []
+    assert client.post("/api/jobs/intake/save", json=request).status_code == 200

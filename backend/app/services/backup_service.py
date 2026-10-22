@@ -73,6 +73,32 @@ def json_value(value):
     raise TypeError(f"Cannot export {type(value).__name__}")
 
 
+def validate_intake_tables(tables):
+    from app.intake_schemas import IntakeReview
+    from app.tailoring_preferences import Preferences
+    from app.services.intake_preferences import digest, flags_for
+    sources = {row["id"]: row for row in tables["tailoring_source_versions"]}
+    for row in tables["job_intake_reviews"]:
+        review = IntakeReview.model_validate(row["review"])
+        evaluation = row["evaluation"]
+        if row["decision"] not in {"save_later", "continue"} or evaluation["input_hash"] != digest(review.model_dump(mode="json")):
+            raise ValueError("Invalid intake review snapshot")
+        signed = {key: value for key, value in evaluation.items() if key not in {"evaluation_hash", "duplicate_candidates"}}
+        if evaluation["evaluation_hash"] != digest(signed):
+            raise ValueError("Invalid intake evaluation hash")
+        source = sources.get(row["source_id"])
+        if row["source_id"] != evaluation["source_id"] or bool(source) != evaluation["available"]:
+            raise ValueError("Invalid intake preference source")
+        if source:
+            if row["preference_snapshot"] != source["preferences"] or evaluation["preference_hash"] != digest(source["preferences"]):
+                raise ValueError("Invalid intake preference snapshot")
+            expected = flags_for(review, Preferences.model_validate(row["preference_snapshot"]))
+            if expected != evaluation["flags"]:
+                raise ValueError("Invalid intake flags")
+        elif row["preference_snapshot"] is not None or evaluation["flags"]:
+            raise ValueError("Intake flags have no preference source")
+
+
 def export_archive(db: Session) -> bytes:
     connection = db.connection()
     if connection.dialect.name == "sqlite" and not connection.connection.driver_connection.in_transaction:
@@ -163,6 +189,7 @@ def validate_archive(content: bytes):
         if not isinstance(missing, list) or not all(isinstance(item, str) for item in missing):
             raise ValueError("Invalid missing-file manifest")
         validate_tailoring_tables(tables)
+        validate_intake_tables(tables)
         # Validate IDs, foreign keys and SQL types before touching live records.
         engine = build_engine("sqlite://")
         try:

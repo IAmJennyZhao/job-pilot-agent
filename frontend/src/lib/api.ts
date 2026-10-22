@@ -35,6 +35,7 @@ import type {
 } from "@/lib/types";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+import type { IntakeReview, IntakeSave, IntakeEvaluation, IntakePreparation } from "./intake-types";
 
 export class ApiError extends Error {
   status: number;
@@ -149,6 +150,9 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload)
     }),
+  evaluateIntake: (payload: IntakeReview) => request<IntakeEvaluation>("/api/jobs/intake/evaluate", { method: "POST", body: JSON.stringify(payload) }),
+  saveIntake: (payload: IntakeSave) => request<JobDetail>("/api/jobs/intake/save", { method: "POST", body: JSON.stringify(payload) }),
+  intakePreparation: (id: string) => request<IntakePreparation>(`/api/jobs/${id}/intake`),
   updateJob: (
     id: string,
     payload: Partial<JobCreatePayload> & {

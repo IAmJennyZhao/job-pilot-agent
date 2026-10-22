@@ -1,13 +1,15 @@
 "use client";
 
 import { validateJobFields } from "@/lib/job-validation";
+import { IntakeDecisions } from "@/components/intake-review";
+import type { IntakeFacts, IntakeFactKey } from "@/lib/intake-types";
 import { useConfirm } from "@/components/ui/confirm-provider";
 
 import { keepPreviousData, useMutation, useMutationState, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, ExternalLink, FileText, Plus, Save, Search, Sparkles, X } from "lucide-react";
 import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useDraft } from "@/lib/use-draft";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -36,6 +38,9 @@ type IntakeState = {
 
 type ReviewState = JobCreatePayload & {
   duplicateCount: number;
+  facts?: IntakeFacts;
+  sourceInput?: IntakeState;
+  fullDescriptionReviewed?: boolean;
 };
 
 const healthLabels: Record<string, string> = { active: "Active opportunities", stale: "Stale", "missing-data": "Missing data", "needs-analysis": "Needs analysis", "missing-pay": "Missing pay", "missing-fit": "Missing fit", "low-confidence": "Low confidence" };
@@ -63,14 +68,6 @@ const editableLinkKinds: JobLinkInput["kind"][] = [
   "custom"
 ];
 
-const extractionSteps = [
-  "Reading the source material",
-  "Extracting company, role, location, and pay",
-  "Paraphrasing responsibilities and core skills",
-  "Checking for duplicate applications",
-  "Preparing editable review fields"
-];
-
 function statusFromUrl(value: string | null): JobStatus | "" {
   if (!value) return "";
   return (jobStatuses as readonly string[]).includes(value) ? (value as JobStatus) : "";
@@ -91,6 +88,7 @@ export default function JobsPage() {
   return <Suspense fallback={<Panel>Loading tracker...</Panel>}><JobsContent /></Suspense>;
 }
 function JobsContent() {
+  const router = useRouter();
   const confirm = useConfirm();
   const queryClient = useQueryClient();
   const params = useSearchParams();
@@ -131,13 +129,13 @@ function JobsContent() {
     mutationFn: api.extractJobPreview,
     onSuccess: (data) => {
       setPreview(data);
-      setReview(reviewFromPreview(data));
+      setReview({ ...reviewFromPreview(data), facts: data.preference_facts, sourceInput: { ...intake }, fullDescriptionReviewed: false });
     }
   });
 
   const createMutation = useMutation({
-    mutationFn: api.createJob,
-    onSuccess: (job) => {
+    mutationFn: api.saveIntake,
+    onSuccess: (job, variables) => {
       setSavedJob(job);
       setShowIntake(false);
       setIntake({ source_url: "", source_content: "" });
@@ -145,9 +143,11 @@ function JobsContent() {
       setReview(null);
       intakeDraft.clear();
       reviewDraft.clear();
+      try { localStorage.removeItem("job-pilot:draft:job-intake-save"); } catch { /* Saving still succeeded if browser storage is unavailable. */ }
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       window.scrollTo({ top: 0, behavior: "smooth" });
+      if (variables.decision === "continue") router.push(`/jobs/${job.id}?tailoring=prepare#tailoring-preparation`);
     }
   });
 
@@ -171,17 +171,29 @@ function JobsContent() {
 
   const startManualFallback = () => {
     setPreview(null);
-    setReview(blankReview(intake));
+    setReview({ ...blankReview(intake), facts: {}, sourceInput: { ...intake }, fullDescriptionReviewed: false });
+    createMutation.reset();
   };
 
-  const saveReview = () => {
-    if (!review || Object.keys(validateJobFields(review)).length) return;
-    createMutation.mutate(cleanReview(review, intake.source_url));
+  const discardIntake = () => {
+    intakeDraft.discard(); reviewDraft.discard(); setPreview(null);
+    extractMutation.reset(); createMutation.reset(); setShowIntake(false);
+  };
+  const changeReview = (next: ReviewState) => {
+    const facts = { ...next.facts };
+    const invalidate = (...keys: IntakeFactKey[]) => keys.forEach(key => { facts[key] = { value: null, origin: "unknown", quote: "" }; });
+    if (review) {
+      if (["pay_min", "pay_max", "pay_currency", "pay_period", "pay_raw"].some(key => review[key as keyof ReviewState] !== next[key as keyof ReviewState])) invalidate("salary_component", "salary_band");
+      if (review.location !== next.location || review.remote_type !== next.remote_type) invalidate("nyc_compatible", "salary_band");
+      if (review.role_title !== next.role_title) invalidate("role_family");
+      if (review.company !== next.company) invalidate("employer_source", "company_stage", "employee_count", "hours_week");
+      if (JSON.stringify(review.links) !== JSON.stringify(next.links)) invalidate("employer_source");
+    }
+    setReview({ ...next, facts });
   };
 
   const changeStatusFilter = (status: JobStatus | "") => setFilter({ status, hidden: isHiddenStatus(status) ? "true" : params.get("hidden") ?? "" });
   const changeShowHidden = (value: boolean) => setFilter({ hidden: value ? "true" : "", status: !value && isHiddenStatus(statusFilter) ? "" : statusFilter, funnel: "", from: "" });
-  const saveReviewDisabled = Boolean(review && Object.keys(validateJobFields(review)).length) || createMutation.isPending || !review?.company.trim() || !review?.role_title.trim();
 
   return (
     <div className="grid gap-6">
@@ -240,18 +252,20 @@ function JobsContent() {
                 Manual entry
               </Button>
             </div>
-            <ProcessSteps active={extractMutation.isPending} steps={extractionSteps} />
+            {extractMutation.isPending ? <p role="status" className="text-sm">Extracting job basics. Your source text stays in this draft.</p> : null}
+            {!review ? <Button variant="ghost" onClick={discardIntake}>Not pursuing</Button> : null}
           </div>
 
           {review ? (
             <div className="mt-6 border-t border-border pt-5">
-              <SaveReviewedJobButton onClick={saveReview} isPending={createMutation.isPending} disabled={saveReviewDisabled} />
-              {createMutation.error ? <p className="mt-3 text-sm text-destructive">{(createMutation.error as Error).message}</p> : null}
               <div className="mt-5">
-                <ReviewEditor review={review} onChange={setReview} preview={preview} />
+                <ReviewEditor review={review} onChange={changeReview} preview={preview} />
               </div>
-              {createMutation.error ? <p className="mt-3 text-sm text-destructive">{(createMutation.error as Error).message}</p> : null}
-              <SaveReviewedJobButton className="mt-4" onClick={saveReview} isPending={createMutation.isPending} disabled={saveReviewDisabled} />
+              <IntakeDecisions review={{ job: cleanReview(review, intake.source_url), facts: review.facts ?? {}, full_description_reviewed: review.fullDescriptionReviewed ?? false }}
+                valid={!Object.keys(validateJobFields(review)).length && Boolean(review.company.trim() && review.role_title.trim())}
+                stale={JSON.stringify(review.sourceInput) !== JSON.stringify(intake)} busy={createMutation.isPending} error={createMutation.error}
+                onFacts={facts => setReview({ ...review, facts })} onReviewed={fullDescriptionReviewed => setReview({ ...review, fullDescriptionReviewed })}
+                onSave={payload => createMutation.mutate(payload)} onDiscard={discardIntake} />
             </div>
           ) : null}
         </fieldset></Panel></section>
@@ -369,25 +383,6 @@ function JobsContent() {
   );
 }
 
-function SaveReviewedJobButton({
-  className,
-  onClick,
-  isPending,
-  disabled
-}: {
-  className?: string;
-  onClick: () => void;
-  isPending: boolean;
-  disabled: boolean;
-}) {
-  return (
-    <Button className={cn("w-full", className)} onClick={onClick} disabled={disabled}>
-      <Save className="h-4 w-4" />
-      {isPending ? "Saving..." : "Save reviewed job"}
-    </Button>
-  );
-}
-
 function reviewFromPreview(preview: JobExtractPreview): ReviewState {
   return {
     company: preview.company,
@@ -479,7 +474,7 @@ function cleanReview(review: ReviewState, fallbackSourceUrl: string): JobCreateP
     responsibilities: review.responsibilities.map((item) => item.trim()).filter(Boolean),
     required_skills: review.required_skills.map((item) => item.trim()).filter(Boolean),
     links,
-    status: review.status,
+    status: "Saved",
     status_note: review.status_note,
     notes: review.notes?.trim() || null,
     extraction_confidence: review.extraction_confidence,
@@ -563,6 +558,8 @@ function ReviewEditor({
       <Field label="Location">
         <Input value={review.location ?? ""} onChange={(event) => set("location", event.target.value)} />
       </Field>
+      <p className="text-sm">Posted pay: {formatPay({ pay_min: review.pay_min ?? null, pay_max: review.pay_max ?? null, pay_currency: review.pay_currency ?? null, pay_period: review.pay_period ?? null, pay_raw: review.pay_raw ?? null })}</p>
+      <details><summary className="cursor-pointer text-sm font-medium">More job details: pay, responsibilities and links{Object.keys(errors).length ? " — corrections needed" : ""}</summary><div className="mt-3 grid gap-4">
       <Field label="Summary">
         <Textarea value={review.summary ?? ""} onChange={(event) => set("summary", event.target.value)} />
       </Field>
@@ -623,6 +620,7 @@ function ReviewEditor({
           </div>
         ))}
       </div>
+      </div></details>
     </div>
   );
 }
@@ -832,10 +830,6 @@ function JobDrawer({ job, onClose, returnTo }: { job: JobListItem; onClose: () =
         </div>
     </Dialog>
   );
-}
-
-function ProcessSteps({ active }: { active: boolean; steps: string[] }) {
-  return active ? <p role="status" className="text-sm text-muted-foreground">Extracting job details. Keep this page open while it runs. If extraction fails, retry or use manual entry; your source draft is kept.</p> : null;
 }
 
 function formatPay(job: { pay_min: number | null; pay_max: number | null; pay_currency: string | null; pay_period: string | null; pay_raw: string | null }) {

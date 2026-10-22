@@ -26,7 +26,7 @@ test("create a job, schedule an action, reschedule, complete and reopen", async 
   await page.getByRole("button", { name: "Manual entry", exact: true }).click();
   await page.getByLabel("Company", { exact: true }).fill(company);
   await page.getByLabel("Role title", { exact: true }).fill("Browser Engineer");
-  await page.getByRole("button", { name: "Save reviewed job", exact: true }).first().click();
+  await page.getByRole("button", { name: "Save for later", exact: true }).click();
   await page.getByRole("link", { name: "Open saved job" }).click();
   const now = new Date();
   const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;

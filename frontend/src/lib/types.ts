@@ -258,6 +258,7 @@ export type JobDuplicateCandidate = {
 };
 
 export type JobExtractPreview = {
+  preference_facts: import("./intake-types").IntakeFacts;
   company: string;
   role_title: string;
   category: JobCategory;

@@ -8,6 +8,9 @@ from app.services.intake_preferences import digest, evaluate, active_preferences
 
 
 def save(db, payload: IntakeSave):
+    connection = db.connection()
+    if connection.dialect.name == "sqlite" and not connection.connection.driver_connection.in_transaction:
+        connection.exec_driver_sql("BEGIN IMMEDIATE")
     fingerprint = digest(payload.model_dump(mode="json"))
 
     def existing():

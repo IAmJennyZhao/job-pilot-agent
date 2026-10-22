@@ -34,6 +34,14 @@ async def optional_ui_latency(request, call_next):
 
 
 def fake_output(output_model, *_args):
+    if output_model is schemas.JobExtractionOutput:
+        return schemas.JobExtractionOutput(company="Synthetic Intake Employer", role_title="Backend Engineer", summary="Build APIs.", confidence=90,
+            pay_min=100000, pay_max=120000, pay_currency="USD", pay_period="year",
+            preference_facts={key: {"value": value, "origin": "posting", "quote": quote} for key, value, quote in [
+                ("salary_component", "base", "USD 100000-120000 annual base salary"),
+                ("salary_band", "applicable", "NYC salary band"),
+                ("nyc_compatible", "yes", "Remote anywhere including NYC"),
+                ("required_years", 2, "Minimum 2 years required") ]})
     if output_model is schemas.InterviewQuestionsOutput:
         return schemas.InterviewQuestionsOutput(questions=[
             schemas.InterviewQuestion(question="How would you design a reliable API?", type="technical", why_it_matters="Synthetic test question", strong_answer_should_include=["Retries"]),

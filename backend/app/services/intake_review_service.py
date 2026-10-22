@@ -68,4 +68,4 @@ def preparation(db, job):
             full_description_ready = current["full_description_ready"]
     return {"saved_evaluation": saved.evaluation if saved else None, "current_evaluation": current,
             "review_stale": stale, "sources_ready": bool(source), "full_description_ready": full_description_ready,
-            "generation_available": False, "decision": saved.decision if saved else None}
+            "generation_available": True, "decision": saved.decision if saved else None}

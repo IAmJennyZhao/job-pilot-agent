@@ -8,7 +8,6 @@ import { useDraft } from "@/lib/use-draft";
 import type { IntakeEvaluation, IntakeFactKey, IntakeFacts, IntakeReview, IntakeSave } from "@/lib/intake-types";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/field";
-import { Panel } from "@/components/ui/panel";
 
 const factFields: { key: IntakeFactKey; label: string; options?: string[] }[] = [
   { key: "salary_component", label: "Salary component", options: ["base", "total"] },
@@ -89,18 +88,4 @@ export function IntakeDecisions({ review, valid, stale, busy, error, onFacts, on
     </div>
     <p className="text-xs text-muted-foreground">Both save options keep the job as Saved. Continue acknowledges the current flags and opens tailoring preparation.</p>
   </div>;
-}
-
-export function TailoringPreparation({ jobId, updatedAt }: { jobId: string; updatedAt: string }) {
-  const query = useQuery({ queryKey: ["intake-preparation", jobId, updatedAt], queryFn: () => api.intakePreparation(jobId) });
-  return <Panel><section id="tailoring-preparation" className="grid gap-3 scroll-mt-4">
-    <h2 className="font-semibold">Tailoring preparation</h2>
-    {query.isPending ? <p className="text-sm">Loading preparation…</p> : query.error ? <p role="alert" className="text-sm">{query.error.message} <Button onClick={() => query.refetch()}>Retry</Button></p> : query.data ? <>
-      {query.data.current_evaluation ? <PreferenceFlags evaluation={query.data.current_evaluation} /> : <p className="text-sm">{query.data.review_stale ? "This job changed after intake. Previous checks are historical; review the changed details before future tailoring." : "This job has no saved intake review."}</p>}
-      {query.data.saved_evaluation ? <details><summary className="cursor-pointer text-sm">Checks recorded when saved</summary><div className="mt-2"><PreferenceFlags evaluation={query.data.saved_evaluation} /></div></details> : null}
-      <p className="text-sm">{query.data.sources_ready ? "Approved tailoring sources are active." : <>Activate approved sources in <Link className="underline" href="/profile?tab=base">Application Assets</Link>.</>}</p>
-      <p className="text-sm">{query.data.full_description_ready ? "Full job description reviewed." : "A complete, reviewed job description is still needed before generating a resume."}</p>
-      <p className="text-sm text-muted-foreground">Resume generation and downloads will be available in Phase 3. Detailed job analysis is a separate optional action on this page.</p>
-    </> : null}
-  </section></Panel>;
 }

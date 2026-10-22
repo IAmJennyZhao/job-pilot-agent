@@ -10,10 +10,10 @@ PROMPT_VERSIONS = {stage: f"resume-{stage}-v1" for stage in STAGES}
 def fact_tokens(text):
     # Only narrowly equivalent style edits are automatic. Arbitrary paraphrases
     # need review and cannot be accepted merely because an evidence ID exists.
-    text = text.casefold().replace("utilized", "used").replace("utilizing", "using")
+    text = text.casefold().replace("utilized", "used").replace("utilizing", "using").replace("\u2212", "-")
     text = re.sub(r"\bin order to\b", "to", text)
     text = re.sub(r"\b(successfully|effectively)\b", "", text)
-    return re.findall(r"[\w]+(?:[./+#%-][\w]+)*|[%+#]", text, flags=re.UNICODE) + ["#metrics#"] + re.findall(r"(?<!\w)[+-]?\d+(?:[.,/]\d+)*(?:%|x)?", text)
+    return re.findall(r"[\w]+(?:[./+#%-][\w]+)*|[%+#<>\u2264\u2265\u2248~\u00b1$\u20ac\u00a3\u00a5]", text, flags=re.UNICODE) + ["#metrics#"] + re.findall(r"(?<!\w)[+-]?\d+(?:[.,/]\d+)*(?:%|x)?", text)
 
 
 def unique(values, label, errors):

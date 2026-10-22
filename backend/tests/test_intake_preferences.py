@@ -89,7 +89,7 @@ def test_save_retry_duplicates_stale_evaluation_and_preparation(client):
     assert client.post("/api/jobs/intake/save", json=changed).status_code == 409
     assert client.post("/api/jobs/intake/save", json={**request, "request_key": str(uuid.uuid4())}).status_code == 409
     preparation = client.get(f"/api/jobs/{job['id']}/intake").json()
-    assert preparation["full_description_ready"] and not preparation["generation_available"]
+    assert preparation["full_description_ready"] and preparation["generation_available"]
     client.patch(f"/api/jobs/{job['id']}", json={"source_content": "Changed"})
     assert client.get(f"/api/jobs/{job['id']}/intake").json()["review_stale"]
 

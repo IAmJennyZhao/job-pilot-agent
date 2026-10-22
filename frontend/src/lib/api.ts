@@ -35,6 +35,7 @@ import type {
 } from "@/lib/types";
 
 import type { IntakeReview, IntakeSave, IntakeEvaluation, IntakePreparation } from "./intake-types";
+import type { GenerationRequest, GenerationRun, GenerationWorkspace } from "./generation-types";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
@@ -154,6 +155,10 @@ export const api = {
   evaluateIntake: (payload: IntakeReview) => request<IntakeEvaluation>("/api/jobs/intake/evaluate", { method: "POST", body: JSON.stringify(payload) }),
   saveIntake: (payload: IntakeSave) => request<JobDetail>("/api/jobs/intake/save", { method: "POST", body: JSON.stringify(payload) }),
   intakePreparation: (id: string) => request<IntakePreparation>(`/api/jobs/${id}/intake`),
+  generationWorkspace: (jobId: string) => request<GenerationWorkspace>(`/api/jobs/${jobId}/tailoring`),
+  generationRun: (runId: string) => request<GenerationRun>(`/api/tailoring/runs/${runId}`),
+  generateResume: (jobId: string, payload: GenerationRequest) => request<GenerationRun>(`/api/jobs/${jobId}/tailoring/resume`, { method: "POST", body: JSON.stringify(payload) }),
+  retryResume: (runId: string, payload: GenerationRequest) => request<GenerationRun>(`/api/tailoring/runs/${runId}/retry`, { method: "POST", body: JSON.stringify(payload) }),
   updateJob: (
     id: string,
     payload: Partial<JobCreatePayload> & {

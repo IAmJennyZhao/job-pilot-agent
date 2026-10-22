@@ -50,7 +50,7 @@ test("intake extracts basics, preserves reload draft and continues despite red s
   await expect(page).toHaveURL(/\/jobs\/.+tailoring=prepare/);
   await expect(page.getByRole("heading", { name: "Tailoring preparation" })).toBeVisible();
   await expect(page.getByText("Full job description reviewed.", { exact: true })).toBeVisible();
-  await expect(page.getByText(/Resume generation and downloads will be available in Phase 3/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Generate tailored resume", exact: true })).toBeVisible();
   expect(extractionCalls).toBe(1); expect(analysisCalls).toBe(0);
   const id = new URL(page.url()).pathname.split("/").pop();
   const saved = await (await request.get(`${backend}/api/jobs/${id}`)).json();

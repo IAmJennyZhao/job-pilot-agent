@@ -53,7 +53,8 @@ def capture(db, job):
             missing.append("Complete sources exceed the configured context budget; no evidence will be truncated.")
     return {"ready": not missing, "missing": missing, "input_hash": digest(snapshot) if snapshot else None,
             "description_hash": digest(job.source_content or ""), "description_reviewed": prep["full_description_ready"],
-            "source_content": job.source_content or "", "evaluation": evaluation, "snapshot": snapshot}
+            "source_content": job.source_content or "", "evaluation": evaluation,
+            "saved_evaluation": prep["saved_evaluation"], "snapshot": snapshot}
 
 
 def require_capture(db, job, request):

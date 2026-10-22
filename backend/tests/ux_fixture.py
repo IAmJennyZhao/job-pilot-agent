@@ -13,6 +13,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 directory = Path(tempfile.mkdtemp(prefix="job-pilot-synthetic-ux-"))
 os.environ["DATABASE_URL"] = f"sqlite:///{(directory / 'synthetic.db').as_posix()}"
 os.environ["AUTO_MIGRATE"] = "0"
+os.environ["OPENAI_API_KEY"] = "synthetic-ui-key"
+os.environ["OPENAI_MODEL"] = "synthetic-ui-model"
 os.environ["ASSET_STORAGE_DIR"] = str(directory / "storage")
 os.environ["BACKEND_CORS_ORIGINS"] = "http://localhost:3000,http://127.0.0.1:3000,http://127.0.0.1:3100"
 
@@ -21,9 +23,27 @@ from app import models, schemas
 from app.database import Base, get_engine
 from app.main import app
 from app.services import ai_service
+from generation_fixtures import fake_generation
+from app.generation_schemas import RevisedResume
+from app.services.tailoring_provider import ProviderFailure
 from test_api import create_job, fake_analysis_output, fake_resume_suggestion_output
 
 ready_for_ui = False
+failed_generation_jobs = set()
+
+
+def fixture_generation(output_model, system, payload, **kwargs):
+    import json
+    import time
+    data = json.loads(payload)
+    time.sleep(0.35)
+    if output_model is RevisedResume and "SYNTHETIC_FAIL_ONCE" in data["job"]["source_content"] and data["job"]["id"] not in failed_generation_jobs:
+        failed_generation_jobs.add(data["job"]["id"])
+        raise ProviderFailure("Synthetic provider timeout. Retry explicitly from saved checkpoints.")
+    return fake_generation(output_model, system, payload, **kwargs)
+
+
+ai_service.get_tailoring_output = fixture_generation
 
 
 @app.middleware("http")

@@ -263,6 +263,9 @@ def test_style_guard_preserves_numeric_signs_and_negation():
     from app.services.resume_validation import fact_tokens
     assert fact_tokens("Measured -10% change; not production.") != fact_tokens("Measured 10% change; production.")
     assert fact_tokens("Successfully utilized Python.") == fact_tokens("used Python")
+    assert fact_tokens("Measured \u221210% change.") != fact_tokens("Measured 10% change.")
+    assert fact_tokens("Measured <10% change.") != fact_tokens("Measured 10% change.")
+    assert fact_tokens("Saved $500.") != fact_tokens("Saved 500.")
 
 
 def test_input_limits_and_missing_configuration_fail_before_provider(client, monkeypatch, prepared):

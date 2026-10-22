@@ -10,6 +10,7 @@ import { PreferenceFlags } from "@/components/intake-review";
 import { Button } from "@/components/ui/button";
 import { Field, Select, Textarea } from "@/components/ui/field";
 import { Panel } from "@/components/ui/panel";
+import { ResumeReview } from "./resume-review";
 
 const stages = [ ["select", "Select evidence"], ["critique", "Critique"], ["revise", "Revise"], ["polish", "Polish"] ] as const;
 const active = (state?: string) => state === "pending" || state === "running";
@@ -86,7 +87,7 @@ export function ResumeWorkspace({ jobId, updatedAt }: { jobId: string; updatedAt
           <Button className="w-fit" variant="secondary" disabled={!canGenerate || run.input_hash !== ready.input_hash} onClick={() => start(run.id)}>Retry from saved checkpoints</Button>
           <p className="text-xs text-muted-foreground">Retry creates a linked attempt with the same inputs and reuses validated stages. An uncertain provider request may have already incurred usage. Changed inputs require a new generation.</p>
         </div> : null}
-        {run.revision ? <ResumeResult run={run} /> : null}
+        {run.revision ? <ResumeReview key={run.revision.id} baselineId={run.revision.id} sourceKey={ready.input_hash} /> : null}
         <details><summary className="cursor-pointer text-sm">Intermediate drafts, critique and validation</summary><div className="mt-3 grid gap-3">{run.stages.map(attempt => <details key={attempt.id} className="rounded border border-border p-3"><summary className="cursor-pointer text-sm">{attempt.stage} — attempt {attempt.attempt}: {attempt.state}{attempt.metadata.reused_from_attempt ? " (reused checkpoint)" : ""}</summary>
           {attempt.error ? <p className="my-2 text-sm text-destructive">{attempt.error}</p> : null}
           {attempt.validation?.blocking_issues.map(issue => <p className="my-2 text-sm" key={issue}>{issue}</p>)}
@@ -94,7 +95,7 @@ export function ResumeWorkspace({ jobId, updatedAt }: { jobId: string; updatedAt
           <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words text-xs">{JSON.stringify(attempt.output, null, 2)}</pre>
         </details>)}</div></details>
       </> : running ? <p role="status" className="text-sm">Waiting for the server to persist the new run…</p> : null}
-      <p className="text-sm text-muted-foreground">Draft generation is available. Editing, final approval and PDF/download exports will follow in later phases.</p>
+      <p className="text-sm text-muted-foreground">Review applies to the saved resume content. PDF layout and downloads will follow in a later phase.</p>
     </> : null}
   </section></Panel>;
 }
@@ -104,25 +105,4 @@ function RunProgress({ run }: { run: GenerationRun }) {
     const attempt = run.stages.filter(s => s.stage === key).sort((a, b) => b.attempt - a.attempt)[0];
     return <li key={key} className="rounded border border-border p-3 text-sm"><strong>{label}</strong><p>{attempt?.state ?? "Not started"}</p>{attempt && attempt.attempt > 1 ? <p className="text-xs">Repair attempt</p> : null}</li>;
   })}</ol></div>;
-}
-
-function ResumeResult({ run }: { run: GenerationRun }) {
-  const revision = run.revision!;
-  const draft = revision.content.draft;
-  return <div className="grid gap-4">
-    <h3 className="font-semibold">Generated resume draft</h3>
-    <p className="text-sm">Passed automated source-preserving checks. Human review is still required.</p>
-    <pre aria-label="Resume draft preview" className="whitespace-pre-wrap break-words rounded border border-border bg-background p-4 font-sans text-sm leading-relaxed">{revision.plain_text}</pre>
-    <details><summary className="cursor-pointer text-sm">Changes and factual checks</summary><div className="mt-2 grid gap-2 text-sm">
-      <p>{revision.validation.scope}</p>
-      <ul className="list-inside list-disc">{draft.change_summary.map((change, i) => <li key={i}>{change}</li>)}</ul>
-      <p>{revision.validation.supported_claim_ids.length} approved claims selected; {revision.validation.wording_changes.length} wording edits in polish.</p>
-      <p>Wording checks are conservative; unsupported paraphrases are blocked rather than assumed factual. Page fit has not been rendered or verified.</p>
-    </div></details>
-    <details><summary className="cursor-pointer text-sm">Evidence for each bullet</summary><ul className="mt-2 grid gap-3 text-sm">{draft.bullets.map(bullet => <li className="rounded border border-border p-3" key={bullet.id}>
-      <p className="font-medium">{bullet.text}</p>
-      {bullet.evidence_ids.map(id => { const evidence = run.evidence.find(e => e.id === id); return <div className="mt-2" key={id}><p className="text-xs text-muted-foreground">Approved source {id}</p><blockquote>{evidence?.text ?? "Evidence unavailable"}</blockquote>{evidence?.constraints.map((value, i) => <p className="text-xs" key={i}>{value}</p>)}</div>; })}
-    </li>)}</ul></details>
-    <div className="text-sm"><strong>Unmet job requirements</strong>{draft.unmet_requirement_ids.length ? <ul className="mt-1 list-inside list-disc">{draft.requirements.filter(r => draft.unmet_requirement_ids.includes(r.id)).map(r => <li key={r.id}>{r.description} <span className="text-muted-foreground">Posting: “{r.quote}”</span></li>)}</ul> : <p>No additional gaps were identified by this draft’s requirement mapping; check coverage against the full posting.</p>}</div>
-  </div>;
 }

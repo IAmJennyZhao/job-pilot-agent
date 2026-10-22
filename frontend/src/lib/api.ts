@@ -36,6 +36,7 @@ import type {
 
 import type { IntakeReview, IntakeSave, IntakeEvaluation, IntakePreparation } from "./intake-types";
 import type { GenerationRequest, GenerationRun, GenerationWorkspace } from "./generation-types";
+import type { ReviewWorkspace, SaveResumeEdit, RestoreResumeRevision, ReviewResume } from "./review-types";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
@@ -156,6 +157,10 @@ export const api = {
   saveIntake: (payload: IntakeSave) => request<JobDetail>("/api/jobs/intake/save", { method: "POST", body: JSON.stringify(payload) }),
   intakePreparation: (id: string) => request<IntakePreparation>(`/api/jobs/${id}/intake`),
   generationWorkspace: (jobId: string) => request<GenerationWorkspace>(`/api/jobs/${jobId}/tailoring`),
+  resumeReview: (id: string, revisionId?: string) => request<ReviewWorkspace>(`/api/tailoring/resumes/${id}${revisionId ? `?revision_id=${encodeURIComponent(revisionId)}` : ""}`),
+  saveResumeEdit: (id: string, payload: SaveResumeEdit) => request<ReviewWorkspace>(`/api/tailoring/resumes/${id}/revisions`, { method: "POST", body: JSON.stringify(payload) }),
+  restoreResumeRevision: (id: string, payload: RestoreResumeRevision) => request<ReviewWorkspace>(`/api/tailoring/resumes/${id}/restore`, { method: "POST", body: JSON.stringify(payload) }),
+  reviewResume: (id: string, payload: ReviewResume) => request<ReviewWorkspace>(`/api/tailoring/resumes/${id}/review`, { method: "POST", body: JSON.stringify(payload) }),
   generationRun: (runId: string) => request<GenerationRun>(`/api/tailoring/runs/${runId}`),
   generateResume: (jobId: string, payload: GenerationRequest) => request<GenerationRun>(`/api/jobs/${jobId}/tailoring/resume`, { method: "POST", body: JSON.stringify(payload) }),
   retryResume: (runId: string, payload: GenerationRequest) => request<GenerationRun>(`/api/tailoring/runs/${runId}/retry`, { method: "POST", body: JSON.stringify(payload) }),

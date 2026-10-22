@@ -15,6 +15,7 @@ from app.migrations import run_migrations
 from app.routers import actions, ai, dashboard, data, interview, jobs, profile, reports, skill_gaps, study_plans
 from app.routers import tailoring_sources
 from app.routers import resume_generation
+from app.routers import resume_review
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,7 @@ def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(title="CareerPilot Agent API", version="0.1.0", lifespan=lifespan)
     app.include_router(resume_generation.router)
+    app.include_router(resume_review.router)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,

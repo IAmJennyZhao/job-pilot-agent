@@ -7,7 +7,7 @@ from app import models
 from app.database import get_db
 from app.main import app
 from app.services import tailoring_source_service as service
-from app.services.backup_service import TAILORING_TABLES, INTAKE_TABLES, GENERATION_TABLES, V1_TABLES
+from app.services.backup_service import TAILORING_TABLES, INTAKE_TABLES, GENERATION_TABLES, REVIEW_TABLES, V1_TABLES
 from tailoring_fixtures import bank_data, import_payload
 
 URL = "/api/profile/tailoring-sources"
@@ -104,7 +104,7 @@ def test_backup_v2_roundtrip_includes_sources_and_activation(client, monkeypatch
     setup(client)
     source = imported(client); activate(client, source)
     original = client.get("/api/data/backup").json()
-    assert original["version"] == 4
+    assert original["version"] == 5
     assert original["tables"]["tailoring_source_versions"][0]["template_tex"] == "Synthetic inert template"
     content = json.dumps(original).encode()
     preview = client.post("/api/data/restore-preview", files={"file": ("backup.json", content)}).json()
@@ -124,7 +124,7 @@ def test_legacy_v1_archive_upgrades_with_empty_sources(client, monkeypatch, tmp_
     _, job = setup(client)
     legacy = client.get("/api/data/backup").json()
     legacy["version"] = 1
-    for name in TAILORING_TABLES | INTAKE_TABLES | GENERATION_TABLES: del legacy["tables"][name]
+    for name in TAILORING_TABLES | INTAKE_TABLES | GENERATION_TABLES | REVIEW_TABLES: del legacy["tables"][name]
     assert set(legacy["tables"]) == V1_TABLES
     source = imported(client); activate(client, source)
     content = json.dumps(legacy).encode()

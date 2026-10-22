@@ -5,14 +5,14 @@ Scope: extend the job-detail resume workspace with edits, immutable revision his
 ## Step verification
 
 - [x] 1. Define states/rules. Unsaved browser work is distinct from saved needs-correction, awaiting-review and reviewed versions. Source staleness is independent. Approved source metadata stays protected. Baseline: 146 backend tests passed; private v4 archive and SQLite backup saved under ignored storage/backups/phase4-before. Unrelated edits preserved.
-- [ ] 2. Add revision/approval storage and compatible backups.
-- [ ] 3. Implement conflict-safe, idempotent save/history/restore operations.
-- [ ] 4. Validate edits and derive content, changes and unmet requirements.
+- [x] 2. Add revision/approval storage and compatible backups. Additive migration, schema checks, immutable history triggers, v5 roundtrip and v1-v4 adapters verified. Restoring history works with real foreign keys enabled.
+- [x] 3. Implement conflict-safe, idempotent save/history/restore operations. Competing SQLite saves yield one success and one conflict; repeated request keys return the same saved revision. Restores append instead of replacing history.
+- [x] 4. Validate edits and derive content, changes and unmet requirements. Tests preserve unsupported edits with blocking findings, reject protected-field input, recompute gaps and preserve the generated original and job state.
 - [ ] 5. Show evidence and computed baseline/parent comparisons.
 - [ ] 6. Add editing and recoverable browser drafts.
 - [ ] 7. Integrate generation and revision histories.
-- [ ] 8. Approve an exact saved version atomically.
-- [ ] 9. Handle source changes and recovery without model calls.
+- [x] 8. Approve an exact saved version atomically. Backend tests cover baseline/edit approval, changed content/validation/input hashes, stale revisions, duplicate review and fresh review after restore. Browser verification remains in step 10.
+- [x] 9. Handle source changes and recovery without model calls. Review/edit tests run with API credentials removed and provider calls forbidden. Revoked/superseded sources and changed job text/role preserve history while blocking new review; cross-profile access is rejected.
 - [ ] 10. Complete backend/browser/build checks and commit checkpoints.
 
 ## Storage and review rules

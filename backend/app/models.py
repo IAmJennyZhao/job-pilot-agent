@@ -92,6 +92,38 @@ def enum_values(enum_cls: type[enum.Enum]) -> list[str]:
     return [member.value for member in enum_cls]
 
 
+class ResumeEditRevision(Base):
+    __tablename__ = "resume_edit_revisions"
+    __table_args__ = (UniqueConstraint("baseline_id", "sequence", name="uq_resume_edit_sequence"),
+                     UniqueConstraint("baseline_id", "request_key", name="uq_resume_edit_request"))
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    baseline_id: Mapped[str] = mapped_column(String(36), ForeignKey("tailored_revisions.id", ondelete="RESTRICT"))
+    parent_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("resume_edit_revisions.id", ondelete="RESTRICT"), nullable=True)
+    sequence: Mapped[int] = mapped_column(Integer)
+    origin: Mapped[str] = mapped_column(String(16))
+    restored_from_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    request_key: Mapped[str] = mapped_column(String(128))
+    request_hash: Mapped[str] = mapped_column(String(64))
+    content: Mapped[dict] = mapped_column(JSON)
+    content_hash: Mapped[str] = mapped_column(String(64))
+    plain_text: Mapped[str] = mapped_column(Text)
+    validation: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ResumeReviewApproval(Base):
+    __tablename__ = "resume_review_approvals"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    baseline_id: Mapped[str] = mapped_column(String(36), ForeignKey("tailored_revisions.id", ondelete="RESTRICT"))
+    edit_revision_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("resume_edit_revisions.id", ondelete="RESTRICT"), nullable=True)
+    revision_id: Mapped[str] = mapped_column(String(36), unique=True)
+    content_hash: Mapped[str] = mapped_column(String(64))
+    validation_hash: Mapped[str] = mapped_column(String(64))
+    validator_version: Mapped[str] = mapped_column(String(64))
+    input_hash: Mapped[str] = mapped_column(String(64))
+    reviewed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class JobStatus(str, enum.Enum):
     saved = "Saved"
     applied = "Applied"

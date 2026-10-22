@@ -148,7 +148,7 @@ def test_generation_backup_and_v3_compatibility(client, monkeypatch, prepared, t
     run = generate(client, job).json()
     assert run["state"] == "completed", run
     original = client.get("/api/data/backup").json()
-    assert original["version"] == 4
+    assert original["version"] == 5
     def restore(archive):
         content = json.dumps(archive).encode()
         response = client.post("/api/data/restore-preview", files={"file": ("archive.json", content)})
@@ -160,7 +160,7 @@ def test_generation_backup_and_v3_compatibility(client, monkeypatch, prepared, t
     tampered["tables"]["tailored_revisions"][0]["plain_text"] = "Invented achievement"
     assert client.post("/api/data/restore-preview", files={"file": ("bad.json", json.dumps(tampered).encode())}).status_code == 400
     legacy = copy.deepcopy(original); legacy["version"] = 3
-    for name in ("tailoring_runs", "tailoring_stage_attempts", "tailored_revisions"):
+    for name in ("tailoring_runs", "tailoring_stage_attempts", "tailored_revisions", "resume_edit_revisions", "resume_review_approvals"):
         del legacy["tables"][name]
     assert restore(legacy).status_code == 200
     assert client.get(f"/api/jobs/{job['id']}/tailoring").json()["runs"] == []

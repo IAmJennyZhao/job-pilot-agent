@@ -18,7 +18,8 @@ from app.database import Base, build_engine
 
 MAX_BYTES = 50 * 1024 * 1024
 FORMAT = "job-pilot-backup"
-VERSION = 4
+VERSION = 5
+REVIEW_TABLES = {"resume_edit_revisions", "resume_review_approvals"}
 GENERATION_TABLES = {"tailoring_runs", "tailoring_stage_attempts", "tailored_revisions"}
 INTAKE_TABLES = {"job_intake_reviews"}
 TAILORING_TABLES = {"tailoring_source_versions", "tailoring_source_events", "tailoring_profile_states"}
@@ -133,7 +134,7 @@ def validate_archive(content: bytes):
         raise HTTPException(413, "Backup exceeds the 50 MB archive limit")
     try:
         archive = json.loads(content)
-        if archive.get("format") != FORMAT or archive.get("version") not in {1, 2, 3, VERSION}:
+        if archive.get("format") != FORMAT or archive.get("version") not in {1, 2, 3, 4, VERSION}:
             raise ValueError("Unsupported backup format or version")
         if archive["version"] == 1:
             if set(archive["tables"]) != V1_TABLES:
@@ -147,6 +148,10 @@ def validate_archive(content: bytes):
             if set(archive["tables"]) != V1_TABLES | TAILORING_TABLES | INTAKE_TABLES:
                 raise ValueError("Invalid legacy backup tables")
             archive["tables"].update({name: [] for name in GENERATION_TABLES})
+        if archive["version"] in {1, 2, 3, 4}:
+            if set(archive["tables"]) != V1_TABLES | TAILORING_TABLES | INTAKE_TABLES | GENERATION_TABLES:
+                raise ValueError("Invalid legacy backup tables")
+            archive["tables"].update({name: [] for name in REVIEW_TABLES})
         if set(archive["tables"]) != set(Base.metadata.tables):
             raise ValueError("Backup tables do not match this app version")
         tables = {}
@@ -197,6 +202,8 @@ def validate_archive(content: bytes):
         validate_intake_tables(tables)
         from app.services.generation_backup import validate_generation_tables
         validate_generation_tables(tables)
+        from app.services.resume_review_backup import validate_review_tables
+        validate_review_tables(tables)
         # Validate IDs, foreign keys and SQL types before touching live records.
         engine = build_engine("sqlite://")
         try:
@@ -248,8 +255,9 @@ def restore(db: Session, content: bytes, expected_hash: str):
                 staged.append(path)
                 row["file_path"] = str(path)
         for table in reversed(Base.metadata.sorted_tables):
-            if table.name == "tailoring_runs":
-                remaining = {row.id: row.parent_run_id for row in db.execute(select(table.c.id, table.c.parent_run_id))}
+            if table.name in {"tailoring_runs", "resume_edit_revisions"}:
+                parent_column = table.c.parent_run_id if table.name == "tailoring_runs" else table.c.parent_id
+                remaining = {row[0]: row[1] for row in db.execute(select(table.c.id, parent_column))}
                 while remaining:
                     leaves = set(remaining) - set(remaining.values())
                     if not leaves:

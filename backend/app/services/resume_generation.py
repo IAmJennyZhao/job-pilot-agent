@@ -49,7 +49,7 @@ def scoped_run(db, run_id):
     return run
 
 
-def start(db, job, request, parent_id=None):
+def start(db, job, request, parent_id=None, document_kind="resume"):
     expire_runs(db)
     connection = db.connection()
     if connection.dialect.name == "sqlite" and not connection.connection.driver_connection.in_transaction:
@@ -63,6 +63,9 @@ def start(db, job, request, parent_id=None):
             raise HTTPException(409, "This request key belongs to different inputs.")
         return old.id, False
     snapshot = require_capture(db, job, request)
+    if document_kind == "cover_letter":
+        from app.services.cover_letters import extend_snapshot
+        snapshot = extend_snapshot(db, snapshot, request.options)
     parent = scoped_run(db, parent_id) if parent_id else None
     if parent:
         if parent.job_id != job.id or parent.state not in {"failed", "interrupted"}:
@@ -70,7 +73,7 @@ def start(db, job, request, parent_id=None):
         if parent.input_hash != digest(snapshot):
             raise HTTPException(409, "Frozen inputs changed. Start a new generation instead of retrying this run.")
         snapshot = copy.deepcopy(parent.snapshot)
-    key = f"{pid}:{job.id}:resume"
+    key = f"{pid}:{job.id}:{document_kind}"
     if db.scalar(select(models.TailoringRun.id).where(models.TailoringRun.active_key == key)):
         raise HTTPException(409, "A resume run is already active for this job. Open its progress instead.")
     run = models.TailoringRun(job_id=job.id, profile_id=pid, source_id=snapshot["source_id"],
@@ -110,7 +113,7 @@ def stage_input(snapshot, stage, accepted, repair=None):
 
 def lock_live(db, run_id):
     claimed = db.execute(update(models.TailoringRun).where(models.TailoringRun.id == run_id,
-        models.TailoringRun.state == "running", models.TailoringRun.deadline_at > now()).values(state="running"))
+        models.TailoringRun.state == "running", models.TailoringRun.deadline_at > now()).values(state="running").execution_options(synchronize_session=False))
     if claimed.rowcount != 1:
         raise ProviderFailure("Run is no longer active; late output was discarded.")
     run = db.get(models.TailoringRun, run_id)
@@ -243,10 +246,11 @@ def run_view(db, run):
         "evidence": run.snapshot["projection"]["claims"] if revision else []}
 
 
-def workspace(db, job):
+def workspace(db, job, document_kind="resume"):
     expire_runs(db)
     readiness = capture(db, job)
     readiness.pop("snapshot")
     runs = list(db.scalars(select(models.TailoringRun).where(models.TailoringRun.job_id == job.id,
         models.TailoringRun.profile_id == profile_id(db)).order_by(models.TailoringRun.created_at.desc(), models.TailoringRun.id.desc())))
-    return {"readiness": readiness, "runs": [{"id": r.id, "state": r.state, "created_at": r.created_at} for r in runs]}
+    return {"readiness": readiness, "runs": [{"id": r.id, "state": r.state, "created_at": r.created_at} for r in runs
+        if r.snapshot.get("document_kind", "resume") == document_kind]}

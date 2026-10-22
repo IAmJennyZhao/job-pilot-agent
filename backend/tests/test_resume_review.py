@@ -142,7 +142,7 @@ def test_backup_roundtrip_legacy_v4_and_tamper_detection(client, completed, monk
     edit = client.post(url + "/revisions", json=save_payload(view)).json()
     client.post(url + "/review", json=approval_payload(edit))
     archive = client.get("/api/data/backup").json()
-    assert archive["version"] == 6
+    assert archive["version"] == 7
     content = json.dumps(archive).encode()
     for _ in range(2):
         response = client.post("/api/data/restore", files={"file": ("review.json", content)}, data={"sha256": hashlib.sha256(content).hexdigest(), "confirmation": "RESTORE"})

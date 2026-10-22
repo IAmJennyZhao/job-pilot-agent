@@ -22,7 +22,10 @@ def get_workspace(job_id: str, db: Session = Depends(get_db)):
 @router.get("/tailoring/runs/{run_id}")
 def get_run(run_id: str, db: Session = Depends(get_db)):
     service.expire_runs(db)
-    return service.run_view(db, service.scoped_run(db, run_id))
+    run = service.scoped_run(db, run_id)
+    if run.snapshot.get("document_kind", "resume") != "resume":
+        raise HTTPException(404, "Resume run not found.")
+    return service.run_view(db, run)
 
 
 def generate(db, job, payload, response, parent_id=None):

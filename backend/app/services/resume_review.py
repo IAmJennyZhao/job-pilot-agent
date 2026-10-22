@@ -51,7 +51,11 @@ def source_problem(db, run):
     return None
 
 
-def validation_for(row, baseline, edits, run):
+def validation_for(row, baseline, edits, run, db=None):
+    from app.services import letter_validation
+    if letter_validation.is_letter(run.snapshot):
+        from app.services.cover_letters import assessment_for
+        return letter_validation.validate(row.content, run.snapshot, assessment_for(db, run, row))
     parent = None
     if row.id != baseline.id:
         parent = selected_revision(baseline, edits, row.parent_id or baseline.id).content
@@ -65,7 +69,9 @@ def view(db, baseline_id, revision_id=None):
     head = edits[-1] if edits else baseline
     selected = selected_revision(baseline, edits, revision_id or head.id)
     approvals = {a.revision_id: a for a in db.scalars(select(models.ResumeReviewApproval).where(models.ResumeReviewApproval.baseline_id == baseline.id))}
-    validation = validation_for(selected, baseline, edits, run)
+    from app.services import letter_validation
+    policy = letter_validation if letter_validation.is_letter(run.snapshot) else None
+    validation = validation_for(selected, baseline, edits, run, db)
     problem = source_problem(db, run)
     approval = approvals.get(selected.id)
     eligible = selected.id == head.id and validation["valid"] and not problem
@@ -75,20 +81,24 @@ def view(db, baseline_id, revision_id=None):
         "revision": {"id": selected.id, "sequence": getattr(selected, "sequence", 0), "origin": getattr(selected, "origin", "generated"),
             "parent_id": parent.id if selected.id != baseline.id else None, "restored_from_id": getattr(selected, "restored_from_id", None),
             "content": selected.content, "content_hash": selected.content_hash, "plain_text": selected.plain_text,
-            "edit": editable(selected.content), "validation": validation, "validation_hash": digest(validation),
+            "edit": (policy.editable if policy else editable)(selected.content), "validation": validation, "validation_hash": digest(validation),
             "created_at": aware(selected.created_at)},
         "approval": {"id": approval.id, "reviewed_at": aware(approval.reviewed_at), "content_hash": approval.content_hash} if approval else None,
         "approval_eligible": bool(eligible),
         "approved_current": bool(eligible and approval and approval.validation_hash == digest(validation) and approval.content_hash == selected.content_hash and approval.input_hash == run.input_hash),
         "history": [{"id": r.id, "sequence": getattr(r, "sequence", 0), "origin": getattr(r, "origin", "generated"),
-            "created_at": aware(r.created_at), "valid": validation_for(r, baseline, edits, run)["valid"], "reviewed": r.id in approvals} for r in reversed([baseline, *edits])],
-        "changes_from_baseline": differences(baseline.content, selected.content), "changes_from_parent": differences(parent.content, selected.content),
+            "created_at": aware(r.created_at), "valid": validation_for(r, baseline, edits, run, db)["valid"], "reviewed": r.id in approvals} for r in reversed([baseline, *edits])],
+        "changes_from_baseline": (policy.differences if policy else differences)(baseline.content, selected.content), "changes_from_parent": (policy.differences if policy else differences)(parent.content, selected.content),
+        "document_kind": run.snapshot.get("document_kind", "resume"),
+        "job_evidence": policy.job_evidence(run.snapshot) if policy else [],
         "evidence": run.snapshot["projection"]["claims"], "records": run.snapshot["projection"]["records"],
         "skill_groups": run.snapshot["projection"]["skill_groups"], "technology_catalog": run.snapshot["projection"]["technology_catalog"]}
 
 
 def save(db, baseline_id, payload, restore=False):
     baseline, run = baseline_for(db, baseline_id, lock=True)
+    from app.services import letter_validation
+    policy = letter_validation if letter_validation.is_letter(run.snapshot) else None
     fingerprint = digest({"action": "restore" if restore else "edit", "payload": payload.model_dump()})
     duplicate = db.scalar(select(models.ResumeEditRevision).where(models.ResumeEditRevision.baseline_id == baseline.id,
         models.ResumeEditRevision.request_key == payload.request_key))
@@ -103,15 +113,16 @@ def save(db, baseline_id, payload, restore=False):
     restored = selected_revision(baseline, edits, payload.revision_id) if restore else None
     if restored:
         from app.review_schemas import ResumeEdit
-        edit = ResumeEdit.model_validate(editable(restored.content))
+        from app.letter_schemas import LetterDraft
+        edit = (LetterDraft if policy else ResumeEdit).model_validate((policy.editable if policy else editable)(restored.content))
     else:
         edit = payload.edit
-    content = build_content(edit, baseline.content, run.snapshot)
-    validation = validate_revision(content, run.snapshot, head.content, bullet_identities([baseline.content, *[r.content for r in edits]]))
+    content = (policy.build_content if policy else build_content)(edit, baseline.content, run.snapshot)
+    validation = policy.validate(content, run.snapshot) if policy else validate_revision(content, run.snapshot, head.content, bullet_identities([baseline.content, *[r.content for r in edits]]))
     row = models.ResumeEditRevision(baseline_id=baseline.id, parent_id=head.id if edits else None,
         sequence=len(edits)+1, origin="restored" if restore else "edited", restored_from_id=restored.id if restored else None,
         request_key=payload.request_key, request_hash=fingerprint, content=content, content_hash=digest(content),
-        plain_text=plain_text(content, run.snapshot), validation=validation, created_at=now())
+        plain_text=(policy.text_for if policy else plain_text)(content, run.snapshot), validation=validation, created_at=now())
     db.add(row)
     try:
         db.commit()
@@ -127,7 +138,7 @@ def approve(db, baseline_id, payload):
     head = edits[-1] if edits else baseline
     if payload.revision_id != head.id:
         raise HTTPException(409, "Only the current saved revision can be reviewed. Refresh the resume first.")
-    validation = validation_for(head, baseline, edits, run)
+    validation = validation_for(head, baseline, edits, run, db)
     if (payload.content_hash, payload.validation_hash, payload.input_hash) != (digest(head.content), digest(validation), run.input_hash):
         raise HTTPException(409, "Content, validation or sources changed. Inspect the saved revision before reviewing it.")
     if not validation["valid"]:

@@ -18,7 +18,7 @@ from app.database import Base, build_engine
 
 MAX_BYTES = 50 * 1024 * 1024
 FORMAT = "job-pilot-backup"
-VERSION = 6
+VERSION = 7
 RENDER_TABLES = {"resume_renders", "resume_preview_receipts", "resume_export_approvals"}
 REVIEW_TABLES = {"resume_edit_revisions", "resume_review_approvals"}
 GENERATION_TABLES = {"tailoring_runs", "tailoring_stage_attempts", "tailored_revisions"}
@@ -135,7 +135,7 @@ def validate_archive(content: bytes):
         raise HTTPException(413, "Backup exceeds the 50 MB archive limit")
     try:
         archive = json.loads(content)
-        if archive.get("format") != FORMAT or archive.get("version") not in {1, 2, 3, 4, 5, VERSION}:
+        if archive.get("format") != FORMAT or archive.get("version") not in {1, 2, 3, 4, 5, 6, VERSION}:
             raise ValueError("Unsupported backup format or version")
         if archive["version"] == 1:
             if set(archive["tables"]) != V1_TABLES:

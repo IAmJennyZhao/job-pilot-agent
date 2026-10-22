@@ -34,6 +34,13 @@ def validate_generation_tables(tables):
                 raise ValueError("Generation source snapshot differs from approved source")
         if snapshot["identity"] != source["bank"]["identity"] or snapshot["source_hashes"] != source["hashes"]:
             raise ValueError("Invalid protected identity or source hashes")
+        from app.services.letter_validation import is_letter
+        if is_letter(snapshot):
+            from app.services.letter_backup import validate_run
+            validate_run(tables, run)
+            continue
+        if snapshot.get("document_kind", "resume") != "resume":
+            raise ValueError("Unknown generated document kind")
         if snapshot["prompt_versions"] != prompt_versions(snapshot) or snapshot["prompt_hashes"] != {stage: digest(system_for(stage, generation_version(snapshot))) for stage in STAGES}:
             raise ValueError("Unsupported generation prompt version")
         if run["state"] not in {"pending", "running", "completed", "failed", "interrupted"}:

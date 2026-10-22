@@ -5,7 +5,13 @@ from app.review_schemas import SaveResumeEdit, RestoreResumeRevision, ReviewResu
 from app.services import resume_review as service
 from app.services import resume_rendering as rendering
 
-router = APIRouter(prefix="/api/tailoring/resumes", tags=["resume-review"])
+def require_resume(baseline_id: str, db: Session = Depends(get_db)):
+    _, run = service.baseline_for(db, baseline_id)
+    if run.snapshot.get("document_kind", "resume") != "resume":
+        raise HTTPException(404, "Generated resume not found.")
+
+
+router = APIRouter(prefix="/api/tailoring/resumes", tags=["resume-review"], dependencies=[Depends(require_resume)])
 
 
 @router.get("/{baseline_id}")

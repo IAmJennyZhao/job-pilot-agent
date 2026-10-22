@@ -20,6 +20,8 @@ def validate_render_tables(tables):
         from app.services.intake_preferences import digest
         edits = [SimpleNamespace(**e) for e in tables["resume_edit_revisions"] if e["baseline_id"] == baseline["id"]]
         run = SimpleNamespace(**runs[baseline["run_id"]])
+        if run.snapshot.get("document_kind", "resume") != "resume":
+            raise ValueError("PDF render belongs to a non-resume document")
         validation = validation_for(SimpleNamespace(**revision), SimpleNamespace(**baseline), edits, run)
         if not validation["valid"] or row["validation_hash"] != digest(validation):
             raise ValueError("Render content validation mismatch")

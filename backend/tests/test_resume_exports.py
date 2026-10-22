@@ -66,7 +66,7 @@ def test_backup_exact_artifact_restore_and_legacy_content_approval(client, compl
     view, render = rendered(client, url)
     final(client, url, view, render)
     archive = client.get("/api/data/backup").json()
-    assert archive["version"] == 6
+    assert archive["version"] == 7
     path = url + f"/renders/{render['id']}/download/pdf"
     original = client.get(path).content
     monkeypatch.setattr(resume_compiler, "compiler", lambda: pytest.fail("Restore/download must work without a compiler"))

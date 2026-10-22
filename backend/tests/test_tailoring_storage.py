@@ -104,7 +104,7 @@ def test_backup_v2_roundtrip_includes_sources_and_activation(client, monkeypatch
     setup(client)
     source = imported(client); activate(client, source)
     original = client.get("/api/data/backup").json()
-    assert original["version"] == 6
+    assert original["version"] == 7
     assert original["tables"]["tailoring_source_versions"][0]["template_tex"] == "Synthetic inert template"
     content = json.dumps(original).encode()
     preview = client.post("/api/data/restore-preview", files={"file": ("backup.json", content)}).json()

@@ -11,8 +11,12 @@ def validate_review_tables(tables):
     reports = {}
     owners = {rid: rid for rid in baselines}
     for baseline in baselines.values():
-        snapshot = runs[baseline["run_id"]]["snapshot"]
-        reports[baseline["id"]] = validate_revision(baseline["content"], snapshot)
+        run = runs[baseline["run_id"]]
+        snapshot = run["snapshot"]
+        from app.services import letter_validation, letter_backup
+        letter = letter_validation.is_letter(snapshot)
+        edit_for = letter_validation.editable if letter else editable
+        reports[baseline["id"]] = letter_validation.validate(baseline["content"], snapshot, letter_backup.assessment_for(tables, run, baseline, baseline["id"])) if letter else validate_revision(baseline["content"], snapshot)
         previous = baseline
         previous_contents = [baseline["content"]]
         rows = sorted((r for r in tables["resume_edit_revisions"] if r["baseline_id"] == baseline["id"]), key=lambda r: r["sequence"])
@@ -22,14 +26,18 @@ def validate_review_tables(tables):
             restored = indexed.get(row["restored_from_id"])
             if row["origin"] not in {"edited", "restored"} or (row["origin"] == "restored") != bool(row["restored_from_id"]):
                 raise ValueError("Invalid revision origin")
-            if row["origin"] == "restored" and (not restored or owners[restored["id"]] != baseline["id"] or editable(restored["content"]) != editable(row["content"])):
+            if row["origin"] == "restored" and (not restored or owners[restored["id"]] != baseline["id"] or edit_for(restored["content"]) != edit_for(row["content"])):
                 raise ValueError("Invalid restored revision reference")
             payload = {"request_key": row["request_key"], "expected_revision_id": previous["id"]}
-            payload.update({"revision_id": row["restored_from_id"]} if row["origin"] == "restored" else {"edit": editable(row["content"])})
+            payload.update({"revision_id": row["restored_from_id"]} if row["origin"] == "restored" else {"edit": edit_for(row["content"])})
             if row["request_hash"] != digest({"action": "restore" if row["origin"] == "restored" else "edit", "payload": payload}):
                 raise ValueError("Invalid edit request identity")
-            check_stored_edit(row, baseline["content"], snapshot, previous["content"], bullet_identities(previous_contents))
-            reports[row["id"]] = row["validation"]
+            if letter:
+                letter_backup.check_edit(row, baseline["content"], snapshot)
+                reports[row["id"]] = letter_validation.validate(row["content"], snapshot, letter_backup.assessment_for(tables, run, row, baseline["id"]))
+            else:
+                check_stored_edit(row, baseline["content"], snapshot, previous["content"], bullet_identities(previous_contents))
+                reports[row["id"]] = row["validation"]
             indexed[row["id"]] = row
             owners[row["id"]] = baseline["id"]
             ordered.append(row)

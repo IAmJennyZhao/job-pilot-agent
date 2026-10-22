@@ -148,7 +148,7 @@ def test_generation_backup_and_v3_compatibility(client, monkeypatch, prepared, t
     run = generate(client, job).json()
     assert run["state"] == "completed", run
     original = client.get("/api/data/backup").json()
-    assert original["version"] == 6
+    assert original["version"] == 7
     def restore(archive):
         content = json.dumps(archive).encode()
         response = client.post("/api/data/restore-preview", files={"file": ("archive.json", content)})

@@ -142,7 +142,7 @@ def test_backup_roundtrip_legacy_v4_and_tamper_detection(client, completed, monk
     edit = client.post(url + "/revisions", json=save_payload(view)).json()
     client.post(url + "/review", json=approval_payload(edit))
     archive = client.get("/api/data/backup").json()
-    assert archive["version"] == 5
+    assert archive["version"] == 6
     content = json.dumps(archive).encode()
     for _ in range(2):
         response = client.post("/api/data/restore", files={"file": ("review.json", content)}, data={"sha256": hashlib.sha256(content).hexdigest(), "confirmation": "RESTORE"})
@@ -153,6 +153,8 @@ def test_backup_roundtrip_legacy_v4_and_tamper_detection(client, completed, monk
         bad = copy.deepcopy(archive); bad["tables"][table][0][field] = value
         assert client.post("/api/data/restore-preview", files={"file": ("bad.json", json.dumps(bad).encode())}).status_code == 400
     archive["version"] = 4
+    for name in ("resume_renders", "resume_preview_receipts", "resume_export_approvals"):
+        del archive["tables"][name]
     del archive["tables"]["resume_edit_revisions"]; del archive["tables"]["resume_review_approvals"]
     content = json.dumps(archive).encode()
     assert client.post("/api/data/restore", files={"file": ("v4.json", content)}, data={"sha256": hashlib.sha256(content).hexdigest(), "confirmation": "RESTORE"}).status_code == 200

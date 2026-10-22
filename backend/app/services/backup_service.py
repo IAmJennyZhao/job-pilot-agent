@@ -18,7 +18,8 @@ from app.database import Base, build_engine
 
 MAX_BYTES = 50 * 1024 * 1024
 FORMAT = "job-pilot-backup"
-VERSION = 5
+VERSION = 6
+RENDER_TABLES = {"resume_renders", "resume_preview_receipts", "resume_export_approvals"}
 REVIEW_TABLES = {"resume_edit_revisions", "resume_review_approvals"}
 GENERATION_TABLES = {"tailoring_runs", "tailoring_stage_attempts", "tailored_revisions"}
 INTAKE_TABLES = {"job_intake_reviews"}
@@ -134,7 +135,7 @@ def validate_archive(content: bytes):
         raise HTTPException(413, "Backup exceeds the 50 MB archive limit")
     try:
         archive = json.loads(content)
-        if archive.get("format") != FORMAT or archive.get("version") not in {1, 2, 3, 4, VERSION}:
+        if archive.get("format") != FORMAT or archive.get("version") not in {1, 2, 3, 4, 5, VERSION}:
             raise ValueError("Unsupported backup format or version")
         if archive["version"] == 1:
             if set(archive["tables"]) != V1_TABLES:
@@ -152,6 +153,10 @@ def validate_archive(content: bytes):
             if set(archive["tables"]) != V1_TABLES | TAILORING_TABLES | INTAKE_TABLES | GENERATION_TABLES:
                 raise ValueError("Invalid legacy backup tables")
             archive["tables"].update({name: [] for name in REVIEW_TABLES})
+        if archive["version"] in {1, 2, 3, 4, 5}:
+            if set(archive["tables"]) != V1_TABLES | TAILORING_TABLES | INTAKE_TABLES | GENERATION_TABLES | REVIEW_TABLES:
+                raise ValueError("Invalid legacy backup tables")
+            archive["tables"].update({name: [] for name in RENDER_TABLES})
         if set(archive["tables"]) != set(Base.metadata.tables):
             raise ValueError("Backup tables do not match this app version")
         tables = {}
@@ -204,6 +209,8 @@ def validate_archive(content: bytes):
         validate_generation_tables(tables)
         from app.services.resume_review_backup import validate_review_tables
         validate_review_tables(tables)
+        from app.services.resume_render_backup import validate_render_tables
+        validate_render_tables(tables)
         # Validate IDs, foreign keys and SQL types before touching live records.
         engine = build_engine("sqlite://")
         try:

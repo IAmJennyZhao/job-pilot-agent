@@ -124,6 +124,39 @@ class ResumeReviewApproval(Base):
     reviewed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class ResumeRender(Base):
+    __tablename__ = "resume_renders"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    baseline_id: Mapped[str] = mapped_column(String(36), ForeignKey("tailored_revisions.id", ondelete="RESTRICT"))
+    edit_revision_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("resume_edit_revisions.id", ondelete="RESTRICT"), nullable=True)
+    revision_id: Mapped[str] = mapped_column(String(36))
+    content_hash: Mapped[str] = mapped_column(String(64))
+    validation_hash: Mapped[str] = mapped_column(String(64))
+    input_hash: Mapped[str] = mapped_column(String(64))
+    render_key: Mapped[str] = mapped_column(String(64), unique=True)
+    manifest_hash: Mapped[str] = mapped_column(String(64))
+    bundle: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ResumePreviewReceipt(Base):
+    __tablename__ = "resume_preview_receipts"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    render_id: Mapped[str] = mapped_column(String(36), ForeignKey("resume_renders.id", ondelete="CASCADE"))
+    manifest_hash: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ResumeExportApproval(Base):
+    __tablename__ = "resume_export_approvals"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    render_id: Mapped[str] = mapped_column(String(36), ForeignKey("resume_renders.id", ondelete="RESTRICT"), unique=True)
+    content_approval_id: Mapped[str] = mapped_column(String(36), ForeignKey("resume_review_approvals.id", ondelete="RESTRICT"))
+    preview_receipt_id: Mapped[str] = mapped_column(String(36), ForeignKey("resume_preview_receipts.id", ondelete="RESTRICT"))
+    manifest_hash: Mapped[str] = mapped_column(String(64))
+    approved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class JobStatus(str, enum.Enum):
     saved = "Saved"
     applied = "Applied"

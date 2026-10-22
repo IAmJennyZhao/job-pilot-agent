@@ -89,7 +89,7 @@ def test_new_facts_and_unrelated_critique_sources_still_fail():
     assert not report["valid"] and "T1" in report["blocking_issues"][0]
 
 
-def test_v1_reviewed_history_restores_alongside_v2(client, prepared, monkeypatch, tmp_path):
+def test_v1_reviewed_history_restores_alongside_current(client, prepared, monkeypatch, tmp_path):
     from app.config import get_settings
     from app.services import generation_inputs, resume_generation, ai_service
     from app.services.resume_validation import OUTPUT_MODELS
@@ -139,7 +139,7 @@ def test_v1_reviewed_history_restores_alongside_v2(client, prepared, monkeypatch
     historical_pdf = client.get(artifact_url + "/download/pdf").content
     current = generate(client, job).json()
     assert current["state"] == "completed", current
-    assert current["revision"]["validation"]["validator_version"] == "resume-v2"
+    assert current["revision"]["validation"]["validator_version"] == "resume-v3"
     archive = client.get("/api/data/backup").content
     preview = client.post("/api/data/restore-preview", files={"file": ("backup.json", archive)})
     assert preview.status_code == 200, preview.text

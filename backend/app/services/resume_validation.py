@@ -5,12 +5,12 @@ from app.generation_schemas import ResumeDraft, CritiqueReport, RevisedResume, P
 
 STAGES = ("select", "critique", "revise", "polish")
 OUTPUT_MODELS = dict(zip(STAGES, (ResumeDraft, CritiqueReport, RevisedResume, PolishedResume)))
-PROMPT_VERSIONS = {stage: f"resume-{stage}-v2" for stage in STAGES}
+PROMPT_VERSIONS = {stage: f"resume-{stage}-v3" for stage in STAGES}
 
 
 def generation_version(snapshot):
     version = snapshot.get("generation_version", 1)
-    if type(version) is not int or version not in (1, 2):
+    if type(version) is not int or version not in (1, 2, 3):
         raise ValueError("Unsupported generation version")
     return version
 
@@ -20,7 +20,25 @@ def output_models(snapshot):
 
 
 def prompt_versions(snapshot):
-    return legacy.PROMPT_VERSIONS if generation_version(snapshot) == 1 else PROMPT_VERSIONS
+    return {stage: f"resume-{stage}-v{generation_version(snapshot)}" for stage in STAGES}
+
+
+def requirement_errors(requirements, snapshot):
+    from app.services.requirement_grounding import grounded_quote
+    posting = snapshot["job"]["source_content"]
+    if generation_version(snapshot) < 3:
+        return [f"Requirement {r.id} lacks an exact posting quote." for r in requirements if r.quote not in posting]
+    return [f"Requirement {r.id} cannot be grounded in the saved posting. Use a supported excerpt or a heading with its own list item; case, whitespace and typographic differences are allowed. Do not change technologies, numbers, negation or qualifications."
+            for r in requirements if not grounded_quote(r.quote, posting)]
+
+
+def comparison_draft(draft, snapshot):
+    value = draft.model_dump()
+    if generation_version(snapshot) >= 3:
+        from app.services.requirement_grounding import quote_key
+        for requirement in value["requirements"]:
+            requirement["quote"] = quote_key(requirement["quote"])
+    return value
 
 
 def fact_tokens(text):
@@ -50,9 +68,7 @@ def validate_draft(draft, snapshot):
     unique([r.id for r in draft.requirements], "requirement IDs", errors)
     unique([b.id for b in draft.bullets], "bullet IDs", errors)
     unique([s.name.casefold() for s in draft.skills], "skills", errors)
-    for requirement in draft.requirements:
-        if requirement.quote not in snapshot["job"]["source_content"]:
-            errors.append(f"Requirement {requirement.id} lacks an exact posting quote.")
+    errors.extend(requirement_errors(draft.requirements, snapshot))
     covered = set()
     selected_claims = set()
     for bullet in draft.bullets:
@@ -105,6 +121,8 @@ def validate_stage(stage, output, snapshot, accepted):
         errors.extend(validate_draft(draft, snapshot))
     if stage == "critique":
         original = ResumeDraft.model_validate(accepted["select"])
+        if generation_version(snapshot) >= 3:
+            errors.extend(requirement_errors(original.requirements, snapshot))
         fields = {"draft", "skills", *[f"bullets.{b.id}" for b in original.bullets]}
         claim_ids = {c["id"] for c in snapshot["projection"]["claims"]}
         req_ids = {r.id for r in original.requirements}
@@ -149,11 +167,11 @@ def validate_stage(stage, output, snapshot, accepted):
             errors.append("Reordering bullets needs an accepted draft recommendation.")
         if original.skills != draft.skills and not {"draft", "skills"} & accepted_fields:
             errors.append("Skills changed without an accepted recommendation.")
-        if original.requirements != draft.requirements:
+        if comparison_draft(original, snapshot)["requirements"] != comparison_draft(draft, snapshot)["requirements"]:
             errors.append("Revision must preserve the original requirement mapping.")
     if stage == "polish":
         original = RevisedResume.model_validate(accepted["revise"]).draft
-        old, new = original.model_dump(), draft.model_dump()
+        old, new = comparison_draft(original, snapshot), comparison_draft(draft, snapshot)
         for value in (old, new):
             for bullet in value["bullets"]:
                 bullet.pop("text")
@@ -162,7 +180,7 @@ def validate_stage(stage, output, snapshot, accepted):
         changes = polish_diff(original, draft)
         if [e.model_dump() for e in output.edits] != changes:
             errors.append("Polish edit log does not match computed changes.")
-    return {"valid": not errors, "blocking_issues": errors, "validator_version": "resume-v2"}
+    return {"valid": not errors, "blocking_issues": errors, "validator_version": f"resume-v{generation_version(snapshot)}"}
 
 
 def accuracy_report(draft, snapshot, accepted):
@@ -170,7 +188,7 @@ def accuracy_report(draft, snapshot, accepted):
         return legacy.accuracy_report(draft, snapshot, accepted)
     errors = validate_draft(draft, snapshot)
     before = RevisedResume.model_validate(accepted["revise"]).draft
-    return FactualAccuracyReport(valid=not errors, blocking_issues=errors,
+    return FactualAccuracyReport(validator_version=f"resume-v{generation_version(snapshot)}", valid=not errors, blocking_issues=errors,
         supported_claim_ids=sorted({cid for b in draft.bullets for cid in b.evidence_ids}),
         wording_changes=polish_diff(before, draft), unmet_requirement_ids=draft.unmet_requirement_ids).model_dump()
 

@@ -95,7 +95,7 @@ def stage_input(snapshot, stage, accepted, repair=None):
             "presentation": {"section_order": ["Education", "Technical Skills", "Experience", "Projects"], "target_pages": 1},
             "prior_outputs": accepted, "stage": stage, "repair": repair,
             "dependencies_hash": digest({"input": digest(snapshot), "stage": stage, "prior": accepted})}
-    if generation_version(snapshot) == 2:
+    if generation_version(snapshot) >= 2:
         projection = snapshot["projection"]
         data["contract"] = {
             "composition_version": 1,

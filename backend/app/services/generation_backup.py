@@ -62,7 +62,7 @@ def validate_generation_tables(tables):
                 data = attempt["input_data"]
                 if data["job"] != snapshot["job"] or data["approved_evidence"] != snapshot["projection"] or data["prior_outputs"] != accepted or data["stage"] != stage:
                     raise ValueError("Invalid stage input snapshot")
-                if generation_version(snapshot) == 2:
+                if generation_version(snapshot) >= 2:
                     from app.services.resume_generation import stage_input
                     if data != stage_input(snapshot, stage, accepted, data.get("repair")):
                         raise ValueError("Invalid composition contract snapshot")
@@ -76,7 +76,7 @@ def validate_generation_tables(tables):
                     metadata = attempt["provider_metadata"]
                     if "composition_plan" in metadata:
                         from app.services.resume_composition import plan_model, compile_plan
-                        if stage not in {"select", "revise"} or generation_version(snapshot) != 2 or metadata.get("composition_version") != 1:
+                        if stage not in {"select", "revise"} or generation_version(snapshot) < 2 or metadata.get("composition_version") != 1:
                             raise ValueError("Unsupported composition plan")
                         plan = plan_model(output_models(snapshot)[stage], data).model_validate(metadata["composition_plan"])
                         if compile_plan(plan, data).model_dump(mode="json") != output:

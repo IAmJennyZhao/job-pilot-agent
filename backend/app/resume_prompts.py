@@ -29,11 +29,15 @@ V2_INSTRUCTIONS = {
 }
 
 
-def system_for(stage, version=2):
+def system_for(stage, version=3):
     if version == 1:
         from app.services.generation_v1.prompts import system_for as legacy
         return legacy(stage)
-    if version != 2:
+    if version not in (2, 3):
         raise ValueError("Unsupported generation version")
     protocol = "For selection/revision plan schemas with overlap_choices: selections contains ONLY independent claims allowed by its enum. Each overlap_choices.group_N is either null or ONE choice from that group's enum. These are additional selections appended in group order. Never put overlap claims in independent selections. In select, put unsupported posting qualifications ONLY in unsupported_requirements, including optional preferences; do not repeat them in requirements. Give every requirement a distinct ID across both lists. Their absence from the bank is a reason to list them as unsupported, never to omit them. For revise, START FROM contract.revision_seed, preserving its independent AND overlap selections. Apply only concrete accepted recommendations and fill decisions. Do not reset overlap_choices to null or forget existing group choices when rewriting selections. Do not trade direct requirement evidence for merely adjacent experience. Preserve supported coverage unless a concrete critique identifies its mapping as incorrect."
-    return SYSTEM + "\n" + V2_RULES + "\n" + INSTRUCTIONS[stage] + "\n" + V2_INSTRUCTIONS[stage] + "\n" + protocol
+    system = SYSTEM
+    if version == 3:
+        system = system.replace("Requirements must quote exact substrings of the full posting.",
+            "Ground each requirement in an excerpt from the saved posting. Case, whitespace, bullets and typographic quote/dash differences are harmless. A list heading may be attached to an item actually beneath it. Prefer the item alone; keep numbers, technologies, negation and qualifications unchanged. Descriptions may summarize; quotes must remain grounded, not invented paraphrases. Across critique, revision and polish, keep requirement IDs, descriptions and meaning stable; do not raise defects for harmless quote formatting.")
+    return system + "\n" + V2_RULES + "\n" + INSTRUCTIONS[stage] + "\n" + V2_INSTRUCTIONS[stage] + "\n" + protocol

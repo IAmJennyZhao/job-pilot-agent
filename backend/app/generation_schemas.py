@@ -71,7 +71,7 @@ class GenerateResume(StrictModel):
     acknowledged_evaluation_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
 
 class FactualAccuracyReport(StrictModel):
-    validator_version: Literal["resume-v1", "resume-v2", "resume-v3", "resume-v4"] = "resume-v2"
+    validator_version: Literal["resume-v1", "resume-v2", "resume-v3", "resume-v4", "resume-v5"] = "resume-v2"
     valid: bool
     blocking_issues: list[str]
     supported_claim_ids: list[str]

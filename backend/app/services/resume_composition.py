@@ -54,6 +54,8 @@ def exclusive_groups(data):
 
 
 def plan_model(output_model, data):
+    if data.get('contract', {}).get('composition_version') == 3:
+        return plan_model(output_model, {**data, 'contract': {**data['contract'], 'composition_version': 2}})
     if data.get("contract", {}).get("composition_version") == 2:
         from app.services import resume_v4 as v4
         if output_model is v4.PolishedV4:
@@ -91,7 +93,7 @@ def choice_model(base, item, data):
 
 def revision_seed(data):
     """Give revision the same choice representation as selection, without lost slots."""
-    if data.get("contract", {}).get("composition_version") == 2:
+    if data.get("contract", {}).get("composition_version") in (2, 3):
         from app.services.resume_v4 import revision_seed as current_seed
         return current_seed(data)
     original = data["prior_outputs"]["select"]
@@ -115,6 +117,9 @@ def revision_seed(data):
 
 
 def compile_plan(plan, data):
+    if data.get('contract', {}).get('composition_version') == 3:
+        from app.services.resume_v5 import compile_plan as current
+        return current(plan, data)
     if data.get("contract", {}).get("composition_version") == 2:
         from app.services.resume_v4 import PolishPlan, compile_polish, compile_selection
         return compile_polish(plan, data) if isinstance(plan, PolishPlan) else compile_selection(plan, data)

@@ -145,7 +145,9 @@ def test_critique_corrections_cannot_invent_evidence_or_target_unrelated_issues(
     assert not report['valid'] and len(report['blocking_issues']) == 2
 
 
-def test_v4_provider_review_edit_render_backup_and_polish_repair(client, prepared, monkeypatch, tmp_path):
+@pytest.mark.parametrize('version', [4, 5])
+def test_provider_review_edit_render_backup_and_polish_repair(client, prepared, monkeypatch, tmp_path, pin_generation_version, version):
+    pin_generation_version(version)
     from app.config import get_settings
     from app.services import ai_service, tailoring_provider as provider
     from app.generation_schemas import CritiqueReport
@@ -184,7 +186,9 @@ def test_v4_provider_review_edit_render_backup_and_polish_repair(client, prepare
     assert run['state'] == 'completed', run
     assert calls == ['select', 'critique', 'revise', 'polish', 'polish']
     assert run['stages'][-1]['metadata']['composition_plan'] == {'edits': [{'bullet_id': run['revision']['content']['draft']['bullets'][0]['id'], 'replacement_text': 'built an internal Python prototype.'}]}
-    assert all(s['metadata']['composition_version'] == 2 for s in run['stages'] if 'composition_plan' in s['metadata'])
+    assert all(s['metadata']['composition_version'] == (3 if version == 5 else 2) for s in run['stages'] if 'composition_plan' in s['metadata'])
+    if version == 5:
+        assert run['revision']['content']['content_budget']['within_budget']
     draft = run['revision']['content']['draft']
     assert [c['status'] for c in draft['coverage']] == ['supported', 'supported', 'unsupported']
     assert len(draft['requirements']) == 3 and draft['unmet_requirement_ids'] == ['Q3']

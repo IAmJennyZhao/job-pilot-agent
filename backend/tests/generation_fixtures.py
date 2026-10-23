@@ -4,7 +4,7 @@ from app.generation_schemas import ResumeDraft, CritiqueReport, RevisedResume, P
 
 
 def current_draft(draft, data):
-    if data.get('contract', {}).get('composition_version') != 2:
+    if data.get('contract', {}).get('composition_version') not in (2, 3):
         return draft
     from app.services.resume_v4 import DraftV4, refresh_coverage
     value = draft.model_dump()
@@ -31,13 +31,13 @@ def fake_generation(output_model, system, payload, *, model, timeout):
         output = CritiqueReport(issues=[{"issue_id": "I-1", "severity": "improvement", "field_path": "bullets.B-1",
             "requirement_ids": ["REQ-1"], "evidence_ids": [evidence["claims"][0]["id"]], "finding": "Keep wording direct.",
             "proposed_action": "Preserve the supported implementation detail.", "requires_user_fact_confirmation": False}])
-        if data.get('contract', {}).get('composition_version') == 2:
+        if data.get('contract', {}).get('composition_version') in (2, 3):
             output = output_model(**output.model_dump(), assessment_corrections=[])
     elif issubclass(output_model, RevisedResume):
         output = output_model(draft=previous["select"], decisions=[{"issue_id": "I-1", "action": "accepted", "reason": "The supported wording is already concise."}])
     elif issubclass(output_model, PolishedResume):
         from app.services.resume_v4 import DraftV4
-        draft = (DraftV4 if data.get('contract', {}).get('composition_version') == 2 else ResumeDraft).model_validate(previous["revise"]["draft"])
+        draft = (DraftV4 if data.get('contract', {}).get('composition_version') in (2, 3) else ResumeDraft).model_validate(previous["revise"]["draft"])
         edits = []
         for bullet in draft.bullets:
             text = bullet.text.replace("Successfully ", "").replace("successfully ", "")

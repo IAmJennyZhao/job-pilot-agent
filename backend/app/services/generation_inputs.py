@@ -38,7 +38,7 @@ def capture(db, job):
     snapshot = None
     if source:
         projection = tailoring_source_service.active_projection(db)
-        snapshot = {"schema_version": 1, "generation_version": 4, "profile_id": source.profile_id, "source_id": source.id,
+        snapshot = {"schema_version": 1, "generation_version": 5, "profile_id": source.profile_id, "source_id": source.id,
             "source_hash": source.bundle_hash, "projection": projection, "projection_hash": digest(projection),
             "identity": source.bank["identity"], "preferences": source.preferences,
             "template_tex": source.template_tex, "style_guide": source.style_guide,

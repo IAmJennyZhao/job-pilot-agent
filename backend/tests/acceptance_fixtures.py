@@ -136,7 +136,7 @@ def provider(output_model, system, payload, *, model, timeout):
             bullets=[{"id": f"B-{i+1}", "record_id": case["record"], "evidence_ids": [f"C-{key}-{i+1}"], "requirement_ids": [f"REQ-{i+1}"], "text": text} for i, text in enumerate(case["claims"])],
             skills=[{"name": skill, "source_ids": [f"SK-{key}"]} for skill in case["skills"]], unmet_requirement_ids=["REQ-3"], change_summary=["Fictional role-specific evidence selection."]), data), metadata
     if issubclass(output_model, CritiqueReport):
-        return output_model(issues=[], **({'assessment_corrections': []} if data.get('contract', {}).get('composition_version') == 2 else {})), metadata
+        return output_model(issues=[], **({'assessment_corrections': []} if data.get('contract', {}).get('composition_version') in (2, 3) else {})), metadata
     if issubclass(output_model, RevisedResume):
         return output_model(draft=prior["select"], decisions=[]), metadata
     if issubclass(output_model, PolishedResume):

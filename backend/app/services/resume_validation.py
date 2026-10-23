@@ -5,18 +5,18 @@ from app.generation_schemas import ResumeDraft, CritiqueReport, RevisedResume, P
 
 STAGES = ("select", "critique", "revise", "polish")
 OUTPUT_MODELS = dict(zip(STAGES, (ResumeDraft, CritiqueReport, RevisedResume, PolishedResume)))
-PROMPT_VERSIONS = {stage: f"resume-{stage}-v4" for stage in STAGES}
+PROMPT_VERSIONS = {stage: f"resume-{stage}-v5" for stage in STAGES}
 
 
 def generation_version(snapshot):
     version = snapshot.get("generation_version", 1)
-    if type(version) is not int or version not in (1, 2, 3, 4):
+    if type(version) is not int or version not in (1, 2, 3, 4, 5):
         raise ValueError("Unsupported generation version")
     return version
 
 
 def output_models(snapshot):
-    if generation_version(snapshot) == 4:
+    if generation_version(snapshot) >= 4:
         from app.services.resume_v4 import DraftV4, CritiqueV4, RevisedV4, PolishedV4
         return dict(zip(STAGES, (DraftV4, CritiqueV4, RevisedV4, PolishedV4)))
     return legacy.OUTPUT_MODELS if generation_version(snapshot) == 1 else OUTPUT_MODELS
@@ -110,6 +110,11 @@ def validate_draft(draft, snapshot):
         matching = [b.id for b in draft.bullets if set(b.evidence_ids).intersection(overlap["claim_ids"])]
         if len(matching) > 1:
             errors.append(f"Overlap group {overlap['id']} occurs in bullets {matching}. Keep one representative or combine permitted complementary claims in ONE bullet of at most 45 words.")
+    if generation_version(snapshot) >= 5:
+        from app.services.resume_v5 import atomic_errors, guarded_assessments
+        errors.extend(atomic_errors(draft.requirements))
+        if draft.assessments != guarded_assessments(draft.requirements, draft.assessments, projection):
+            errors.append('Coverage overstates source support for evaluation pipelines, production ownership or experience duration; retain only partial support until direct approved evidence exists.')
     return errors
 
 
@@ -125,6 +130,11 @@ def validate_stage(stage, output, snapshot, accepted):
     draft = output if stage == "select" else output.draft if stage in {"revise", "polish"} else None
     if draft:
         errors.extend(validate_draft(draft, snapshot))
+        if generation_version(snapshot) >= 5:
+            from app.services.resume_v5 import budget_report
+            report = budget_report(draft, snapshot['projection'])
+            if not report['within_budget']:
+                errors.append(f"Selected content exceeds the generation budget ({report['estimated_points']} estimated points; target {report['target_points']}, maximum {report['max_bullets']} bullets). Choose shorter complete approved claims or fewer records.")
     if stage == "critique":
         original = output_models(snapshot)["select"].model_validate(accepted["select"])
         if generation_version(snapshot) >= 3:
@@ -175,7 +185,8 @@ def validate_stage(stage, output, snapshot, accepted):
         authorized_new, lineage_errors = validate_lineage(output, old, new, issues)
         errors.extend(lineage_errors)
         for bid in old.keys() | new.keys():
-            if old.get(bid) != new.get(bid) and "draft" not in accepted_fields and f"bullets.{bid}" not in accepted_fields and bid not in authorized_new:
+            budget_removal = generation_version(snapshot) >= 5 and bid in old and bid not in new
+            if old.get(bid) != new.get(bid) and "draft" not in accepted_fields and f"bullets.{bid}" not in accepted_fields and bid not in authorized_new and not budget_removal:
                 errors.append(f"Bullet {bid} changed without an accepted critique recommendation.")
             if bid in old and bid in new and (old[bid].record_id, old[bid].evidence_ids) != (new[bid].record_id, new[bid].evidence_ids):
                 errors.append(f"Bullet {bid} changed its source identity; a new claim needs a new bullet ID.")
@@ -193,6 +204,9 @@ def validate_stage(stage, output, snapshot, accepted):
             corrections = {c.requirement_id: EvidenceAssessment.model_validate(c.model_dump(exclude={'issue_id'}))
                            for c in critique.assessment_corrections if c.issue_id in accepted_ids}
             expected = [corrections.get(a.requirement_id, a) for a in original.assessments]
+            if generation_version(snapshot) >= 5:
+                from app.services.resume_v5 import guarded_assessments
+                expected = guarded_assessments(original.requirements, expected, snapshot['projection'])
             if draft.assessments != expected:
                 errors.append('Revision must apply every accepted assessment correction exactly and preserve other assessments.')
     if stage == "polish":
@@ -230,9 +244,13 @@ def assemble_content(draft, snapshot):
     selected = {b.record_id for b in draft.bullets}
     records = [r for r in snapshot["projection"]["records"] if r["id"] in selected]
     records.sort(key=lambda r: r.get("start") or "", reverse=True)
-    return {"identity": snapshot["identity"], "education": snapshot["projection"]["education"],
+    content = {"identity": snapshot["identity"], "education": snapshot["projection"]["education"],
             "records": records, "section_order": ["Education", "Technical Skills", "Experience", "Projects"],
             "draft": draft.model_dump()}
+    if generation_version(snapshot) >= 5:
+        from app.services.resume_v5 import budget_report
+        content['content_budget'] = budget_report(draft, snapshot['projection'])
+    return content
 
 
 def plain_text(content, snapshot=None):

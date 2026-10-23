@@ -77,7 +77,7 @@ def validate_generation_tables(tables):
                     if "composition_plan" in metadata:
                         from app.services.resume_composition import plan_model, compile_plan
                         allowed = {"select", "revise", "polish"} if generation_version(snapshot) >= 4 else {"select", "revise"}
-                        version = 2 if generation_version(snapshot) >= 4 else 1
+                        version = 3 if generation_version(snapshot) >= 5 else 2 if generation_version(snapshot) >= 4 else 1
                         if stage not in allowed or generation_version(snapshot) < 2 or metadata.get("composition_version") != version:
                             raise ValueError("Unsupported composition plan")
                         plan = plan_model(output_models(snapshot)[stage], data).model_validate(metadata["composition_plan"])

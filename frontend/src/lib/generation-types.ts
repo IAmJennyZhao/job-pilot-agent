@@ -14,6 +14,6 @@ export type GenerationRun = {
   source_changed: boolean; error: string | null; created_at: string; deadline_at: string;
   stages: { id: string; stage: "select" | "critique" | "revise" | "polish"; attempt: number; state: "running" | "passed" | "failed" | "interrupted"; output: unknown; validation: { valid: boolean; blocking_issues: string[] } | null; metadata: { reused_from_attempt?: string; latency_ms?: number; usage?: { input_tokens?: number; output_tokens?: number } }; error: string | null; started_at: string; finished_at: string | null }[];
   revision: { id: string; content_hash: string; plain_text: string; validation: AccuracyReport;
-    content: { identity: { name: string }; education: Record<string, unknown>[]; records: Record<string, unknown>[]; section_order: string[]; draft: ResumeDraft } } | null;
+    content: { identity: { name: string }; education: Record<string, unknown>[]; records: Record<string, unknown>[]; section_order: string[]; draft: ResumeDraft; content_budget?: { estimated_points: number; target_points: number; bullets: number; max_bullets: number; within_budget: boolean; actual_page_fit: string } } } | null;
   evidence: { id: string; record_id: string; text: string; constraints: string[] }[];
 };

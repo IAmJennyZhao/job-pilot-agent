@@ -29,7 +29,10 @@ V2_INSTRUCTIONS = {
 }
 
 
-def system_for(stage, version=4):
+def system_for(stage, version=5):
+    if version == 5:
+        from app.services.resume_v5_prompts import system_for as current
+        return current(stage)
     if version == 4:
         from app.services.resume_v4_prompts import system_for as current
         return current(stage)

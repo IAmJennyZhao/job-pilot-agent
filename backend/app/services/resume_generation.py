@@ -98,13 +98,16 @@ def stage_input(snapshot, stage, accepted, repair=None):
     if generation_version(snapshot) >= 2:
         projection = snapshot["projection"]
         data["contract"] = {
-            "composition_version": 2 if generation_version(snapshot) >= 4 else 1,
+            "composition_version": 3 if generation_version(snapshot) >= 5 else 2 if generation_version(snapshot) >= 4 else 1,
             "critique_targets": ["draft", "skills", *[f"bullets.{b['id']}" for b in accepted.get("select", {}).get("bullets", [])]],
             "claim_ids": [c["id"] for c in projection["claims"]],
             "skill_source_ids": [c["id"] for key in ("technology_catalog", "skill_groups") for c in projection[key]],
             "overlap_policy": "At most one bullet per overlap group. Prefer one representative; permitted complementary claims may share that bullet up to 45 words.",
             "lineage_policy": "New bullet IDs require explicit parents and accepted critique issue links; retire every replaced parent.",
         }
+        if generation_version(snapshot) >= 5:
+            from app.services.resume_v5 import POLICY
+            data['contract']['content_budget'] = dict(POLICY)
         if stage == "revise":
             from app.services.resume_composition import revision_seed
             data["contract"]["revision_seed"] = revision_seed(data)

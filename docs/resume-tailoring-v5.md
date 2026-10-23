@@ -35,7 +35,24 @@ Applied v5 source checks and budgeting to the exact saved final v4 Kensho/JoinPo
 
 JoinPogo's existing combined AI/backend/API/UI requirement is correctly flagged for splitting. This replay does **not** rerun extraction or demonstrate that a live model repairs it. The rendered replay is a measurement artifact, not an approved v5 generation. These two cases demonstrate local budget behavior, not general writing quality, latency or token savings. Private artifacts and the offline replay script remain ignored under `backend/storage/writing-evaluation/v5-offline-replay` and `v5-local-replay.py`.
 
-A proposed fresh live comparison was blocked by automatic approval review because it would transmit private source/job data to an external model provider. No live v5 results are claimed; that comparison remains pending explicit approval.
+## Fresh live comparison — October 23, 2026
+
+After explicit user approval of the external model calls, ran the same two short descriptions against `gpt-5.4-mini`. Job inputs, source/projection, identity, model, template and style were identical to the final v4 comparison. Production SQLite was opened read-only and copied into isolated evaluation storage; its logical digest was unchanged after the evaluation. Seven provider calls were made, with no extra reruns to replace a failure.
+
+| Case | Prior v4 | Fresh v5 | Rendered result |
+| --- | --- | --- | --- |
+| Kensho, 51 words | Completed; 4 calls; 29.3 seconds; 10 bullets | Failed at critique after one repair; 3 calls; 16.3 seconds | No final v5 draft; selection checkpoint contains 7 bullets. |
+| JoinPogo, 32 words | Completed; 4 calls; 16.1 seconds; 13 bullets | Completed; 4 calls; 13.3 seconds; 7 bullets | One page; real review and PDF text/layout checks passed. Prior v4 rendered to two pages. |
+
+Completion was **1/2**, versus **2/2** in the prior v4 sample. Kensho's shorter time ends in failure and is not a speed improvement. JoinPogo used 74,251 input/output tokens versus 73,558 previously, about **0.9% more**. Its measured latency fell about **17%**, but one run is not a reliable speed benchmark.
+
+JoinPogo now has six requirements rather than three: the combined AI/backend/API/UI sentence became four separate qualifications. Production ownership and professional full-stack duration remain partial rather than overstated. The generated PDF was also visually inspected: readable text, consistent headings and no clipping. It remains an unapproved evaluation artifact.
+
+Kensho selection correctly retains Python support, marks Kubernetes/MCP unsupported, and downgrades evaluation-pipeline support to partial. Critique then proposes another R11 correction pointing to `I5`, whose `field_path` targets a bullet. Coverage corrections currently require a linked `draft` issue. The repair adds an appropriate draft issue (`I8`) but leaves the correction pointing to `I5`; validation rejects it again. This is a structural reference/repair failure, not an exact-quote failure or evidence that the factual downgrade is wrong. No final Kensho resume was produced.
+
+Remaining work: make correction-reference repair precise (identify the offending issue ID/path and valid draft targets), or redesign correction targeting while preserving evidence authorization. Add this observed case to regression tests before changing that contract. Semantic review also remains necessary: the model still sometimes demands a **complete autonomous** agent implementation or named frameworks for broader agent requirements that do not explicitly demand those qualifiers. Passing structural tests does not resolve that over-conservatism.
+
+Private artifacts are under `backend/storage/writing-evaluation/20261023T151633Z-short-jobs`: `comparison.json`, `integrity.json`, stage outputs and snapshots, and JoinPogo's `preview.pdf`/TeX/text/PNG. The isolated evaluation database contains the successful render but no new human review or export approval. No application code changed for this comparison.
 
 ## Verification
 

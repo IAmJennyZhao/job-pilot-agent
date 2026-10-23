@@ -5,7 +5,7 @@ are derived locally; neither may silently change the frozen source facts.
 """
 import re
 from typing import Literal
-from pydantic import Field
+from pydantic import Field, create_model
 from app.tailoring_schemas import StrictModel
 from app.generation_schemas import (Requirement, ResumeDraft, RevisedResume, PolishedResume,
     ResumeBullet, ResumeSkill, RevisionDecision, CritiqueReport)
@@ -87,6 +87,18 @@ class SelectionPlanV4(StrictModel):
     skills: list[ResumeSkill] = Field(max_length=40)
 
 
+def selection_model(projection):
+    """Exclude record/skill IDs at the model boundary, rather than on repair."""
+    ids = tuple(sorted(c['id'] for c in projection['claims']))
+    evidence_id = Literal[ids] if ids else Literal['NO_APPROVED_CLAIMS']
+    bound = 40 if ids else 0
+    assessment = create_model('ApprovedEvidenceAssessment', __base__=EvidenceAssessment,
+        full_claim_ids=(list[evidence_id], Field(max_length=bound)),
+        partial_claim_ids=(list[evidence_id], Field(max_length=bound)))
+    return create_model('SelectionPlanV4WithEvidence', __base__=SelectionPlanV4,
+        assessments=(list[assessment], Field(max_length=40)))
+
+
 class RevisionPlanV4(StrictModel):
     selections: list[RevisionChoice] = Field(max_length=20)
     skills: list[ResumeSkill] = Field(max_length=40)
@@ -161,17 +173,19 @@ def coverage_errors(draft, projection):
     assessment_ids = [a.requirement_id for a in draft.assessments]
     if len(assessment_ids) != len(set(assessment_ids)) or set(assessment_ids) != set(req_ids):
         errors.append('Provide exactly one evidence assessment per canonical requirement.')
-    # Exact/format-equivalent duplicates are deterministic; semantic deduplication
-    # is also requested of select/critique and remains a human-review concern.
-    quotes = [quote_key(r.quote).strip(' .:;') for r in draft.requirements]
+    # Distinct qualifications can share a quoted sentence. Reject repeated
+    # descriptions and gap entries; semantic duplication still needs review.
     descriptions = [quote_key(r.description).strip(' .:;') for r in draft.requirements]
-    if len(quotes) != len(set(quotes)) or len(descriptions) != len(set(descriptions)):
+    if len(descriptions) != len(set(descriptions)):
         errors.append('Duplicate job requirement. Keep one canonical entry and one evidence assessment; do not add a separate unmet copy.')
+    for r in draft.requirements:
+        if re.search(r'\b(no approved|no evidence|unsupported|unmet|not supported|lacks? evidence)\b', r.description, re.I):
+            errors.append(f'Requirement {r.id} describes a candidate evidence gap. Keep only the job qualification; put support judgments in its assessment.')
     claims = {c['id'] for c in projection['claims']}
     for a in draft.assessments:
         ids = a.full_claim_ids + a.partial_claim_ids
         if len(ids) != len(set(ids)) or not set(ids) <= claims:
-            errors.append(f'Assessment {a.requirement_id} has duplicate, conflicting or unavailable claim evidence.')
+            errors.append(f'Assessment {a.requirement_id} has duplicate, conflicting or unavailable claim evidence: {sorted(set(ids)-claims)}. Use claim IDs only, never employment record IDs; move partial support to partial_claim_ids without repeating it in full_claim_ids.')
     for bullet in draft.bullets:
         links = [a.requirement_id for a in draft.assessments if set(bullet.evidence_ids).intersection(a.full_claim_ids + a.partial_claim_ids)]
         if bullet.requirement_ids != links:

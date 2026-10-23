@@ -141,8 +141,8 @@ function ReviewContent({ view, onSelect, onSaved, onRefresh, refreshing, refresh
         const label = { supported: "Supported", partially_supported: "Partially supported", unsupported: "Unsupported", not_included: "Not included in this draft" }[c.status];
         const ids = [...c.full_claim_ids, ...c.partial_claim_ids];
         return <li key={c.requirement_id} className="rounded border border-border p-3">
-          <p><strong>{label}</strong> ? {requirement?.description}</p>
-          <p className="text-muted-foreground">Posting: ?{requirement?.quote}?</p>
+          <p><strong>{label}</strong>: {requirement?.description}</p>
+          <p className="text-muted-foreground">Posting: <q>{requirement?.quote}</q></p>
           <p>{c.explanation}</p>
           {c.status === "not_included" && <p>Available evidence: {c.available_support === "full" ? "full support" : "partial support"}. Add relevant approved content if appropriate.</p>}
           {!!c.selected_skill_names.length && <p>Supported by selected skills: {c.selected_skill_names.join(", ")}.</p>}

@@ -59,7 +59,7 @@ def plan_model(output_model, data):
         if output_model is v4.PolishedV4:
             return v4.PolishPlan
         if output_model is v4.DraftV4:
-            return choice_model(v4.SelectionPlanV4, v4.Choice, data)
+            return choice_model(v4.selection_model(data['approved_evidence']), v4.Choice, data)
         if output_model is v4.RevisedV4:
             return choice_model(v4.RevisionPlanV4, v4.RevisionChoice, data)
         return output_model

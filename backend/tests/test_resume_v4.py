@@ -58,6 +58,28 @@ def test_duplicate_requirements_and_invented_source_ids_are_rejected():
     assert any('unavailable' in e for e in errors)
 
 
+def test_distinct_qualifications_may_share_a_posting_sentence():
+    projection, draft = example()
+    draft.requirements[1].quote = draft.requirements[2].quote = 'Kubernetes and public application experience'
+    assert v4.coverage_errors(draft, projection) == []
+
+
+def test_selection_schema_excludes_record_ids_from_claim_evidence():
+    projection, draft = example()
+    schema = v4.selection_model(projection)
+    payload = {'requirements': draft.requirements, 'assessments': [a.model_dump() for a in draft.assessments], 'selections': [{'claim_id': 'C1'}], 'skills': draft.skills}
+    assert schema.model_validate(payload)
+    payload['assessments'][0]['partial_claim_ids'] = ['R1']
+    with pytest.raises(ValidationError):
+        schema.model_validate(payload)
+
+
+def test_gap_judgments_belong_in_assessments_not_duplicate_requirements():
+    projection, draft = example()
+    draft.requirements[1].description = 'No approved evidence supports Kubernetes.'
+    assert any('evidence gap' in e for e in v4.coverage_errors(draft, projection))
+
+
 def test_edit_only_polish_preserves_entire_draft_and_builds_ordered_log():
     _, draft = example()
     draft.bullets.append(draft.bullets[0].model_copy(update={'id': 'B2'}))

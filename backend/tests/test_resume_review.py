@@ -83,7 +83,10 @@ def test_protected_fields_rejected_and_gaps_recomputed(client, completed):
     payload = save_payload(view)
     payload["edit"]["bullets"][0]["requirement_ids"] = []
     edited = client.post(url + "/revisions", json=payload).json()
-    assert edited["revision"]["content"]["draft"]["unmet_requirement_ids"] == ["REQ-1"]
+    # Removing a link does not erase approved Python evidence. V4 prevents
+    # inconsistent manual links from being approved instead of inventing a gap.
+    assert edited["revision"]["content"]["draft"]["unmet_requirement_ids"] == []
+    assert not edited['revision']['validation']['valid']
     assert edited["revision"]["content"]["identity"] == view["revision"]["content"]["identity"]
 
 

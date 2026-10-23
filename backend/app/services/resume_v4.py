@@ -8,7 +8,7 @@ from typing import Literal
 from pydantic import Field
 from app.tailoring_schemas import StrictModel
 from app.generation_schemas import (Requirement, ResumeDraft, RevisedResume, PolishedResume,
-    ResumeBullet, ResumeSkill, RevisionDecision)
+    ResumeBullet, ResumeSkill, RevisionDecision, CritiqueReport)
 from app.services.requirement_grounding import quote_key
 
 
@@ -34,6 +34,15 @@ class Coverage(StrictModel):
     selected_claim_ids: list[str]
     selected_skill_names: list[str]
     explanation: str
+
+
+class AssessmentCorrection(EvidenceAssessment):
+    issue_id: str
+
+
+class CritiqueV4(CritiqueReport):
+    assessment_corrections: list[AssessmentCorrection] = Field(max_length=40,
+        description="Explicit replacement evidence assessments for coverage issues. One per requirement, linked to its draft-target issue. The application applies accepted corrections exactly.")
 
 
 class DraftV4(ResumeDraft):
@@ -81,7 +90,6 @@ class SelectionPlanV4(StrictModel):
 class RevisionPlanV4(StrictModel):
     selections: list[RevisionChoice] = Field(max_length=20)
     skills: list[ResumeSkill] = Field(max_length=40)
-    assessments: list[EvidenceAssessment] = Field(max_length=40)
     decisions: list[RevisionDecision] = Field(max_length=30)
 
 
@@ -164,6 +172,10 @@ def coverage_errors(draft, projection):
         ids = a.full_claim_ids + a.partial_claim_ids
         if len(ids) != len(set(ids)) or not set(ids) <= claims:
             errors.append(f'Assessment {a.requirement_id} has duplicate, conflicting or unavailable claim evidence.')
+    for bullet in draft.bullets:
+        links = [a.requirement_id for a in draft.assessments if set(bullet.evidence_ids).intersection(a.full_claim_ids + a.partial_claim_ids)]
+        if bullet.requirement_ids != links:
+            errors.append(f'Bullet {bullet.id} requirement links differ from its evidence assessments.')
     for r in draft.requirements:
         if (r.kind == 'basic_skill') != bool(r.skill_name):
             errors.append(f'Requirement {r.id}: only basic_skill qualifications may name a catalog skill.')
@@ -202,7 +214,15 @@ def compile_selection(plan, data):
     revision = isinstance(plan, RevisionPlanV4)
     raw = plan.model_dump()
     selections = [*raw['selections'], *[v for v in raw.get('overlap_choices', {}).values() if v is not None]]
-    assessments = {a.requirement_id: a for a in plan.assessments}
+    if revision:
+        prior_assessments = data['prior_outputs']['select']['assessments']
+        accepted = {d.issue_id for d in plan.decisions if d.action == 'accepted'}
+        corrections = {c['requirement_id']: {k: v for k, v in c.items() if k != 'issue_id'}
+            for c in data['prior_outputs']['critique']['assessment_corrections'] if c['issue_id'] in accepted}
+        raw_assessments = [corrections.get(a['requirement_id'], a) for a in prior_assessments]
+    else:
+        raw_assessments = raw['assessments']
+    assessments = {a['requirement_id']: EvidenceAssessment.model_validate(a) for a in raw_assessments}
     for selection in selections:
         selection['requirement_ids'] = [rid for rid, a in assessments.items() if selection['claim_id'] in a.full_claim_ids + a.partial_claim_ids]
         if revision:
@@ -220,7 +240,7 @@ def compile_selection(plan, data):
     compiled = compile_plan(legacy_plan, legacy_data)
     base = compiled.draft if revision else compiled
     value = base.model_dump()
-    value.update(requirements=requirements, assessments=raw['assessments'], coverage=[])
+    value.update(requirements=requirements, assessments=raw_assessments, coverage=[])
     draft = refresh_coverage(DraftV4.model_validate(value), data['approved_evidence'])
     return RevisedV4(draft=draft, decisions=compiled.decisions, lineage=compiled.lineage) if revision else draft
 
@@ -229,7 +249,7 @@ def revision_seed(data):
     from app.services.resume_composition import exclusive_groups
     original = data['prior_outputs']['select']
     groups = exclusive_groups(data)
-    result = {'selections': [], 'skills': original['skills'], 'assessments': original['assessments'], 'decisions': []}
+    result = {'selections': [], 'skills': original['skills'], 'decisions': []}
     if groups:
         result['overlap_choices'] = {f'group_{i}': None for i in range(1, len(groups) + 1)}
     for bullet in original['bullets']:

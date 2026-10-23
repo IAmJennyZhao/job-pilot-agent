@@ -54,16 +54,28 @@ def exclusive_groups(data):
 
 
 def plan_model(output_model, data):
+    if data.get("contract", {}).get("composition_version") == 2:
+        from app.services import resume_v4 as v4
+        if output_model is v4.PolishedV4:
+            return v4.PolishPlan
+        if output_model is v4.DraftV4:
+            return choice_model(v4.SelectionPlanV4, v4.Choice, data)
+        if output_model is v4.RevisedV4:
+            return choice_model(v4.RevisionPlanV4, v4.RevisionChoice, data)
+        return output_model
     if data.get("contract", {}).get("composition_version") != 1:
         return output_model
     base = SelectionPlan if output_model is ResumeDraft else RevisionPlan if output_model is RevisedResume else None
     if base is None:
         return output_model
+    return choice_model(base, RevisionSelection if base is RevisionPlan else Selection, data)
+
+
+def choice_model(base, item, data):
     groups = exclusive_groups(data)
     ids = {c["id"] for c in data["approved_evidence"]["claims"]}
     if not groups:
         return base
-    item = RevisionSelection if base is RevisionPlan else Selection
     grouped = set().union(*groups)
     independent = create_model("IndependentSelection", __base__=item,
         claim_id=(Literal[tuple(sorted(ids-grouped))] if ids-grouped else Literal["NO_INDEPENDENT_CLAIMS"], ...))
@@ -79,6 +91,9 @@ def plan_model(output_model, data):
 
 def revision_seed(data):
     """Give revision the same choice representation as selection, without lost slots."""
+    if data.get("contract", {}).get("composition_version") == 2:
+        from app.services.resume_v4 import revision_seed as current_seed
+        return current_seed(data)
     original = data["prior_outputs"]["select"]
     groups = exclusive_groups(data)
     slots = {f"group_{i}": None for i in range(1, len(groups) + 1)}
@@ -100,6 +115,9 @@ def revision_seed(data):
 
 
 def compile_plan(plan, data):
+    if data.get("contract", {}).get("composition_version") == 2:
+        from app.services.resume_v4 import PolishPlan, compile_polish, compile_selection
+        return compile_polish(plan, data) if isinstance(plan, PolishPlan) else compile_selection(plan, data)
     claims = {c["id"]: c for c in data["approved_evidence"]["claims"]}
     previous = data["prior_outputs"].get("select")
     requirements = previous["requirements"] if isinstance(plan, RevisionPlan) else [*plan.requirements, *plan.unsupported_requirements]

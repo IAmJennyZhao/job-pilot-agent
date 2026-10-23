@@ -6,7 +6,8 @@ export type GenerationWorkspace = {
   runs: { id: string; state: GenerationState; created_at: string }[];
 };
 export type ResumeBullet = { id: string; record_id: string; evidence_ids: string[]; requirement_ids: string[]; text: string };
-export type ResumeDraft = { schema_version: 1; requirements: { id: string; quote: string; description: string }[]; bullets: ResumeBullet[]; skills: { name: string; source_ids: string[] }[]; unmet_requirement_ids: string[]; change_summary: string[] };
+export type RequirementCoverage = { requirement_id: string; status: "supported" | "partially_supported" | "unsupported" | "not_included"; available_support: "full" | "partial" | "none"; full_claim_ids: string[]; partial_claim_ids: string[]; skill_source_ids: string[]; selected_claim_ids: string[]; selected_skill_names: string[]; explanation: string };
+export type ResumeDraft = { schema_version: 1; requirements: { id: string; quote: string; description: string; kind?: "basic_skill" | "experience" | "other"; skill_name?: string | null }[]; bullets: ResumeBullet[]; skills: { name: string; source_ids: string[] }[]; unmet_requirement_ids: string[]; change_summary: string[]; coverage?: RequirementCoverage[] };
 export type AccuracyReport = { valid: boolean; validator_version: string; blocking_issues: string[]; supported_claim_ids: string[]; wording_changes: { bullet_id: string; before: string; after: string }[]; unmet_requirement_ids: string[]; human_review_required: true; scope: string };
 export type GenerationRun = {
   id: string; job_id: string; state: GenerationState; parent_run_id: string | null; input_hash: string;

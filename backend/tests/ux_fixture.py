@@ -49,7 +49,7 @@ def fixture_generation(output_model, system, payload, **kwargs):
         return acceptance_provider(output_model, system, payload, **kwargs)
     if output_model in {LetterDraft, LetterAssessment}:
         return fake_letter(output_model, system, payload, **kwargs)
-    if output_model is RevisedResume and "SYNTHETIC_FAIL_ONCE" in data["job"]["source_content"] and data["job"]["id"] not in failed_generation_jobs:
+    if issubclass(output_model, RevisedResume) and "SYNTHETIC_FAIL_ONCE" in data["job"]["source_content"] and data["job"]["id"] not in failed_generation_jobs:
         failed_generation_jobs.add(data["job"]["id"])
         raise ProviderFailure("Synthetic provider timeout. Retry explicitly from saved checkpoints.")
     return fake_generation(output_model, system, payload, **kwargs)

@@ -1,3 +1,4 @@
+from app.services.resume_v4 import DraftV4, CritiqueV4, RevisedV4, PolishedV4
 import copy
 import json
 import uuid
@@ -57,7 +58,7 @@ def test_four_pass_generation_preserves_sources_and_job(client, monkeypatch, pre
     assert response.status_code == 201, response.text
     run = response.json()
     assert run["state"] == "completed", run
-    assert [call[0] for call in calls] == [ResumeDraft, CritiqueReport, RevisedResume, PolishedResume]
+    assert [call[0] for call in calls] == [DraftV4, CritiqueV4, RevisedV4, PolishedV4]
     assert all(stage["state"] == "passed" for stage in run["stages"])
     assert run["revision"]["validation"]["human_review_required"]
     assert run["revision"]["validation"]["wording_changes"]
@@ -107,7 +108,7 @@ def test_explicit_retry_reuses_passed_checkpoints(client, monkeypatch, prepared)
     calls = []
     def failing(output_model, *args, **kwargs):
         calls.append(output_model)
-        if output_model is RevisedResume:
+        if issubclass(output_model, RevisedResume):
             raise ProviderFailure("Synthetic timeout; completion may be unknown.")
         return fake_generation(output_model, *args, **kwargs)
     monkeypatch.setattr(ai_service, "get_tailoring_output", failing)
@@ -225,7 +226,7 @@ def test_retry_backup_restore_with_real_foreign_keys(client, monkeypatch, prepar
     monkeypatch.setattr(get_settings(), "asset_storage_dir", str(tmp_path / "assets"))
     job, _ = prepared
     def provider(output_model, *args, **kwargs):
-        if output_model is RevisedResume:
+        if issubclass(output_model, RevisedResume):
             raise ProviderFailure("Synthetic provider interruption")
         return fake_generation(output_model, *args, **kwargs)
     monkeypatch.setattr(ai_service, "get_tailoring_output", provider)

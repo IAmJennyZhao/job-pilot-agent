@@ -34,8 +34,14 @@ def differences(before, after):
 def build_content(edit: ResumeEdit, baseline, snapshot):
     requirements = copy.deepcopy(baseline["draft"]["requirements"])
     covered = {rid for b in edit.bullets for rid in b.requirement_ids}
-    draft = EditedDraft(requirements=requirements, bullets=edit.bullets, skills=edit.skills,
-        unmet_requirement_ids=[r["id"] for r in requirements if r["id"] not in covered], change_summary=[])
+    if generation_version(snapshot) >= 4:
+        from app.services.resume_v4 import EditedDraftV4, refresh_coverage
+        draft = EditedDraftV4(requirements=requirements, bullets=edit.bullets, skills=edit.skills,
+            assessments=baseline['draft']['assessments'], coverage=[], unmet_requirement_ids=[], change_summary=[])
+        refresh_coverage(draft, snapshot['projection'])
+    else:
+        draft = EditedDraft(requirements=requirements, bullets=edit.bullets, skills=edit.skills,
+            unmet_requirement_ids=[r["id"] for r in requirements if r["id"] not in covered], change_summary=[])
     content = assemble_content(draft, snapshot)
     projects = {r["id"] for r in content["records"] if r["kind"] == "project"}
     if len(edit.project_order) != len(set(edit.project_order)) or set(edit.project_order) != projects:
@@ -57,7 +63,8 @@ def bullet_identities(contents):
 
 
 def validate_revision(content, snapshot, parent=None, identities=None):
-    draft = EditedDraft.model_validate(content["draft"])
+    from app.services.resume_v4 import EditedDraftV4
+    draft = (EditedDraftV4 if generation_version(snapshot) >= 4 else EditedDraft).model_validate(content["draft"])
     errors = validate_draft(draft, snapshot)
     if not draft.bullets:
         errors.append("Select at least one supported bullet before review.")

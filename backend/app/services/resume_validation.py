@@ -5,17 +5,20 @@ from app.generation_schemas import ResumeDraft, CritiqueReport, RevisedResume, P
 
 STAGES = ("select", "critique", "revise", "polish")
 OUTPUT_MODELS = dict(zip(STAGES, (ResumeDraft, CritiqueReport, RevisedResume, PolishedResume)))
-PROMPT_VERSIONS = {stage: f"resume-{stage}-v3" for stage in STAGES}
+PROMPT_VERSIONS = {stage: f"resume-{stage}-v4" for stage in STAGES}
 
 
 def generation_version(snapshot):
     version = snapshot.get("generation_version", 1)
-    if type(version) is not int or version not in (1, 2, 3):
+    if type(version) is not int or version not in (1, 2, 3, 4):
         raise ValueError("Unsupported generation version")
     return version
 
 
 def output_models(snapshot):
+    if generation_version(snapshot) == 4:
+        from app.services.resume_v4 import DraftV4, CritiqueV4, RevisedV4, PolishedV4
+        return dict(zip(STAGES, (DraftV4, CritiqueV4, RevisedV4, PolishedV4)))
     return legacy.OUTPUT_MODELS if generation_version(snapshot) == 1 else OUTPUT_MODELS
 
 
@@ -98,7 +101,10 @@ def validate_draft(draft, snapshot):
     for skill in draft.skills:
         if any(skill.name.casefold() not in allowed_skills.get(sid, set()) for sid in skill.source_ids):
             errors.append(f"Skill {skill.name} lacks matching approved skill provenance.")
-    if set(draft.unmet_requirement_ids) != requirements - covered:
+    if generation_version(snapshot) >= 4:
+        from app.services.resume_v4 import coverage_errors
+        errors.extend(coverage_errors(draft, projection))
+    elif set(draft.unmet_requirement_ids) != requirements - covered:
         errors.append("Unmet requirements must equal requirements without selected bullet evidence.")
     for overlap in projection["claim_overlap_groups"]:
         matching = [b.id for b in draft.bullets if set(b.evidence_ids).intersection(overlap["claim_ids"])]
@@ -120,7 +126,7 @@ def validate_stage(stage, output, snapshot, accepted):
     if draft:
         errors.extend(validate_draft(draft, snapshot))
     if stage == "critique":
-        original = ResumeDraft.model_validate(accepted["select"])
+        original = output_models(snapshot)["select"].model_validate(accepted["select"])
         if generation_version(snapshot) >= 3:
             errors.extend(requirement_errors(original.requirements, snapshot))
         fields = {"draft", "skills", *[f"bullets.{b.id}" for b in original.bullets]}
@@ -135,9 +141,19 @@ def validate_stage(stage, output, snapshot, accepted):
                 errors.append(f"Critique {issue.issue_id} has invalid evidence IDs {sorted(set(issue.evidence_ids)-allowed)}. Allowed evidence IDs for this target: {sorted(allowed)}.")
             if not set(issue.requirement_ids) <= req_ids:
                 errors.append(f"Critique {issue.issue_id} has invalid requirement IDs. Allowed: {sorted(req_ids)}.")
+        if generation_version(snapshot) >= 4:
+            issues = {i.issue_id: i for i in output.issues}
+            unique([c.requirement_id for c in output.assessment_corrections], 'assessment corrections', errors)
+            for correction in output.assessment_corrections:
+                issue = issues.get(correction.issue_id)
+                ids = correction.full_claim_ids + correction.partial_claim_ids
+                if not issue or issue.field_path != 'draft' or issue.requires_user_fact_confirmation or correction.requirement_id not in issue.requirement_ids:
+                    errors.append(f'Assessment correction {correction.requirement_id} needs a linked draft issue for that requirement using existing approved facts.')
+                if correction.requirement_id not in req_ids or not set(ids) <= claim_ids or len(ids) != len(set(ids)):
+                    errors.append(f'Assessment correction {correction.requirement_id} has unavailable or conflicting evidence.')
     if stage == "revise":
-        original = ResumeDraft.model_validate(accepted["select"])
-        critique = CritiqueReport.model_validate(accepted["critique"])
+        original = output_models(snapshot)["select"].model_validate(accepted["select"])
+        critique = output_models(snapshot)["critique"].model_validate(accepted["critique"])
         issues = {i.issue_id: i for i in critique.issues}
         unique([d.issue_id for d in output.decisions], "revision decisions", errors)
         if {d.issue_id for d in output.decisions} != set(issues):
@@ -169,8 +185,18 @@ def validate_stage(stage, output, snapshot, accepted):
             errors.append("Skills changed without an accepted recommendation.")
         if comparison_draft(original, snapshot)["requirements"] != comparison_draft(draft, snapshot)["requirements"]:
             errors.append("Revision must preserve the original requirement mapping.")
+        if generation_version(snapshot) >= 4 and original.assessments != draft.assessments and 'draft' not in accepted_fields:
+            errors.append('Changing requirement evidence assessments needs an accepted draft critique recommendation.')
+        if generation_version(snapshot) >= 4:
+            from app.services.resume_v4 import EvidenceAssessment
+            accepted_ids = {d.issue_id for d in output.decisions if d.action == 'accepted'}
+            corrections = {c.requirement_id: EvidenceAssessment.model_validate(c.model_dump(exclude={'issue_id'}))
+                           for c in critique.assessment_corrections if c.issue_id in accepted_ids}
+            expected = [corrections.get(a.requirement_id, a) for a in original.assessments]
+            if draft.assessments != expected:
+                errors.append('Revision must apply every accepted assessment correction exactly and preserve other assessments.')
     if stage == "polish":
-        original = RevisedResume.model_validate(accepted["revise"]).draft
+        original = output_models(snapshot)["revise"].model_validate(accepted["revise"]).draft
         old, new = comparison_draft(original, snapshot), comparison_draft(draft, snapshot)
         for value in (old, new):
             for bullet in value["bullets"]:
@@ -187,7 +213,7 @@ def accuracy_report(draft, snapshot, accepted):
     if generation_version(snapshot) == 1:
         return legacy.accuracy_report(draft, snapshot, accepted)
     errors = validate_draft(draft, snapshot)
-    before = RevisedResume.model_validate(accepted["revise"]).draft
+    before = output_models(snapshot)["revise"].model_validate(accepted["revise"]).draft
     return FactualAccuracyReport(validator_version=f"resume-v{generation_version(snapshot)}", valid=not errors, blocking_issues=errors,
         supported_claim_ids=sorted({cid for b in draft.bullets for cid in b.evidence_ids}),
         wording_changes=polish_diff(before, draft), unmet_requirement_ids=draft.unmet_requirement_ids).model_dump()
@@ -198,6 +224,9 @@ def assemble_content(draft, snapshot):
         return legacy.assemble_content(draft, snapshot)
     draft = draft.model_copy(deep=True)
     draft.change_summary = [f"Selected {len(draft.bullets)} supported bullets from {len({b.record_id for b in draft.bullets})} records.", f"Selected {len(draft.skills)} supported skills; {len(draft.unmet_requirement_ids)} mapped requirements remain unmet."]
+    if generation_version(snapshot) >= 4:
+        counts = {status: sum(c.status == status for c in draft.coverage) for status in ('supported', 'partially_supported', 'unsupported', 'not_included')}
+        draft.change_summary[1] = f"Coverage: {counts['supported']} supported, {counts['partially_supported']} partially supported, {counts['unsupported']} unsupported, {counts['not_included']} not included in this draft."
     selected = {b.record_id for b in draft.bullets}
     records = [r for r in snapshot["projection"]["records"] if r["id"] in selected]
     records.sort(key=lambda r: r.get("start") or "", reverse=True)

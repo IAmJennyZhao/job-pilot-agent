@@ -130,14 +130,15 @@ def provider(output_model, system, payload, *, model, timeout):
     if output_model is LetterDraft:
         return letter(key, data["options"]["count"], data["options"]["length"]), metadata
     prior = data["prior_outputs"]
-    if output_model is ResumeDraft:
-        return ResumeDraft(requirements=[{"id": f"REQ-{i+1}", "quote": quote, "description": quote} for i, quote in enumerate([*case["requirements"], case["gap"]])],
+    if issubclass(output_model, ResumeDraft):
+        from generation_fixtures import current_draft
+        return current_draft(ResumeDraft(requirements=[{"id": f"REQ-{i+1}", "quote": quote, "description": quote} for i, quote in enumerate([*case["requirements"], case["gap"]])],
             bullets=[{"id": f"B-{i+1}", "record_id": case["record"], "evidence_ids": [f"C-{key}-{i+1}"], "requirement_ids": [f"REQ-{i+1}"], "text": text} for i, text in enumerate(case["claims"])],
-            skills=[{"name": skill, "source_ids": [f"SK-{key}"]} for skill in case["skills"]], unmet_requirement_ids=["REQ-3"], change_summary=["Fictional role-specific evidence selection."]), metadata
-    if output_model is CritiqueReport:
-        return CritiqueReport(issues=[]), metadata
-    if output_model is RevisedResume:
-        return RevisedResume(draft=prior["select"], decisions=[]), metadata
-    if output_model is PolishedResume:
-        return PolishedResume(draft=prior["revise"]["draft"], edits=[]), metadata
+            skills=[{"name": skill, "source_ids": [f"SK-{key}"]} for skill in case["skills"]], unmet_requirement_ids=["REQ-3"], change_summary=["Fictional role-specific evidence selection."]), data), metadata
+    if issubclass(output_model, CritiqueReport):
+        return output_model(issues=[], **({'assessment_corrections': []} if data.get('contract', {}).get('composition_version') == 2 else {})), metadata
+    if issubclass(output_model, RevisedResume):
+        return output_model(draft=prior["select"], decisions=[]), metadata
+    if issubclass(output_model, PolishedResume):
+        return output_model(draft=prior["revise"]["draft"], edits=[]), metadata
     raise AssertionError("Unknown acceptance contract")

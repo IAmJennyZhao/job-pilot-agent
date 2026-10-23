@@ -25,6 +25,28 @@ test.afterEach(async ({ page }, info) => {
   }
 });
 
+test("coverage distinguishes omitted evidence and recovers when approved content is restored", async ({ page, request }) => {
+  const { job } = await prepare(request);
+  await page.goto(`/jobs/${job.id}`);
+  const panel = page.getByRole("region", { name: "Resume review and editing" });
+  const coverage = panel.getByRole("region", { name: "Job requirement coverage" });
+  await expect(coverage.getByText("Supported", { exact: true })).toBeVisible();
+  await panel.getByRole("button", { name: "Edit resume", exact: true }).click();
+  await panel.getByRole("button", { name: "Remove bullet 1", exact: true }).click();
+  await panel.getByRole("group", { name: "Approved skills" }).getByLabel("Python", { exact: true }).uncheck();
+  await panel.getByRole("button", { name: "Save and validate", exact: true }).click();
+  await expect(coverage.getByText("Not included in this draft", { exact: true })).toBeVisible();
+  await expect(coverage.getByText("Unsupported", { exact: true })).toHaveCount(0);
+  await page.reload();
+  await expect(coverage.getByText("Not included in this draft", { exact: true })).toBeVisible();
+  await panel.getByRole("button", { name: "Edit resume", exact: true }).click();
+  await panel.getByLabel("Add approved content", { exact: true }).selectOption("C-ALLOWED");
+  await panel.getByRole("button", { name: "Add selected claim", exact: true }).click();
+  await panel.getByRole("button", { name: "Save and validate", exact: true }).click();
+  await expect(coverage.getByText("Supported", { exact: true })).toBeVisible();
+  await expect(panel.getByRole("button", { name: "Mark reviewed", exact: true })).toBeEnabled();
+});
+
 test("resume review edits survive reload, invalidate review, and restore history", async ({ page, request }, info) => {
   const { job, run, url } = await prepare(request);
   let modelActions = 0;

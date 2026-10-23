@@ -139,7 +139,7 @@ def test_v1_reviewed_history_restores_alongside_current(client, prepared, monkey
     historical_pdf = client.get(artifact_url + "/download/pdf").content
     current = generate(client, job).json()
     assert current["state"] == "completed", current
-    assert current["revision"]["validation"]["validator_version"] == "resume-v3"
+    assert current["revision"]["validation"]["validator_version"] == "resume-v4"
     archive = client.get("/api/data/backup").content
     preview = client.post("/api/data/restore-preview", files={"file": ("backup.json", archive)})
     assert preview.status_code == 200, preview.text
@@ -241,7 +241,8 @@ def test_revision_seed_preserves_overlap_choices_and_requires_authorized_additio
     assert compile_plan(addition, data).lineage[0].issue_ids == ["I1"]
 
 
-def test_compact_provider_through_coordinator_and_backup(client, prepared, monkeypatch):
+def test_compact_provider_through_coordinator_and_backup(client, prepared, monkeypatch, pin_generation_version):
+    pin_generation_version(2)
     from app.services import ai_service, tailoring_provider as provider
     from app.services.resume_composition import SelectionPlan, RevisionPlan
     from app.generation_schemas import PolishedResume

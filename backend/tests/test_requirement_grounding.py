@@ -95,7 +95,8 @@ def test_unsupported_requirement_is_rejected_at_each_pass(stage):
     assert not report['valid'] and any('posting' in e for e in report['blocking_issues'])
 
 
-def test_grounded_quotes_through_provider_all_passes_review_export_and_restore(client, prepared, monkeypatch, tmp_path):
+def test_grounded_quotes_through_provider_all_passes_review_export_and_restore(client, prepared, monkeypatch, tmp_path, pin_generation_version):
+    pin_generation_version(3)
     from app.config import get_settings
     from app.services import ai_service, tailoring_provider as provider
     from app.services.resume_composition import SelectionPlan, RevisionPlan

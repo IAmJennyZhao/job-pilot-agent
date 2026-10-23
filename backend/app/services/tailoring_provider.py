@@ -38,7 +38,7 @@ async def _request(output_model, system, payload, model, timeout):
         "usage": response.usage.model_dump(mode="json") if response.usage else None}
     if wire_model is not output_model:
         metadata["composition_plan"] = output.model_dump(mode="json")
-        metadata["composition_version"] = 1
+        metadata["composition_version"] = data["contract"]["composition_version"]
         try:
             output = compile_plan(output, data)
         except CompositionError as exc:

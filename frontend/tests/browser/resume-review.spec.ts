@@ -30,7 +30,7 @@ test("coverage distinguishes omitted evidence and recovers when approved content
   await page.goto(`/jobs/${job.id}`);
   const panel = page.getByRole("region", { name: "Resume review and editing" });
   const coverage = panel.getByRole("region", { name: "Job requirement coverage" });
-  await expect(panel.getByLabel("Resume content budget")).toContainText("Within estimated page budget");
+  await expect(panel.getByLabel("Resume content budget")).toContainText("Within the estimated page budget");
   await expect(coverage.getByText("Supported", { exact: true })).toBeVisible();
   await panel.getByRole("button", { name: "Edit resume", exact: true }).click();
   await panel.getByRole("button", { name: "Remove bullet 1", exact: true }).click();

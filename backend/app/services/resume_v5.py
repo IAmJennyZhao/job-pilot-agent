@@ -69,7 +69,7 @@ def guarded_assessments(requirements, assessments, projection):
         if reasons:
             # The model's old full-support explanation must not contradict the
             # effective classification. Original wording remains in plan metadata.
-            a.explanation = 'Partial support after source checks: ' + ' '.join(dict.fromkeys(reasons))
+            a.explanation = 'Source checks downgraded some evidence to partial: ' + ' '.join(dict.fromkeys(reasons))
         result.append(a)
     return result
 
@@ -123,7 +123,7 @@ def budget(draft, projection):
     requested = ' '.join(r.description for r in result.requirements).casefold()
     result.skills = sorted(result.skills, key=lambda s: s.name.casefold() not in requested)[:POLICY['max_skills']]
     remaining = list(original)
-    covered = set()
+    covered_full, covered_any = set(), set()
     while remaining and len(result.bullets) < POLICY['max_bullets']:
         ranked = []
         for index, bullet in enumerate(remaining):
@@ -134,7 +134,7 @@ def budget(draft, projection):
                 continue
             full = {a.requirement_id for a in result.assessments if set(bullet.evidence_ids).intersection(a.full_claim_ids)}
             partial = {a.requirement_id for a in result.assessments if set(bullet.evidence_ids).intersection(a.partial_claim_ids)}
-            score = 2 + 5 * len(full - covered) + 2 * len(partial - covered) + len(full)
+            score = 2 + 5 * len(full - covered_full) + 2 * len(partial - covered_any) + len(full)
             score += 1 if re.search(r'\d', bullet.text) else 0
             trial = result.model_copy(deep=True)
             trial.bullets.append(bullet)
@@ -148,10 +148,11 @@ def budget(draft, projection):
             break
         bullet = chosen[2]
         result.bullets.append(bullet)
-        covered.update(bullet.requirement_ids)
+        covered_full.update(a.requirement_id for a in result.assessments if set(bullet.evidence_ids).intersection(a.full_claim_ids))
+        covered_any.update(bullet.requirement_ids)
         remaining.remove(bullet)
     if not result.bullets and original:
-        # Keep the strongest recoverable claim. A validation finding requires a
+        # Keep the shortest recoverable claim. A validation finding requires a
         # shorter approved alternative rather than silently producing no resume.
         result.bullets = [min(original, key=lambda b: len(b.text))]
     # Layout order remains the author's selection priority within each record.

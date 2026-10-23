@@ -71,7 +71,7 @@ function ReviewContent({ view, onSelect, onSaved, onRefresh, refreshing, refresh
   return <section aria-label="Resume review and editing" className="grid min-w-0 gap-4 border-t border-border pt-4">
     <h3 className="font-semibold">Generated resume draft</h3>
     {revision.content.content_budget && <p aria-label="Resume content budget" className="text-sm">
-      {revision.content.content_budget.bullets} selected bullets. {revision.content.content_budget.within_budget ? 'Within the estimated page budget.' : 'Above the estimated page budget; consider fewer or shorter approved claims.'} Render the saved revision to check actual one-page fit.
+      {revision.content.content_budget.bullets} selected {revision.content.content_budget.bullets === 1 ? 'bullet' : 'bullets'}. {revision.content.content_budget.within_budget ? 'Within the estimated page budget.' : 'Above the estimated page budget; consider fewer or shorter approved claims.'} Render the saved revision to check actual one-page fit.
     </p>}
     {[draft, restoreRequest].map((recovery, index) => recovery.recoveryRaw !== null ? <div key={index} role="alert" className="grid gap-2 rounded border border-border p-3 text-sm">
       <p>A recovered {index === 0 ? "edit" : "restore request"} uses an incompatible or damaged format. Its original text is preserved. Download it before discarding if you need to recover your work.</p>

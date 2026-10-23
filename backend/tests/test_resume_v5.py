@@ -81,3 +81,29 @@ def test_v4_compilation_is_unchanged_by_new_default():
     assert compile_plan(plan, data).coverage[0].status == 'supported'
     data['contract']['composition_version'] = 3
     assert compile_plan(plan, data).coverage[0].status == 'partially_supported'
+
+
+def test_partial_coverage_does_not_remove_priority_for_direct_evidence(monkeypatch):
+    projection, draft = example()
+    monkeypatch.setitem(v5.POLICY, 'max_bullets', 2)
+    draft.skills = []
+    texts = ['Quick partial result.', 'Designed a complete public application with accessible navigation and authenticated account management.', 'Analyzed unrelated data.']
+    draft.bullets = [v4.ResumeBullet(id=f'B{i}', record_id='R1', evidence_ids=[f'X{i}'], requirement_ids=['Q1', 'Q2', 'Q3', 'Q4'] if i == 0 else ['Q3'] if i == 1 else [], text=text) for i, text in enumerate(texts)]
+    for i, text in enumerate(texts):
+        projection['claims'].append({'id': f'X{i}', 'record_id': 'R1', 'text': text})
+    for a in draft.assessments:
+        a.full_claim_ids = ['X1'] if a.requirement_id == 'Q3' else []
+        a.partial_claim_ids = ['X0']
+    bounded = v5.budget(draft, projection)
+    assert [b.id for b in bounded.bullets] == ['B0', 'B1']
+    assert bounded.coverage[2].status == 'supported'
+
+
+def test_space_omission_preserves_available_support(monkeypatch):
+    projection, draft = example()
+    monkeypatch.setitem(v5.POLICY, 'max_bullets', 1)
+    draft.bullets.append(v4.ResumeBullet(id='B2', record_id='R1', evidence_ids=['C2'], requirement_ids=['Q3'], text=projection['claims'][1]['text']))
+    bounded = v5.budget(draft, projection)
+    assert bounded.coverage[2].status == 'supported'
+    assert bounded.coverage[3].status == 'not_included'
+    assert bounded.coverage[3].available_support == 'partial'

@@ -64,6 +64,7 @@ def validation_for(row, baseline, edits, run, db=None):
 
 
 def view(db, baseline_id, revision_id=None):
+    from app.services.resume_v6 import fingerprint
     baseline, run = baseline_for(db, baseline_id)
     edits = revisions(db, baseline)
     head = edits[-1] if edits else baseline
@@ -91,6 +92,7 @@ def view(db, baseline_id, revision_id=None):
         "changes_from_baseline": (policy.differences if policy else differences)(baseline.content, selected.content), "changes_from_parent": (policy.differences if policy else differences)(parent.content, selected.content),
         "document_kind": run.snapshot.get("document_kind", "resume"),
         "job_evidence": policy.job_evidence(run.snapshot) if policy else [],
+        "advisory_current": (selected.content.get('advisory_review', {}).get('draft_hash') == fingerprint(selected.content['draft'])) if run.snapshot.get('generation_version') == 6 and not policy else None,
         "evidence": run.snapshot["projection"]["claims"], "records": run.snapshot["projection"]["records"],
         "skill_groups": run.snapshot["projection"]["skill_groups"], "technology_catalog": run.snapshot["projection"]["technology_catalog"]}
 

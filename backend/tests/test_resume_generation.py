@@ -17,7 +17,8 @@ from tailoring_fixtures import import_payload, bank_data
 
 
 @pytest.fixture
-def prepared(client, monkeypatch):
+def prepared(client, monkeypatch, pin_generation_version):
+    pin_generation_version(5)
     monkeypatch.setattr(get_settings(), "openai_api_key", "synthetic-key")
     monkeypatch.setattr(get_settings(), "openai_model", "synthetic-model")
     monkeypatch.setattr(ai_service, "get_tailoring_output", fake_generation)

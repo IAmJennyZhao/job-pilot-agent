@@ -32,7 +32,8 @@ def test_distinct_role_full_document_workflow_and_restore(client, monkeypatch, t
     draft = run["revision"]["content"]["draft"]
     assert [b["text"] for b in draft["bullets"]] == case["claims"]
     assert {e for b in draft["bullets"] for e in b["evidence_ids"]} == {f"C-{family}-1", f"C-{family}-2"}
-    assert draft["unmet_requirement_ids"] == ["REQ-3"]
+    assert draft["requirements"] == [] and draft["unmet_requirement_ids"] == []
+    assert run['revision']['content']['advisory_review']['status'] == 'available'
     url = f"/api/tailoring/resumes/{run['revision']['id']}"
     view, render = rendered(client, url)
     assert render["validation"]["valid"] and render["validation"]["pages"] == 1
@@ -47,7 +48,7 @@ def test_distinct_role_full_document_workflow_and_restore(client, monkeypatch, t
     assert client.post(letter_url + "/review", json=approval_payload(reviewed)).status_code == 201
     paths += [letter_url+f"/revisions/{reviewed['revision']['id']}/download/{i}/{fmt}" for i in range(3) for fmt in ("txt", "md")]
     original = {path: client.get(path).content for path in paths}
-    assert calls == ["DraftV4", "CritiqueV4", "RevisedV4", "PolishedV4", "LetterDraft", "LetterAssessment"]
+    assert calls == ["Draft", "Advisory", "LetterDraft", "LetterAssessment"]
     monkeypatch.setattr(ai_service, "get_tailoring_output", lambda *a, **k: pytest.fail("Read/review/export/restore called a model"))
     archive = client.get("/api/data/backup").content
     restored = client.post("/api/data/restore", files={"file": ("acceptance.json", archive)}, data={"sha256": hashlib.sha256(archive).hexdigest(), "confirmation": "RESTORE"})

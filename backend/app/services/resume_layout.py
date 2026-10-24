@@ -106,12 +106,17 @@ def document(content, snapshot, metadata=None):
         else:
             entries.append({"kind": "project", "heading": " -- ".join(r[k] for k in ("name", "subtitle") if r.get(k)),
                             "technologies": ", ".join(r.get("technologies", [])), "url": r.get("public_url") or "", "bullets": bullets})
-    return {"header": header, "education": education, "skills": skills, "entries": entries}
+    doc = {"header": header, "education": education, "skills": skills, "entries": entries}
+    if snapshot.get('generation_version') == 6:
+        doc['layout_policy'] = 'no-protrusion-v1'
+    return doc
 
 
 def exports(doc):
     name = escape(doc["header"][0][0]["text"])
     tex = [PREAMBLE, r"\hypersetup{pdftitle={" + name + r" -- Resume},pdfauthor={" + name + "}}", r"\begin{document}", r"\begin{center}"]
+    if doc.get('layout_policy') == 'no-protrusion-v1':
+        tex.insert(1, r'\microtypesetup{protrusion=false}')
     lines = []
     def link(c):
         label = escape(c["text"])

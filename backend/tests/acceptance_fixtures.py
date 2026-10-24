@@ -115,6 +115,9 @@ def letter(key, count=3, length="standard"):
 def provider(output_model, system, payload, *, model, timeout):
     data = json.loads(payload)
     metadata = {"model": "deterministic-acceptance-fixture", "provider_call": False}
+    from app.services import resume_v6 as policy
+    if output_model is policy.Advisory:
+        return policy.Advisory(findings=[{'bullet_id': b['bullet_id'], 'verdict': 'supported', 'explanation': 'Fictional fixture support; not a live evaluation.'} for b in data['bullets']]), metadata
     if output_model is LetterAssessment:
         # This fixture checks wiring and exact recorded sources, not natural-language entailment.
         return LetterAssessment(sentences=[{"sentence_id": item["sentence"]["id"], "actual_kind": item["sentence"]["sentence_kind"],
@@ -129,6 +132,10 @@ def provider(output_model, system, payload, *, model, timeout):
     case = CASES[key]
     if output_model is LetterDraft:
         return letter(key, data["options"]["count"], data["options"]["length"]), metadata
+    if output_model is policy.Draft:
+        plan = policy.WriterPlan(bullets=[{'record_id': case['record'], 'evidence_ids': [f'C-{key}-{i+1}'], 'text': text} for i, text in enumerate(case['claims'])], skills=case['skills'])
+        metadata.update(composition_plan=plan.model_dump(), composition_version=4)
+        return policy.compile_plan(plan, data), metadata
     prior = data["prior_outputs"]
     if issubclass(output_model, ResumeDraft):
         from generation_fixtures import current_draft

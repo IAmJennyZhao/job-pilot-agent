@@ -33,6 +33,10 @@ def expire_runs(db):
             .values(state="interrupted", active_key=None, finished_at=now(), error=message).execution_options(synchronize_session=False))
         if changed.rowcount:
             db.execute(update(models.TailoringStageAttempt).where(models.TailoringStageAttempt.run_id == run.id, models.TailoringStageAttempt.state == "running").values(state="interrupted", finished_at=now(), error=message))
+            if run.snapshot.get('generation_version') == 6 and run.snapshot.get('document_kind', 'resume') == 'resume':
+                from app.services.resume_v6_generation import complete
+                db.refresh(run)
+                complete(db, run)
     if expired:
         db.commit()
 
@@ -91,6 +95,9 @@ def start(db, job, request, parent_id=None, document_kind="resume"):
 
 
 def stage_input(snapshot, stage, accepted, repair=None):
+    if generation_version(snapshot) == 6:
+        from app.services.resume_v6 import stage_input as current
+        return current(snapshot, stage, accepted, repair)
     data = {"job": snapshot["job"], "approved_evidence": snapshot["projection"],
             "presentation": {"section_order": ["Education", "Technical Skills", "Experience", "Projects"], "target_pages": 1},
             "prior_outputs": accepted, "stage": stage, "repair": repair,
@@ -137,6 +144,12 @@ def fail(engine, run_id, message):
 
 
 def execute(engine, run_id):
+    with Session(engine) as db:
+        run = db.get(models.TailoringRun, run_id)
+        simple = run and run.snapshot.get('generation_version') == 6
+    if simple:
+        from app.services.resume_v6_generation import execute as current
+        return current(engine, run_id)
     accepted = {}
     try:
         with Session(engine) as db:
@@ -239,6 +252,7 @@ def run_view(db, run):
     state = db.get(models.TailoringProfileState, run.profile_id)
     source_changed = not state or state.active_source_id != run.source_id or any(run.snapshot["job"][key] != getattr(job, key) for key in ("company", "role_title", "source_content"))
     return {"id": run.id, "job_id": run.job_id, "state": run.state, "parent_run_id": run.parent_run_id,
+        "generation_version": run.snapshot.get('generation_version', 1),
         "input_hash": run.input_hash, "source_changed": source_changed, "error": run.error,
         "created_at": run.created_at, "deadline_at": run.deadline_at,
         "stages": [{"id": a.id, "stage": a.stage, "attempt": a.attempt, "state": a.state,

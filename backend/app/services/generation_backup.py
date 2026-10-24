@@ -41,6 +41,10 @@ def validate_generation_tables(tables):
             continue
         if snapshot.get("document_kind", "resume") != "resume":
             raise ValueError("Unknown generated document kind")
+        if generation_version(snapshot) == 6:
+            from app.services.resume_v6_backup import validate_run
+            validate_run(tables, run)
+            continue
         if snapshot["prompt_versions"] != prompt_versions(snapshot) or snapshot["prompt_hashes"] != {stage: digest(system_for(stage, generation_version(snapshot))) for stage in STAGES}:
             raise ValueError("Unsupported generation prompt version")
         if run["state"] not in {"pending", "running", "completed", "failed", "interrupted"}:

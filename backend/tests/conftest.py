@@ -25,9 +25,11 @@ def pin_generation_version(monkeypatch):
         def capture(db, job):
             state = original(db, job)
             snapshot = state['snapshot']
+            if snapshot is None:
+                return state
             snapshot['generation_version'] = version
             snapshot['prompt_versions'] = prompt_versions(snapshot)
-            snapshot['prompt_hashes'] = {stage: digest(system_for(stage, version)) for stage in STAGES}
+            snapshot['prompt_hashes'] = {stage: digest(system_for(stage, version)) for stage in snapshot['prompt_versions']}
             state['input_hash'] = digest(snapshot)
             return state
         monkeypatch.setattr(generation_inputs, 'capture', capture)

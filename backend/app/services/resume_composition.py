@@ -54,6 +54,9 @@ def exclusive_groups(data):
 
 
 def plan_model(output_model, data):
+    if data.get('contract', {}).get('composition_version') == 4:
+        from app.services.resume_v6 import WriterPlan
+        return WriterPlan
     if data.get('contract', {}).get('composition_version') == 3:
         return plan_model(output_model, {**data, 'contract': {**data['contract'], 'composition_version': 2}})
     if data.get("contract", {}).get("composition_version") == 2:
@@ -117,6 +120,9 @@ def revision_seed(data):
 
 
 def compile_plan(plan, data):
+    if data.get('contract', {}).get('composition_version') == 4:
+        from app.services.resume_v6 import compile_plan as current
+        return current(plan, data)
     if data.get('contract', {}).get('composition_version') == 3:
         from app.services.resume_v5 import compile_plan as current
         return current(plan, data)

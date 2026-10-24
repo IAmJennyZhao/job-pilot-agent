@@ -5,17 +5,20 @@ from app.generation_schemas import ResumeDraft, CritiqueReport, RevisedResume, P
 
 STAGES = ("select", "critique", "revise", "polish")
 OUTPUT_MODELS = dict(zip(STAGES, (ResumeDraft, CritiqueReport, RevisedResume, PolishedResume)))
-PROMPT_VERSIONS = {stage: f"resume-{stage}-v5" for stage in STAGES}
+PROMPT_VERSIONS = {stage: f"resume-{stage}-v6" for stage in ('write', 'review')}
 
 
 def generation_version(snapshot):
     version = snapshot.get("generation_version", 1)
-    if type(version) is not int or version not in (1, 2, 3, 4, 5):
+    if type(version) is not int or version not in (1, 2, 3, 4, 5, 6):
         raise ValueError("Unsupported generation version")
     return version
 
 
 def output_models(snapshot):
+    if generation_version(snapshot) == 6:
+        from app.services.resume_v6 import Draft, Advisory
+        return {'write': Draft, 'review': Advisory}
     if generation_version(snapshot) >= 4:
         from app.services.resume_v4 import DraftV4, CritiqueV4, RevisedV4, PolishedV4
         return dict(zip(STAGES, (DraftV4, CritiqueV4, RevisedV4, PolishedV4)))
@@ -23,7 +26,7 @@ def output_models(snapshot):
 
 
 def prompt_versions(snapshot):
-    return {stage: f"resume-{stage}-v{generation_version(snapshot)}" for stage in STAGES}
+    return {stage: f"resume-{stage}-v{generation_version(snapshot)}" for stage in output_models(snapshot)}
 
 
 def requirement_errors(requirements, snapshot):
@@ -59,6 +62,9 @@ def unique(values, label, errors):
 
 
 def validate_draft(draft, snapshot):
+    if generation_version(snapshot) == 6:
+        from app.services.resume_v6 import factual_errors
+        return factual_errors(draft, snapshot['projection'])
     if generation_version(snapshot) == 1:
         return legacy.validate_draft(draft, snapshot)
     errors = []
@@ -124,6 +130,9 @@ def polish_diff(before, after):
 
 
 def validate_stage(stage, output, snapshot, accepted):
+    if generation_version(snapshot) == 6:
+        from app.services.resume_v6 import validate_stage as current
+        return current(stage, output, snapshot, accepted)
     if generation_version(snapshot) == 1:
         return legacy.validate_stage(stage, output, snapshot, accepted)
     errors = []
@@ -224,6 +233,9 @@ def validate_stage(stage, output, snapshot, accepted):
 
 
 def accuracy_report(draft, snapshot, accepted):
+    if generation_version(snapshot) == 6:
+        from app.services.resume_v6 import report
+        return report(draft, snapshot)
     if generation_version(snapshot) == 1:
         return legacy.accuracy_report(draft, snapshot, accepted)
     errors = validate_draft(draft, snapshot)
@@ -234,6 +246,9 @@ def accuracy_report(draft, snapshot, accepted):
 
 
 def assemble_content(draft, snapshot):
+    if generation_version(snapshot) == 6:
+        from app.services.resume_v6 import assemble
+        return assemble(draft, snapshot)
     if generation_version(snapshot) == 1:
         return legacy.assemble_content(draft, snapshot)
     draft = draft.model_copy(deep=True)

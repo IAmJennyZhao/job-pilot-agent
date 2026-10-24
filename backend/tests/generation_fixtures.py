@@ -19,6 +19,15 @@ def current_draft(draft, data):
 
 def fake_generation(output_model, system, payload, *, model, timeout):
     data = json.loads(payload)
+    if data['stage'] in ('write', 'review'):
+        from app.services import resume_v6 as policy
+        metadata = {"model": model, "usage": {"input_tokens": 100, "output_tokens": 50}, "latency_ms": 1}
+        if data['stage'] == 'write':
+            claim = data['approved_evidence']['claims'][0]
+            plan = policy.WriterPlan(bullets=[{'record_id': claim['record_id'], 'text': claim['text'], 'evidence_ids': [claim['id']]}], skills=['Python'])
+            metadata.update(composition_plan=plan.model_dump(), composition_version=4)
+            return policy.compile_plan(plan, data), metadata
+        return policy.Advisory(findings=[{'bullet_id': b['bullet_id'], 'verdict': 'supported', 'explanation': 'Supported by the cited source.'} for b in data['bullets']]), metadata
     evidence = data["approved_evidence"]
     previous = data["prior_outputs"]
     if issubclass(output_model, ResumeDraft):

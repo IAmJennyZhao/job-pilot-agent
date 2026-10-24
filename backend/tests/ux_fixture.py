@@ -45,11 +45,11 @@ def fixture_generation(output_model, system, payload, **kwargs):
     import time
     data = json.loads(payload)
     time.sleep(0.35)
-    if "[acceptance:" in payload or (output_model is LetterAssessment and any(s["sentence"]["id"].startswith(("ai-v", "backend-v", "fullstack-v")) for s in data.get("sentences", []))):
+    if "[acceptance:" in payload or (data.get('stage') == 'review' and any(c['id'].startswith(('C-ai-', 'C-backend-', 'C-fullstack-')) for b in data.get('bullets', []) for c in b['evidence'])) or (output_model is LetterAssessment and any(s["sentence"]["id"].startswith(("ai-v", "backend-v", "fullstack-v")) for s in data.get("sentences", []))):
         return acceptance_provider(output_model, system, payload, **kwargs)
     if output_model in {LetterDraft, LetterAssessment}:
         return fake_letter(output_model, system, payload, **kwargs)
-    if issubclass(output_model, RevisedResume) and "SYNTHETIC_FAIL_ONCE" in data["job"]["source_content"] and data["job"]["id"] not in failed_generation_jobs:
+    if (issubclass(output_model, RevisedResume) or data.get('stage') == 'write') and "SYNTHETIC_FAIL_ONCE" in data["job"]["source_content"] and data["job"]["id"] not in failed_generation_jobs:
         failed_generation_jobs.add(data["job"]["id"])
         raise ProviderFailure("Synthetic provider timeout. Retry explicitly from saved checkpoints.")
     return fake_generation(output_model, system, payload, **kwargs)

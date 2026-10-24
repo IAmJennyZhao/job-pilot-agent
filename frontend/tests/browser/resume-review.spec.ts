@@ -25,26 +25,26 @@ test.afterEach(async ({ page }, info) => {
   }
 });
 
-test("coverage distinguishes omitted evidence and recovers when approved content is restored", async ({ page, request }) => {
+test("advisory becomes stale after edits and empty drafts cannot be approved", async ({ page, request }) => {
   const { job } = await prepare(request);
   await page.goto(`/jobs/${job.id}`);
   const panel = page.getByRole("region", { name: "Resume review and editing" });
-  const coverage = panel.getByRole("region", { name: "Job requirement coverage" });
+  const advisory = panel.getByRole("region", { name: "Advisory factual review" });
   await expect(panel.getByLabel("Resume content budget")).toContainText("Within the estimated page budget");
-  await expect(coverage.getByText("Supported", { exact: true })).toBeVisible();
+  await expect(advisory).toContainText('AI review completed');
   await panel.getByRole("button", { name: "Edit resume", exact: true }).click();
   await panel.getByRole("button", { name: "Remove bullet 1", exact: true }).click();
   await panel.getByRole("group", { name: "Approved skills" }).getByLabel("Python", { exact: true }).uncheck();
   await panel.getByRole("button", { name: "Save and validate", exact: true }).click();
-  await expect(coverage.getByText("Not included in this draft", { exact: true })).toBeVisible();
-  await expect(coverage.getByText("Unsupported", { exact: true })).toHaveCount(0);
+  await expect(advisory).toContainText('These findings apply to an earlier draft.');
+  await expect(panel.getByRole('button', { name: 'Mark reviewed', exact: true })).toBeDisabled();
   await page.reload();
-  await expect(coverage.getByText("Not included in this draft", { exact: true })).toBeVisible();
+  await expect(advisory).toContainText('These findings apply to an earlier draft.');
   await panel.getByRole("button", { name: "Edit resume", exact: true }).click();
   await panel.getByLabel("Add approved content", { exact: true }).selectOption("C-ALLOWED");
   await panel.getByRole("button", { name: "Add selected claim", exact: true }).click();
   await panel.getByRole("button", { name: "Save and validate", exact: true }).click();
-  await expect(coverage.getByText("Supported", { exact: true })).toBeVisible();
+  await expect(panel).toContainText('Detailed job coverage is separate from resume writing.');
   await expect(panel.getByRole("button", { name: "Mark reviewed", exact: true })).toBeEnabled();
 });
 

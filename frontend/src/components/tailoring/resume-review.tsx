@@ -70,6 +70,12 @@ function ReviewContent({ view, onSelect, onSaved, onRefresh, refreshing, refresh
   edit.skills.forEach(s => { if (!skills.has(s.name.toLowerCase())) skills.set(s.name.toLowerCase(), s); });
   return <section aria-label="Resume review and editing" className="grid min-w-0 gap-4 border-t border-border pt-4">
     <h3 className="font-semibold">Generated resume draft</h3>
+    {revision.content.advisory_review && <section aria-label="Advisory factual review" className="grid gap-2 rounded border border-border p-3 text-sm">
+      <h4 className="font-medium">Advisory factual review</h4>
+      <p>Compare every rewritten bullet with its cited facts. AI feedback can be mistaken; your approval applies to this exact saved version.</p>
+      {!view.advisory_current ? <p>These findings apply to an earlier draft. Your edits have not been reviewed by the model.</p> : revision.content.advisory_review.status === 'unavailable' ? <p>AI review was unavailable. Your draft is preserved for your review.</p> : <p>AI review completed. This is advisory feedback, not factual certification.</p>}
+      <ul className="grid gap-2">{revision.content.advisory_review.findings.filter(f => f.verdict !== 'supported').map(f => <li key={f.bullet_id}><strong>{view.advisory_current ? 'Check' : 'Earlier finding'}:</strong> {f.explanation}<p className="text-muted-foreground">{revision.content.draft.bullets.find(b => b.id === f.bullet_id)?.text ?? 'The referenced bullet is no longer selected.'}</p></li>)}</ul>
+    </section>}
     {revision.content.content_budget && <p aria-label="Resume content budget" className="text-sm">
       {revision.content.content_budget.bullets} selected {revision.content.content_budget.bullets === 1 ? 'bullet' : 'bullets'}. {revision.content.content_budget.within_budget ? 'Within the estimated page budget.' : 'Above the estimated page budget; consider fewer or shorter approved claims.'} Render the saved revision to check actual one-page fit.
     </p>}
@@ -131,12 +137,12 @@ function ReviewContent({ view, onSelect, onSaved, onRefresh, refreshing, refresh
     {revision.validation.issues.length ? <div className="grid gap-2 text-sm"><h4 className="font-medium">Saved revision validation issues</h4><ul className="list-inside list-disc">{revision.validation.issues.map((issue, i) => <li key={i}>{issue.message}</li>)}</ul></div> : null}
     <pre aria-label="Resume draft preview" className="whitespace-pre-wrap break-words rounded border border-border bg-background p-4 font-sans text-sm leading-relaxed">{revision.plain_text}</pre>
     <details><summary className="cursor-pointer text-sm">Changes and factual checks</summary><div className="mt-3 grid gap-3">
-      <p className="text-sm">Checks compare wording with approved sources. Human review is required; employment facts and complete job coverage are not independently verified.</p>
+      <p className="text-sm">{revision.content.advisory_review ? 'Checks cover evidence references, selected numeric boundaries and required qualifiers. Faithful paraphrases are allowed; review their meaning against the source facts.' : 'Checks compare wording with approved sources.'} Human review is required; employment facts and complete job coverage are not independently verified.</p>
       <Field label="Compare saved revision with"><Select value={comparison} onChange={e => setComparison(e.target.value)}><option value="baseline">Original generated draft</option><option value="parent">Previous revision</option><option value="source">Approved source wording</option></Select></Field>
       <ChangeList changes={comparison === "source" ? revision.content.draft.bullets.map(b => ({ field: `bullets.${b.id}`, kind: "wording", before: b.evidence_ids.map(id => view.evidence.find(c => c.id === id)?.text ?? "Unavailable approved evidence").join(" "), after: b.text })).filter(c => c.before !== c.after) : comparison === "baseline" ? view.changes_from_baseline : view.changes_from_parent} />
     </div></details>
     <details><summary className="cursor-pointer text-sm">Evidence for each bullet</summary><ul className="mt-2 grid gap-3 text-sm">{revision.content.draft.bullets.map((bullet, index) => <li key={`${bullet.id}-${index}`} className="grid gap-2 rounded border border-border p-3"><p className="font-medium">{bullet.text}</p>{bullet.evidence_ids.map(id => { const evidence = view.evidence.find(c => c.id === id); return <div key={id}><p className="text-xs text-muted-foreground">Approved source {id}</p><blockquote>{evidence?.text ?? "Evidence unavailable"}</blockquote>{evidence?.constraints.map((c, i) => <p key={i} className="text-xs">{c}</p>)}</div>; })}</li>)}</ul></details>
-    {revision.content.draft.coverage ? <section aria-label="Job requirement coverage" className="grid gap-2 text-sm">
+    {revision.content.advisory_review ? <p className="text-sm">Detailed job coverage is separate from resume writing. This draft does not claim that every job requirement is met.</p> : revision.content.draft.coverage ? <section aria-label="Job requirement coverage" className="grid gap-2 text-sm">
       <h4 className="font-medium">Job requirement coverage</h4>
       <p>Coverage compares approved evidence with this saved draft. Evidence assessments need your review; omitted evidence is different from a missing qualification.</p>
       <ul className="grid gap-3">{revision.content.draft.coverage.map(c => {

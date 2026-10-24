@@ -62,7 +62,7 @@ export function ResumeWorkspace({ jobId, updatedAt }: { jobId: string; updatedAt
     <h2 className="font-semibold">Tailoring preparation</h2>
     <DraftRecovery name="resume generation request" draft={saveKey} />
     <DraftRecovery name="job description" draft={description} />
-    <p className="text-sm text-muted-foreground">Generate a saved resume draft in four passes. Detailed job analysis remains a separate optional action.</p>
+    <p className="text-sm text-muted-foreground">Write a tailored draft, then receive advisory factual feedback. Detailed job analysis remains a separate optional action.</p>
     {workspace.isPending ? <p role="status">Loading tailoring readiness…</p> : workspace.error ? <p role="alert">{workspace.error.message} <Button onClick={() => workspace.refetch()}>Refresh readiness</Button></p> : ready ? <>
       <PreferenceFlags evaluation={ready.evaluation} />
       {ready.saved_evaluation ? <details><summary className="cursor-pointer text-sm">Checks recorded when saved</summary><div className="mt-2"><PreferenceFlags evaluation={ready.saved_evaluation} /></div></details> : null}
@@ -92,7 +92,7 @@ export function ResumeWorkspace({ jobId, updatedAt }: { jobId: string; updatedAt
           <p className="text-xs text-muted-foreground">Retry creates a linked attempt with the same inputs and reuses validated stages. An uncertain provider request may have already incurred usage. Changed inputs require a new generation.</p>
         </div> : null}
         {run.revision ? <ResumeReview key={run.revision.id} baselineId={run.revision.id} sourceKey={ready.input_hash} /> : null}
-        <details><summary className="cursor-pointer text-sm">Intermediate drafts, critique and validation</summary><div className="mt-3 grid gap-3">{run.stages.map(attempt => <details key={attempt.id} className="rounded border border-border p-3"><summary className="cursor-pointer text-sm">{attempt.stage} — attempt {attempt.attempt}: {attempt.state}{attempt.metadata.reused_from_attempt ? " (reused checkpoint)" : ""}</summary>
+        <details><summary className="cursor-pointer text-sm">Generation steps and checks</summary><div className="mt-3 grid gap-3">{run.stages.map(attempt => <details key={attempt.id} className="rounded border border-border p-3"><summary className="cursor-pointer text-sm">{attempt.stage} — attempt {attempt.attempt}: {attempt.state}{attempt.metadata.reused_from_attempt ? " (reused checkpoint)" : ""}</summary>
           {attempt.error ? <p className="my-2 text-sm text-destructive">{attempt.error}</p> : null}
           {attempt.validation?.blocking_issues.map(issue => <p className="my-2 text-sm" key={issue}>{issue}</p>)}
           {attempt.metadata.usage ? <p className="my-2 text-xs">Tokens: {attempt.metadata.usage.input_tokens ?? "unknown"} in / {attempt.metadata.usage.output_tokens ?? "unknown"} out</p> : null}
@@ -105,7 +105,8 @@ export function ResumeWorkspace({ jobId, updatedAt }: { jobId: string; updatedAt
 }
 
 function RunProgress({ run }: { run: GenerationRun }) {
-  return <div className="grid gap-2"><p role="status" className="text-sm font-medium">Resume run: {run.state}</p><ol aria-label="Resume generation progress" className="grid gap-2 sm:grid-cols-4">{stages.map(([key, label]) => {
+  const visibleStages = run.generation_version === 6 ? [["write", "Write tailored draft"], ["review", "Advisory factual review"]] : stages;
+  return <div className="grid gap-2"><p role="status" className="text-sm font-medium">Resume run: {run.state}</p><ol aria-label="Resume generation progress" className="grid gap-2 sm:grid-cols-2">{visibleStages.map(([key, label]) => {
     const attempt = run.stages.filter(s => s.stage === key).sort((a, b) => b.attempt - a.attempt)[0];
     return <li key={key} className="rounded border border-border p-3 text-sm"><strong>{label}</strong><p>{attempt?.state ?? "Not started"}</p>{attempt && attempt.attempt > 1 ? <p className="text-xs">Repair attempt</p> : null}</li>;
   })}</ol></div>;

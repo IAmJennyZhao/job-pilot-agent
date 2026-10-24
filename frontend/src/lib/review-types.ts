@@ -12,6 +12,7 @@ export type ResumeRender = {
 export type ResumeRenderPreview = { preview_receipt_id: string; manifest_hash: string; pdf_base64: string; page_images: string[] };
 export type ResumeChange = { field: string; kind: string; before: unknown; after: unknown };
 export type ReviewWorkspace = {
+  advisory_current?: boolean | null;
   baseline_id: string; run_id: string; job_id: string; profile_id: string; current_revision_id: string; input_hash: string; source_problem: string | null;
   revision: { id: string; sequence: number; origin: string; parent_id: string | null; restored_from_id: string | null;
     content: NonNullable<GenerationRun["revision"]>["content"]; content_hash: string; plain_text: string; edit: ResumeEdit;

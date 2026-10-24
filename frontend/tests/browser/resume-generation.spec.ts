@@ -48,7 +48,7 @@ test("resume generation survives reload, shows evidence and preserves job state"
   expect(after).toEqual(job);
 });
 
-test("resume failure preserves a prior draft and explicit retry reuses checkpoints", async ({ page, request }) => {
+test("writer failure preserves a prior draft and supports explicit retry", async ({ page, request }) => {
   const job = await prepare(request, "AI Engineer");
   await page.goto(`/jobs/${job.id}`);
   const panel = page.getByRole("region", { name: "Resume tailoring" });
@@ -70,7 +70,7 @@ test("resume failure preserves a prior draft and explicit retry reuses checkpoin
   const all = (await (await request.get(`${backend}/api/jobs/${job.id}/tailoring`)).json()).runs;
   expect(all).toHaveLength(3);
   const newest = await (await request.get(`${backend}/api/tailoring/runs/${all[0].id}`)).json();
-  expect(newest.stages.filter((s: { metadata: { reused_from_attempt?: string } }) => s.metadata.reused_from_attempt)).toHaveLength(2);
+  expect(newest.stages.map((s: { stage: string }) => s.stage)).toEqual(['write', 'review']);
   await panel.getByLabel("Resume generation history").selectOption(first);
   await expect(panel.getByText(/Sources or the job changed after this run/)).toBeVisible();
   await expect(panel.getByLabel("Resume draft preview")).toBeVisible();

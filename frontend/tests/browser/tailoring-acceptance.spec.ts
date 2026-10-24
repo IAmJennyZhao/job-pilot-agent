@@ -35,7 +35,8 @@ for (const family of ["ai", "backend", "fullstack"]) {
     await page.getByRole("button", { name: "Generate tailored resume", exact: true }).click();
     const review = page.getByRole("region", { name: "Resume review and editing" });
     await expect(review.getByLabel("Resume draft preview")).toContainText(fixture.case.claims[0]);
-    await expect(review).toContainText(fixture.case.gap);
+    await expect(review).toContainText('Detailed job coverage is separate from resume writing.');
+    await expect(review.getByRole('region', { name: 'Advisory factual review' })).toContainText('AI review completed');
     await review.getByRole("button", { name: "Mark reviewed", exact: true }).click();
     const exports = page.getByRole("region", { name: "Resume rendering and downloads" });
     await exports.getByRole("button", { name: "Render saved revision", exact: true }).click();

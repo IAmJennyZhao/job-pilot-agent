@@ -189,3 +189,24 @@ def test_focused_guards_allow_paraphrases_but_keep_metrics_and_qualifiers(text, 
     draft = policy.Draft(bullets=[{'id': 'B', 'record_id': 'R', 'evidence_ids': ['C'], 'requirement_ids': [], 'text': text}], skills=[], change_summary=[])
     errors = policy.factual_errors(draft, projection)
     assert (not errors) == valid, errors
+
+
+def test_new_layout_fixes_punctuation_protrusion_without_relaxing_margin_checks(tmp_path, monkeypatch):
+    from app.config import get_settings
+    from app.services import resume_layout, resume_compiler
+    monkeypatch.setattr(get_settings(), 'asset_storage_dir', str(tmp_path))
+    executable, _ = resume_compiler.compiler()
+    # Fictional minimal reproduction of the line-ending bounding-box failure.
+    bullet = 'Built a Python prototype to automate ' + 'repeatable ' * 12 + 'test runs and compare outputs for clarity.'
+    doc = {'header': [[{'text': 'Fictional Tester', 'link': None}]], 'education': [], 'skills': [],
+        'entries': [{'kind': 'project', 'heading': 'Test project', 'technologies': 'Python', 'url': '', 'bullets': [bullet]}]}
+    old_tex, text = resume_layout.exports(doc)
+    old_pdf, warnings = resume_compiler.compile_pdf(old_tex, executable)
+    old_report = resume_compiler.inspect_pdf(old_pdf, text, warnings)
+    assert old_report['pages'] == 1 and old_report['issues'] == ['Text extends beyond the safe page margins.']
+    tex, new_text = resume_layout.exports({**doc, 'layout_policy': 'no-protrusion-v1'})
+    assert new_text == text
+    assert tex.replace('\\microtypesetup{protrusion=false}\n', '') == old_tex
+    pdf, warnings = resume_compiler.compile_pdf(tex, executable)
+    report = resume_compiler.inspect_pdf(pdf, text, warnings)
+    assert report['valid'] and report['pages'] == 1

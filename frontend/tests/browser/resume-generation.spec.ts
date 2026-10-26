@@ -50,7 +50,7 @@ test("resume generation survives reload, shows evidence and preserves job state"
 
 test("writer failure preserves a prior draft and supports explicit retry", async ({ page, request }) => {
   const job = await prepare(request, "AI Engineer");
-  await page.goto(`/jobs/${job.id}`);
+  await page.goto(`/jobs/${job.id}?tab=resume`);
   const panel = page.getByRole("region", { name: "Resume tailoring" });
   await panel.getByLabel("I reviewed this complete saved job description.").check();
   await panel.getByRole("button", { name: "Generate tailored resume", exact: true }).click();

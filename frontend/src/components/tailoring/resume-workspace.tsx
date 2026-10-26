@@ -67,7 +67,7 @@ export function ResumeWorkspace({ jobId, updatedAt }: { jobId: string; updatedAt
       <PreferenceFlags evaluation={ready.evaluation} />
       {ready.saved_evaluation ? <details><summary className="cursor-pointer text-sm">Checks recorded when saved</summary><div className="mt-2"><PreferenceFlags evaluation={ready.saved_evaluation} /></div></details> : null}
       {ready.missing.length ? <ul className="list-inside list-disc text-sm text-warning-foreground">{ready.missing.map(reason => <li key={reason}>{reason}</li>)}</ul> : null}
-      <Link className="w-fit text-sm underline" href="/profile?tab=base">Review sources in Application Assets</Link>
+      <Link className="w-fit text-sm underline" href="/profile?tab=sources">Review sources in Application Assets</Link>
       <details><summary className="cursor-pointer text-sm font-medium">Review full saved job description</summary><pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words text-xs">{ready.source_content || "No description saved."}</pre></details>
       {editing ? <div className="grid gap-2">
         <Field label="Full job description for tailoring"><Textarea disabled={!description.ready} className="min-h-48" value={description.value} onChange={e => description.setValue(e.target.value)} /></Field>

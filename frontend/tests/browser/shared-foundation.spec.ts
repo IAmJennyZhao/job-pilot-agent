@@ -18,12 +18,12 @@ test("shared page frame and asset tabs work at desktop and mobile widths", async
   }
 
   const tabs = page.getByRole("navigation", { name: "Application asset views" });
-  await expect(tabs.getByRole("button", { name: "Base Profile" })).toHaveAttribute("aria-pressed", "true");
-  await tabs.getByRole("button", { name: "Resume Variants" }).click();
+  await expect(tabs.getByRole("button", { name: "Base profile" })).toHaveAttribute("aria-pressed", "true");
+  await tabs.getByRole("button", { name: "Resumes", exact: true }).click();
   await expect(page).toHaveURL(/tab=resumes/);
-  await expect(tabs.getByRole("button", { name: "Resume Variants" })).toHaveAttribute("aria-pressed", "true");
+  await expect(tabs.getByRole("button", { name: "Resumes", exact: true })).toHaveAttribute("aria-pressed", "true");
   await page.reload();
-  await expect(tabs.getByRole("button", { name: "Resume Variants" })).toHaveAttribute("aria-pressed", "true");
+  await expect(tabs.getByRole("button", { name: "Resumes", exact: true })).toHaveAttribute("aria-pressed", "true");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true);
 });
 

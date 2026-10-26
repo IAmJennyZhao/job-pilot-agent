@@ -4,7 +4,10 @@ import { validateJobFields } from "@/lib/job-validation";
 import { ResumeWorkspace } from "@/components/tailoring/resume-workspace";
 import { LetterWorkspace } from "@/components/tailoring/letter-workspace";
 import { JobActionEditor } from "@/components/job-action";
+import { RetainedView } from "@/components/layout/retained-view";
 import { useConfirm } from "@/components/ui/confirm-provider";
+import { LocalTab, LocalTabs } from "@/components/ui/local-tabs";
+import { MoreMenu } from "@/components/ui/more-menu";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, CheckCircle2, ChevronDown, ClipboardList, ExternalLink, FileText, Mail, Pencil, RefreshCw, Save, Sparkles, X } from "lucide-react";
@@ -37,8 +40,10 @@ import {
   type ResumeOption
 } from "@/lib/types";
 import { cn, formatDate } from "@/lib/utils";
+import { localViewHref, pushLocalView, selectLocalView } from "@/lib/workspace-navigation";
 
 type JobEditForm = Omit<JobCreatePayload, "source_content" | "extraction_confidence" | "extraction_warnings" | "status_note">;
+const jobViews = ["overview", "resume", "letter", "history"] as const;
 
 const linkKindLabels: Record<JobLinkInput["kind"], string> = {
   source: "Job Posting",
@@ -133,6 +138,18 @@ export default function JobDetailPage() {
   const [isEditing, setIsEditing] = useState(false);
   const searchParams = useSearchParams();
   const returnTo = searchParams.get("returnTo");
+  const [hash, setHash] = useState("");
+  useEffect(() => {
+    const syncHash = () => setHash(window.location.hash);
+    syncHash();
+    window.addEventListener("hashchange", syncHash);
+    window.addEventListener("popstate", syncHash);
+    return () => { window.removeEventListener("hashchange", syncHash); window.removeEventListener("popstate", syncHash); };
+  }, []);
+  const hintedView = searchParams.get("tailoring") === "prepare" || hash === "#tailoring-preparation" ? "resume" : hash === "#status-history" ? "history" : "overview";
+  const activeView = selectLocalView(searchParams, jobViews, hintedView);
+  const viewHref = (tab: typeof jobViews[number], anchor = "") => localViewHref(`/jobs/${jobId}`, searchParams, tab, anchor);
+  const openView = (tab: typeof jobViews[number]) => { setHash(""); pushLocalView(`/jobs/${jobId}`, searchParams, tab); };
 
   const { data: job, isLoading, error } = useQuery({
     queryKey: ["job", jobId],
@@ -217,6 +234,15 @@ export default function JobDetailPage() {
   const assetRecommendation =
     aiAssetRankMutation.data ?? reviewMutation.data?.asset_recommendation ?? job?.latest_asset_recommendation ?? null;
 
+  useEffect(() => {
+    if (!job || !hash) return;
+    const frame = requestAnimationFrame(() => {
+      const target = document.getElementById(hash.slice(1));
+      if (target && !target.closest("[hidden]")) target.scrollIntoView({ block: "start" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [activeView, hash, job]);
+
   return (
     <div className="grid gap-6">
       <PageHeader
@@ -237,7 +263,7 @@ export default function JobDetailPage() {
               </Link>
             ) : null}
             {job && !isEditing ? (
-              <Button variant="secondary" size="sm" onClick={() => setIsEditing(true)}>
+              <Button variant="secondary" size="sm" onClick={() => { openView("overview"); setIsEditing(true); }}>
                 <Pencil className="h-4 w-4" />
                 {editDraft.dirty ? "Resume editing draft" : "Edit job"}
               </Button>
@@ -248,12 +274,23 @@ export default function JobDetailPage() {
       {[{ error, key: ["job", jobId], label: "job" }, { error: readinessError, key: ["ai-readiness", jobId], label: "analysis readiness" }, { error: advancedLoadError, key: ["advanced-analysis", jobId], label: "saved analysis" }, { error: resumesError, key: ["resume-options"], label: "resumes" }, { error: lettersError, key: ["cover-letter-templates"], label: "cover letters" }].map(item => item.error ? <Panel key={item.label}><p role="alert">Could not load {item.label}: {(item.error as Error).message}</p><Button variant="secondary" onClick={() => queryClient.invalidateQueries({ queryKey: item.key })}>Retry loading {item.label}</Button></Panel> : null)}
       {isLoading ? <Panel>Loading job...</Panel> : null}
       {editDraft.dirty ? <p role="status" className="text-sm text-muted-foreground">Unsaved job edits are kept on this browser, including after closing the tab. Resume editing to save or discard them.</p> : null}
-      {job && !isEditing ? <nav aria-label="Job sections" className="flex flex-wrap gap-3 text-sm font-medium">{["Role Snapshot", ...(advancedAnalysis ? ["Fit And Gaps", ...(advancedAnalysis.company_sentiment || companyResearch ? ["Company Signals"] : []), "Interview Prep"] : []), "Application Assets", "Status History"].map(label => <a className="rounded border border-border px-3 py-2 hover:bg-accent" key={label} href={`#${label.toLowerCase().replaceAll(" ", "-")}`}>{label}</a>)}</nav> : null}
+      {job ? <LocalTabs label="Job views">
+        {jobViews.map(tab => <LocalTab key={tab} active={activeView === tab} onClick={() => openView(tab)}>{tab === "overview" ? "Overview" : tab === "resume" ? "Resume" : tab === "letter" ? "Cover letter" : "History"}</LocalTab>)}
+        <MoreMenu items={[
+          ...(advancedAnalysis && (advancedAnalysis.company_sentiment || companyResearch) ? [{ label: "Company signals", href: viewHref("overview", "#company-signals") }] : []),
+          ...(advancedAnalysis ? [{ label: "Interview prep", href: viewHref("overview", "#interview-prep") }] : []),
+          { label: "Asset ranking", href: viewHref("overview", "#application-assets") },
+          { label: "Edit status history", href: viewHref("history", "#status-history") }
+        ]} />
+      </LocalTabs> : null}
+      {job && !isEditing && activeView === "overview" ? <nav aria-label="Job sections" className="flex flex-wrap gap-3 text-sm font-medium">{["Role Snapshot", ...(advancedAnalysis ? ["Fit And Gaps", ...(advancedAnalysis.company_sentiment || companyResearch ? ["Company Signals"] : []), "Interview Prep"] : []), "Application Assets", "Status History"].map(label => <Link className="rounded border border-border px-3 py-2 hover:bg-accent" key={label} href={viewHref(label === "Status History" ? "history" : "overview", `#${label.toLowerCase().replaceAll(" ", "-")}`)}>{label}</Link>)}</nav> : null}
 
       {job ? (
         <>
-          {!isEditing ? <ResumeWorkspace jobId={job.id} updatedAt={job.updated_at} /> : null}
-          {!isEditing ? <LetterWorkspace jobId={job.id} updatedAt={job.updated_at} /> : null}
+          <RetainedView key={`${job.id}-resume`} active={activeView === "resume"}><ResumeWorkspace jobId={job.id} updatedAt={job.updated_at} /></RetainedView>
+          <RetainedView key={`${job.id}-letter`} active={activeView === "letter"}><LetterWorkspace jobId={job.id} updatedAt={job.updated_at} /></RetainedView>
+          <RetainedView key={`${job.id}-overview`} active={activeView === "overview"}>
+          <div className="grid gap-6">
           <JobActionEditor jobId={job.id} />
           <Panel>
             {isEditing && form ? (
@@ -320,16 +357,6 @@ export default function JobDetailPage() {
                 <Panel>
                   <JobLinks links={job.links} />
                 </Panel>
-                <Panel>
-                  <StatusHistoryEditor
-                    job={job}
-                    onChanged={invalidateJob}
-                    onStatusChange={(status) => {
-                      if (status !== job.status) statusMutation.mutate(status);
-                    }}
-                    isSavingStatus={statusMutation.isPending}
-                  />
-                </Panel>
               </div>
               <Button variant="ghost" className="justify-self-start xl:col-span-2" onClick={() => queryClient.invalidateQueries({ queryKey: ["job", jobId] })}>
                 <RefreshCw className="h-4 w-4" />
@@ -337,6 +364,25 @@ export default function JobDetailPage() {
               </Button>
             </div>
           ) : null}
+          </div>
+          </RetainedView>
+          <RetainedView key={`${job.id}-history`} active={activeView === "history"}>
+            <div className="grid gap-4">
+              <Panel>
+                <StatusHistoryEditor
+                  job={job}
+                  onChanged={invalidateJob}
+                  onStatusChange={(status) => { if (status !== job.status) statusMutation.mutate(status); }}
+                  isSavingStatus={statusMutation.isPending}
+                />
+              </Panel>
+              <Panel className="grid gap-3 text-sm">
+                <h2 className="font-semibold">Document history</h2>
+                <p className="text-muted-foreground">Document runs, revisions and approved exports stay with each document.</p>
+                <div className="flex flex-wrap gap-4"><Link className="text-primary underline" href={viewHref("resume")}>Resume history</Link><Link className="text-primary underline" href={viewHref("letter")}>Cover letter history</Link></div>
+              </Panel>
+            </div>
+          </RetainedView>
         </>
       ) : null}
     </div>

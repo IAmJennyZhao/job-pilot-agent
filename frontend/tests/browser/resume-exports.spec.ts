@@ -27,7 +27,7 @@ test("lost render response and export failures recover the same saved artifact",
     if (route.request().method() === "POST" && !lost) { lost = true; await route.fetch(); await route.abort("failed"); }
     else await route.continue();
   });
-  await page.goto(`/jobs/${job.id}`);
+  await page.goto(`/jobs/${job.id}?tab=resume`);
   const review = page.getByRole("region", { name: "Resume review and editing" });
   const exports = page.getByRole("region", { name: "Resume rendering and downloads" });
   await review.getByRole("button", { name: "Mark reviewed", exact: true }).click();
@@ -69,7 +69,7 @@ test("preview, final approval, exact downloads and historical exports", async ({
   const { job, source, run, url } = await prepare(request);
   let modelRequests = 0;
   page.on("request", r => { if (r.method() === "POST" && (r.url().endsWith("/tailoring/resume") || r.url().includes("/api/ai/"))) modelRequests++; });
-  await page.goto(`/jobs/${job.id}`);
+  await page.goto(`/jobs/${job.id}?tab=resume`);
   const review = page.getByRole("region", { name: "Resume review and editing" });
   const exports = page.getByRole("region", { name: "Resume rendering and downloads" });
   await review.getByRole("button", { name: "Mark reviewed", exact: true }).click();
@@ -116,7 +116,7 @@ test("preview, final approval, exact downloads and historical exports", async ({
 
 test("unapproved preview removal and content review cannot bypass final approval", async ({ page, request }) => {
   const { job, run, url } = await prepare(request);
-  await page.goto(`/jobs/${job.id}`);
+  await page.goto(`/jobs/${job.id}?tab=resume`);
   const exports = page.getByRole("region", { name: "Resume rendering and downloads" });
   await exports.getByRole("button", { name: "Render saved revision", exact: true }).click();
   await exports.getByRole("button", { name: "Open PDF preview", exact: true }).click();
@@ -133,7 +133,7 @@ test("incompatible recovered drafts stay downloadable and never reach rendering"
   const view = await (await request.get(url)).json();
   const key = `job-pilot:draft:resume-edit-${view.profile_id}-${view.baseline_id}`;
   const raw = '{"old_format":true,"text":"Keep my unsaved accomplishment"}';
-  await page.goto(`/jobs/${job.id}`);
+  await page.goto(`/jobs/${job.id}?tab=resume`);
   await page.evaluate(({ key, raw }) => { localStorage.setItem(key, raw); sessionStorage.setItem(key, raw); }, { key, raw });
   await page.reload();
   const panel = page.getByRole("region", { name: "Resume review and editing" });
@@ -152,7 +152,7 @@ test("incompatible recovered drafts stay downloadable and never reach rendering"
 
 test("recovered description edits block generation until saved or discarded", async ({ page, request }) => {
   const { job } = await prepare(request);
-  await page.goto(`/jobs/${job.id}`);
+  await page.goto(`/jobs/${job.id}?tab=resume`);
   const key = `job-pilot:draft:tailoring-description-${job.id}`;
   await page.evaluate(key => { localStorage.setItem(key, JSON.stringify({ legacy_text: "Preserve this description" })); }, key);
   await page.reload();

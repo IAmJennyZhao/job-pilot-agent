@@ -32,7 +32,7 @@ export function PreferenceFlags({ evaluation }: { evaluation: IntakeEvaluation }
   </li>;
   return <div className="grid gap-3" aria-label="Preference checks">
     <p className="text-sm">{evaluation.message}</p>
-    {!evaluation.available ? <Link className="text-sm underline" href="/profile?tab=base">Activate sources in Application Assets</Link> : <>
+    {!evaluation.available ? <Link className="text-sm underline" href="/profile?tab=sources">Activate sources in Application Assets</Link> : <>
       <ul className="grid gap-2 sm:grid-cols-2">{evaluation.flags.filter(f => !f.secondary).map(renderFlag)}</ul>
       <details><summary className="cursor-pointer text-sm">Company size, stage and working hours</summary><ul className="mt-2 grid gap-2">{evaluation.flags.filter(f => f.secondary).map(renderFlag)}</ul></details>
       <p className="text-xs text-muted-foreground">Preferences: {evaluation.preference_version}</p>

@@ -27,7 +27,7 @@ test.afterEach(async ({ page }, info) => {
 
 test("advisory becomes stale after edits and empty drafts cannot be approved", async ({ page, request }) => {
   const { job } = await prepare(request);
-  await page.goto(`/jobs/${job.id}`);
+  await page.goto(`/jobs/${job.id}?tab=resume`);
   const panel = page.getByRole("region", { name: "Resume review and editing" });
   const advisory = panel.getByRole("region", { name: "Advisory factual review" });
   await expect(panel.getByLabel("Resume content budget")).toContainText("Within the estimated page budget");
@@ -52,7 +52,7 @@ test("resume review edits survive reload, invalidate review, and restore history
   const { job, run, url } = await prepare(request);
   let modelActions = 0;
   page.on("request", r => { if (r.method() === "POST" && (r.url().endsWith("/tailoring/resume") || r.url().includes("/api/ai/"))) modelActions++; });
-  await page.goto(`/jobs/${job.id}`);
+  await page.goto(`/jobs/${job.id}?tab=resume`);
   const panel = page.getByRole("region", { name: "Resume review and editing" });
   await panel.getByRole("button", { name: "Mark reviewed", exact: true }).click();
   await expect(panel.getByText("Reviewed — this exact saved version is approved.", { exact: true })).toBeVisible();
@@ -90,12 +90,12 @@ test("resume review edits survive reload, invalidate review, and restore history
 
 test("resume concurrent editing keeps stale local work for explicit comparison", async ({ page, context, request }) => {
   const { job, url } = await prepare(request);
-  await page.goto(`/jobs/${job.id}`);
+  await page.goto(`/jobs/${job.id}?tab=resume`);
   const first = page.getByRole("region", { name: "Resume review and editing" });
   await first.getByRole("button", { name: "Edit resume", exact: true }).click();
   await first.getByLabel("Bullet 1", { exact: true }).fill("Successfully built an internal Python prototype.");
   const secondPage = await context.newPage();
-  await secondPage.goto(`/jobs/${job.id}`);
+  await secondPage.goto(`/jobs/${job.id}?tab=resume`);
   const second = secondPage.getByRole("region", { name: "Resume review and editing" });
   await expect(second.getByLabel("Bullet 1", { exact: true })).toBeVisible();
   await second.getByLabel("Bullet 1", { exact: true }).fill("Effectively built an internal Python prototype.");
@@ -117,12 +117,12 @@ test("resume concurrent editing keeps stale local work for explicit comparison",
 
 test("discard in one tab preserves another tab's unsaved resume after reload", async ({ page, context, request }) => {
   const { job } = await prepare(request);
-  await page.goto(`/jobs/${job.id}`);
+  await page.goto(`/jobs/${job.id}?tab=resume`);
   const first = page.getByRole("region", { name: "Resume review and editing" });
   await first.getByRole("button", { name: "Edit resume", exact: true }).click();
   await first.getByLabel("Bullet 1", { exact: true }).fill("Successfully built an internal Python prototype.");
   const other = await context.newPage();
-  await other.goto(`/jobs/${job.id}`);
+  await other.goto(`/jobs/${job.id}?tab=resume`);
   const second = other.getByRole("region", { name: "Resume review and editing" });
   await second.getByLabel("Bullet 1", { exact: true }).fill("Effectively built an internal Python prototype.");
   await second.getByRole("button", { name: "Discard unsaved edits", exact: true }).click();
@@ -137,7 +137,7 @@ test("discard in one tab preserves another tab's unsaved resume after reload", a
 
 test("resume lost save response retries once without duplicating revision", async ({ page, request }) => {
   const { job, url } = await prepare(request);
-  await page.goto(`/jobs/${job.id}`);
+  await page.goto(`/jobs/${job.id}?tab=resume`);
   const panel = page.getByRole("region", { name: "Resume review and editing" });
   await panel.getByRole("button", { name: "Edit resume", exact: true }).click();
   await panel.getByLabel("Bullet 1", { exact: true }).fill("Successfully built an internal Python prototype.");
@@ -156,7 +156,7 @@ test("resume lost save response retries once without duplicating revision", asyn
 
 test("resume approved selection, discard and stale-source review stay explicit", async ({ page, request }) => {
   const { job, url } = await prepare(request);
-  await page.goto(`/jobs/${job.id}`);
+  await page.goto(`/jobs/${job.id}?tab=resume`);
   const panel = page.getByRole("region", { name: "Resume review and editing" });
   await panel.getByRole("button", { name: "Edit resume", exact: true }).click();
   await panel.getByRole("button", { name: "Remove bullet 1", exact: true }).click();

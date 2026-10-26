@@ -103,7 +103,7 @@ function ReviewContent({ view, onSelect, onSaved, onRefresh, refreshing, refresh
     <p className="text-xs text-muted-foreground">Mark reviewed confirms the saved content and its supporting evidence. It does not approve new source facts or verify PDF layout.</p>
     {isEditing ? <div className="grid gap-4 rounded border border-border p-3">
       <h4 className="font-medium">Edit resume content</h4>
-      <p className="text-sm">Identity, employers, titles, dates and education stay tied to approved sources. Unsupported wording can be saved, but must be corrected before review. <Link className="underline" href="/profile?tab=base">New facts require source approval.</Link></p>
+      <p className="text-sm">Identity, employers, titles, dates and education stay tied to approved sources. Unsupported wording can be saved, but must be corrected before review. <Link className="underline" href="/profile?tab=sources">New facts require source approval.</Link></p>
       {stale ? <div className="grid gap-2 text-sm text-warning-foreground"><p>A newer revision exists. Your edits still belong to their original parent. Compare them with the current saved preview below. A retry of an already completed save is safe.</p>
         <Button variant="secondary" disabled={busy} onClick={() => onSelect(undefined)}>Show current saved version</Button>
         <label className="flex gap-2"><input type="checkbox" checked={comparedRevision === view.current_revision_id} onChange={e => setComparedRevision(e.target.checked ? view.current_revision_id : null)} />I compared my edits with the current saved version.</label>

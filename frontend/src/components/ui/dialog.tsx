@@ -3,11 +3,14 @@
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "./button";
+import { useViewActive } from "@/components/layout/retained-view";
 
 export function Dialog({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  const viewActive = useViewActive();
   const ref = useRef<HTMLDialogElement>(null);
   const close = useRef(onClose);
   close.current = onClose;
+  useEffect(() => { if (!viewActive) close.current(); }, [viewActive]);
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     const overflow = document.body.style.overflow;

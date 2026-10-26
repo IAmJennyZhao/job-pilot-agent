@@ -21,24 +21,28 @@ import {
   UserRound
 } from "lucide-react";
 import * as React from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { RetainedView } from "@/components/layout/retained-view";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { LocalTab, LocalTabs } from "@/components/ui/local-tabs";
+import { MoreMenu } from "@/components/ui/more-menu";
 import { Badge, PageHeader, Panel } from "@/components/ui/panel";
 import { api } from "@/lib/api";
 import type { CoverLetterTemplate, CoverageGapResponse, ResumeOption, ResumeProfile } from "@/lib/types";
 import { useDraft } from "@/lib/use-draft";
 import { RecordEditor } from "@/components/ui/record-editor";
 import { cn, csvToList, linesToList, formatDate, listToLines } from "@/lib/utils";
+import { localViewHref, selectLocalView } from "@/lib/workspace-navigation";
 
-type TabKey = "base" | "resumes" | "templates" | "coverage";
+type TabKey = "base" | "resumes" | "templates" | "sources" | "coverage";
 
 const tabs: Array<{ key: TabKey; label: string; icon: React.ElementType }> = [
-  { key: "base", label: "Base Profile", icon: UserRound },
-  { key: "resumes", label: "Resume Variants", icon: FileText },
+  { key: "resumes", label: "Resumes", icon: FileText },
+  { key: "base", label: "Base profile", icon: UserRound },
   { key: "templates", label: "Cover Letters", icon: Mail },
-  { key: "coverage", label: "Coverage Audit", icon: Search }
+  { key: "sources", label: "Tailoring sources", icon: Search }
 ];
 
 export default function ProfilePage() { return <React.Suspense fallback={<Panel>Loading assets...</Panel>}><ProfileContent /></React.Suspense>; }
@@ -46,11 +50,12 @@ export default function ProfilePage() { return <React.Suspense fallback={<Panel>
 function ProfileContent() {
   const queryClient = useQueryClient();
   const params = useSearchParams();
-  const activeTab = tabs.find(tab => tab.key === params.get("tab"))?.key ?? "base";
+  const activeTab = selectLocalView(params, ["base", "resumes", "templates", "sources", "coverage"] as const, params.get("focus")?.startsWith("Tailoring") ? "sources" : "base");
   const setActiveTab = (tab: TabKey, focus?: string) => {
-    const next = new URLSearchParams({ tab });
-    if (focus) next.set("focus", focus);
-    window.history.replaceState(null, "", `/profile?${next}`);
+    const next = new URLSearchParams(params.toString());
+    next.set("tab", tab);
+    if (focus) next.set("focus", focus); else next.delete("focus");
+    window.history.pushState(null, "", `/profile?${next}`);
   };
   const { data: profile, isLoading, error } = useQuery({ queryKey: ["profile"], queryFn: api.profile });
   const { data: resumeOptions = [], isLoading: resumesLoading, error: resumesError } = useQuery({ queryKey: ["resume-options"], queryFn: api.resumeOptions });
@@ -79,7 +84,7 @@ function ProfileContent() {
     <div className="grid gap-6">
       <PageHeader
         title="Application Assets"
-        description="Base profile, resume variants, cover letter templates, and coverage audit."
+        description="Reusable documents, your profile, and approved tailoring inputs."
       />
       {error ? <Panel className="border-destructive/25 bg-destructive/10 text-sm text-destructive">{(error as Error).message}<Button variant="secondary" onClick={invalidateProfileAssets}>Retry loading profile</Button></Panel> : null}
       {isLoading ? <Panel>Loading application assets...</Panel> : null}
@@ -100,12 +105,15 @@ function ProfileContent() {
             </LocalTab>
           );
         })}
+        <MoreMenu items={[{ label: "Coverage audit", href: localViewHref("/profile", params, "coverage") }]} />
       </LocalTabs>
-      <section id="asset-content" tabIndex={-1} className="scroll-mt-36">{activeTab === "base" && !isLoading && !error ? <><BaseProfileTab profile={profile ?? null} onSaved={invalidateProfileAssets} />{profile ? <TailoringSourceManager key={profile.id} profileId={profile.id} /> : null}</> : null}
-      {activeTab === "resumes" && !resumesLoading && !resumesError ? <ResumeVariantsTab resumeOptions={resumeOptions} onChanged={invalidateProfileAssets} /> : null}
-      {activeTab === "templates" && !templatesLoading && !templatesError ? <CoverLetterTemplatesTab templates={templates} onChanged={invalidateProfileAssets} /> : null}
-      {activeTab === "coverage" ? <CoverageAuditTab /> : null}
-    </section>
+      <section id="asset-content" tabIndex={-1} className="scroll-mt-36">
+        <RetainedView active={activeTab === "resumes"}>{!resumesLoading && !resumesError ? <ResumeVariantsTab resumeOptions={resumeOptions} onChanged={invalidateProfileAssets} /> : null}</RetainedView>
+        <RetainedView active={activeTab === "base"}>{!isLoading && !error ? <div className="grid gap-4"><BaseProfileTab profile={profile ?? null} onSaved={invalidateProfileAssets} /><Link className="w-fit text-sm font-medium text-primary underline" href="/profile?tab=sources">Manage approved tailoring sources</Link></div> : null}</RetainedView>
+        <RetainedView active={activeTab === "templates"}>{!templatesLoading && !templatesError ? <CoverLetterTemplatesTab templates={templates} onChanged={invalidateProfileAssets} /> : null}</RetainedView>
+        <RetainedView active={activeTab === "sources"}>{!isLoading && !error ? profile ? <TailoringSourceManager key={profile.id} profileId={profile.id} /> : <Panel><p className="text-sm">Save a base profile before importing tailoring sources.</p><Link className="mt-3 inline-block text-sm font-medium text-primary underline" href="/profile?tab=base">Open base profile</Link></Panel> : null}</RetainedView>
+        <RetainedView active={activeTab === "coverage"}><CoverageAuditTab /></RetainedView>
+      </section>
     </div>
   );
 }

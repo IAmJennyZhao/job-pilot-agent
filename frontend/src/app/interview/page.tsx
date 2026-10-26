@@ -3,6 +3,7 @@
 import { useConfirm } from "@/components/ui/confirm-provider";
 import { PracticeTimer, usePracticeTimer } from "@/components/interview/practice-timer";
 import { AttemptHistory } from "@/components/interview/attempt-history";
+import { RetainedView } from "@/components/layout/retained-view";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BarChart3, Brain, ChevronDown, ClipboardList, ExternalLink, MessageSquareText, Play, RotateCcw, Sparkles, Target, X } from "lucide-react";
@@ -13,6 +14,8 @@ import { FeedbackDetails, weakPointLabels } from "@/components/interview/feedbac
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { Badge, PageHeader, Panel } from "@/components/ui/panel";
+import { LocalTab, LocalTabs } from "@/components/ui/local-tabs";
+import { MoreMenu } from "@/components/ui/more-menu";
 import { useDraft } from "@/lib/use-draft";
 import { api } from "@/lib/api";
 import { sessionTarget } from "@/lib/interview";
@@ -32,6 +35,7 @@ import {
   type JobCategory
 } from "@/lib/types";
 import { cn, formatDate } from "@/lib/utils";
+import { localViewHref, pushLocalView, selectLocalView } from "@/lib/workspace-navigation";
 
 const stages: Array<{ value: InterviewStage; label: string }> = [
   { value: "mixed", label: "Mixed" },
@@ -61,7 +65,7 @@ export default function InterviewPage() {
 function InterviewPageFallback() {
   return (
     <div className="grid gap-6">
-      <PageHeader title="Interview Practice" description="Focused answer reps for saved jobs and role targets." />
+      <PageHeader title="Interview" description="Focused answer reps for saved jobs and role targets." />
       <Panel>Loading interview workspace...</Panel>
     </div>
   );
@@ -72,6 +76,7 @@ function InterviewPageContent() {
   const queryClient = useQueryClient();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const activeView = selectLocalView(searchParams, ["practice", "history"] as const, "practice");
   const requestedJobId = searchParams.get("jobId") ?? "";
   const requestedTargetCategory = searchParams.get("targetCategory") as JobCategory | null;
   const requestedTargetRole = searchParams.get("targetRole");
@@ -111,6 +116,16 @@ function InterviewPageContent() {
   const setAnswer = (value: string) => practiceDraft.setValue(current => ({ ...current, answers: { ...current.answers, [answerKey]: value } }));
   const [feedback, setFeedback] = React.useState<InterviewPracticeFeedback | null>(null);
   const [showInsightsHistory, setShowInsightsHistory] = React.useState(false);
+  React.useEffect(() => {
+    const revealShortcut = () => {
+      const anchor = window.location.hash;
+      if (anchor === "#command-center" || anchor === "#interview-insights") setShowInsightsHistory(true);
+      requestAnimationFrame(() => document.getElementById(anchor.slice(1))?.scrollIntoView({ block: "start" }));
+    };
+    revealShortcut();
+    window.addEventListener("hashchange", revealShortcut);
+    return () => window.removeEventListener("hashchange", revealShortcut);
+  }, [activeView, showInsightsHistory]);
 
   const jobsById = React.useMemo(() => new Map(jobs.map((job) => [job.id, job])), [jobs]);
   const activeQuestion = queue.find((question) => question.id === activeQuestionId) ?? queue[0] ?? null;
@@ -210,7 +225,18 @@ function InterviewPageContent() {
 
   return (
     <div className="grid gap-6">
-      <PageHeader title="Interview Practice" description="Focused answer reps for saved jobs and role targets." />
+      <PageHeader title="Interview" description="Focused answer reps for saved jobs and role targets." />
+      <LocalTabs label="Interview views">
+        <LocalTab active={activeView === "practice"} onClick={() => pushLocalView("/interview", searchParams, "practice")}>Practice</LocalTab>
+        <LocalTab active={activeView === "history"} onClick={() => pushLocalView("/interview", searchParams, "history")}>History</LocalTab>
+        <MoreMenu items={[
+          { label: "Command Center", href: localViewHref("/interview", searchParams, "practice", "#command-center") },
+          { label: "Interview insights", href: localViewHref("/interview", searchParams, "practice", "#interview-insights") },
+          ...(isActive ? [{ label: "Practice timer", href: localViewHref("/interview", searchParams, "practice", "#practice-timer") }] : [])
+        ]} />
+      </LocalTabs>
+      <RetainedView active={activeView === "practice"}>
+      <div className="grid gap-6">
       {[jobsQuery, sessionsQuery, insightsQuery, ...(resumeSessionId ? [resumeQuery] : [])].map((query, index) => query.error ? <Panel key={index}><p role="alert">Could not load {["job choices", "session history", "interview insights", "the requested session"][index]}: {(query.error as Error).message}</p><Button variant="secondary" onClick={() => query.refetch()}>Retry</Button></Panel> : query.isLoading ? <Panel key={index}>Loading {["job choices", "session history", "interview insights", "the requested session"][index]}...</Panel> : null)}
       {resumeSessionId && resumeQuery.error ? <Link href="/interview" className="text-sm font-medium underline">Return to saved practice draft</Link> : null}
       {practiceDraft.dirty ? <p role="status" className="text-sm text-muted-foreground">{practiceDraft.storageError ? "Draft recovery is unavailable. Keep this page open until you submit your answer." : "Each question keeps its own draft. This practice set and your drafts recover after a refresh on this browser, including after closing the tab."}</p> : null}
@@ -245,7 +271,7 @@ function InterviewPageContent() {
             <Field label="Your answer">
               <Textarea disabled={evaluateAnswer.isPending} value={answer} onChange={(event) => setAnswer(event.target.value)} className="min-h-44" />
             </Field>
-            <PracticeTimer timer={timer} disabled={evaluateAnswer.isPending} />
+            <div id="practice-timer" className="scroll-mt-28"><PracticeTimer timer={timer} disabled={evaluateAnswer.isPending} /></div>
             {evaluateAnswer.error ? <p className="text-sm text-destructive">{(evaluateAnswer.error as Error).message}</p> : null}
             <div className="flex flex-wrap gap-2">
               <Button onClick={() => evaluateAnswer.mutate()} disabled={!answer.trim() || evaluateAnswer.isPending}>
@@ -364,6 +390,7 @@ function InterviewPageContent() {
           </button>
           {showInsightsHistory ? (
             <div id="practice-insights" className="mt-4 grid gap-4 xl:grid-cols-[1fr_420px]">
+              {!sessionsQuery.isLoading && !insightsQuery.isLoading && !sessionsQuery.error && !insightsQuery.error ? <CommandCenterPanel insights={insights} sessions={sessions} jobsById={jobsById} /> : null}
               {!insightsQuery.isLoading && !insightsQuery.error ? <InsightsPanel insights={insights} /> : null}
               {!sessionsQuery.isLoading && !sessionsQuery.error ? <SessionHistoryPanel sessions={sessions} jobsById={jobsById} /> : null}
             </div>
@@ -375,6 +402,11 @@ function InterviewPageContent() {
           {!sessionsQuery.isLoading && !sessionsQuery.error ? <SessionHistoryPanel sessions={sessions} jobsById={jobsById} /> : null}
         </div>
       )}
+      </div>
+      </RetainedView>
+      <RetainedView active={activeView === "history"}>
+        {sessionsQuery.isLoading ? <Panel>Loading session history...</Panel> : sessionsQuery.error ? <Panel><p role="alert">Could not load session history: {sessionsQuery.error.message}</p><Button variant="secondary" onClick={() => sessionsQuery.refetch()}>Retry</Button></Panel> : <SessionHistoryPanel sessions={sessions} jobsById={jobsById} />}
+      </RetainedView>
     </div>
   );
 }
@@ -425,7 +457,7 @@ function CommandCenterPanel({
     <Panel>
       <div className="mb-4 flex items-center gap-2">
         <BarChart3 className="h-4 w-4 text-primary" />
-        <h2 className="text-base font-semibold">Command Center</h2>
+        <h2 id="command-center" className="scroll-mt-28 text-base font-semibold">Command Center</h2>
       </div>
 
       <div className="grid gap-4">
@@ -613,7 +645,7 @@ function InsightsPanel({ insights }: { insights?: InterviewInsights }) {
     <Panel>
       <div className="mb-4 flex items-center gap-2">
         <Sparkles className="h-4 w-4 text-primary" />
-        <h2 className="text-base font-semibold">Interview Insights</h2>
+        <h2 id="interview-insights" className="scroll-mt-28 text-base font-semibold">Interview Insights</h2>
       </div>
       <div className="grid gap-4 md:grid-cols-2">
         <div>

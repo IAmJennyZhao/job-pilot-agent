@@ -12,8 +12,14 @@ import {
   TimerReset
 } from "lucide-react";
 import Link from "next/link";
-import { Suspense } from "react";
+import { Suspense, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
+import OutcomesView from "@/components/dashboard/outcomes-view";
+import SkillsView from "@/components/dashboard/skills-view";
+import { RetainedView } from "@/components/layout/retained-view";
+import { LocalTab, LocalTabs } from "@/components/ui/local-tabs";
+import { MoreMenu } from "@/components/ui/more-menu";
+import { localViewHref, pushLocalView, selectLocalView } from "@/lib/workspace-navigation";
 import { Input } from "@/components/ui/field";
 import { ActionAgenda } from "@/components/job-action";
 import { Button } from "@/components/ui/button";
@@ -50,13 +56,46 @@ function uniqueInsightItems(items: DashboardJobInsight[]) {
   });
 }
 
-export default function DashboardPage() { return <Suspense fallback={<Panel>Loading dashboard...</Panel>}><DashboardContent /></Suspense>; }
+const dashboardTabs = ["overview", "outcomes", "skills"] as const;
+
+export default function DashboardPage() { return <Suspense fallback={<Panel>Loading dashboard...</Panel>}><DashboardWorkspace /></Suspense>; }
+
+function DashboardWorkspace() {
+  const params = useSearchParams();
+  const active = selectLocalView(params, dashboardTabs, "overview");
+  useEffect(() => {
+    const scrollToShortcut = () => {
+      const anchor = window.location.hash.slice(1);
+      if (anchor) requestAnimationFrame(() => document.getElementById(anchor)?.scrollIntoView({ block: "start" }));
+    };
+    scrollToShortcut();
+    window.addEventListener("hashchange", scrollToShortcut);
+    return () => window.removeEventListener("hashchange", scrollToShortcut);
+  }, [active]);
+  return <div className="grid gap-6">
+    <LocalTabs label="Dashboard views">
+      {dashboardTabs.map((tab) => <LocalTab key={tab} active={active === tab} onClick={() => pushLocalView("/dashboard", params, tab)}>{tab === "overview" ? "Overview" : tab === "outcomes" ? "Outcomes" : "Skills & learning"}</LocalTab>)}
+      <MoreMenu items={[
+        { label: "Search health", href: localViewHref("/dashboard", params, "overview", "#search-health") },
+        { label: "Coverage details", href: localViewHref("/dashboard", params, "overview", "#coverage-details") },
+        { label: "Study plan", href: localViewHref("/dashboard", params, "skills", "#study-plan") }
+      ]} />
+    </LocalTabs>
+    <RetainedView active={active === "overview"}><DashboardContent /></RetainedView>
+    <RetainedView active={active === "outcomes"}><OutcomesView /></RetainedView>
+    <RetainedView active={active === "skills"}><SkillsView /></RetainedView>
+  </div>;
+}
 
 function DashboardContent() {
   const params = useSearchParams();
   const since = params.get("since") ?? "";
   const cohortHref = (href: string) => since ? `${href}${href.includes("?") ? "&" : "?"}since=${encodeURIComponent(since)}` : href;
-  const setSince = (date: string) => window.history.replaceState(null, "", date ? `/dashboard?since=${encodeURIComponent(date)}` : "/dashboard");
+  const setSince = (date: string) => {
+    const next = new URLSearchParams(params.toString());
+    if (date) next.set("since", date); else next.delete("since");
+    window.history.replaceState(null, "", `/dashboard?${next}`);
+  };
   const queryClient = useQueryClient();
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ["dashboard", since],
@@ -139,7 +178,7 @@ function DashboardContent() {
             <Panel>
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <h2 className="text-base font-semibold">Search Health</h2>
+                  <h2 id="search-health" className="scroll-mt-28 text-base font-semibold">Search Health</h2>
                   <p className="mt-1 text-sm text-muted-foreground">{data.next_recommended_action}</p>
                 </div>
                 <Badge tone={staleJobs || missingDataCount || needsAnalysisItems.length ? "warn" : "good"}>{staleJobs || missingDataCount || needsAnalysisItems.length ? "Needs attention" : "Up to date"}</Badge>
@@ -155,7 +194,7 @@ function DashboardContent() {
           </div>
 
           <div className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-            <Panel><details><summary className="cursor-pointer text-base font-semibold">Coverage details and recurring risks</summary>
+            <Panel><details><summary id="coverage-details" className="scroll-mt-28 cursor-pointer text-base font-semibold">Coverage details and recurring risks</summary>
               <div className="mb-5 mt-4 flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h2 className="text-base font-semibold">Opportunity Coverage And Risk</h2>

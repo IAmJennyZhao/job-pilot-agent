@@ -48,6 +48,7 @@ for (const family of ["ai", "backend", "fullstack"]) {
     await exports.getByRole("button", { name: "Download PDF", exact: true }).click();
     const pdf = await pdfEvent; await pdf.saveAs(info.outputPath(`${family}.pdf`));
     expect((await readFile(info.outputPath(`${family}.pdf`))).subarray(0, 5).toString()).toBe("%PDF-");
+    await page.getByRole("navigation", { name: "Job views" }).getByRole("button", { name: "Cover letter" }).click();
     await page.getByRole("button", { name: "Generate tailored cover letters", exact: true }).click();
     const letter = page.getByRole("region", { name: "Cover letter review", exact: true });
     await expect(letter.getByLabel("Letter variant").locator("option")).toHaveCount(3);
@@ -59,6 +60,7 @@ for (const family of ["ai", "backend", "fullstack"]) {
     const txt = await textEvent; await txt.saveAs(info.outputPath(`${family}.txt`));
     expect(await readFile(info.outputPath(`${family}.txt`), "utf8")).toContain(fixture.case.letter_claims[0]);
     expect(analysis).toBe(0);
+    await page.getByRole("navigation", { name: "Job views" }).getByRole("button", { name: "Overview" }).click();
     const analysisResponse = page.waitForResponse(r => r.request().method() === "POST" && r.url().includes("/api/ai/run-advanced-analysis/"));
     await page.getByRole("button", { name: "Run analysis", exact: true }).click();
     expect((await (await analysisResponse).json()).status).toBe("complete");
@@ -69,7 +71,9 @@ for (const family of ["ai", "backend", "fullstack"]) {
     expect(after.source_content).toBe(original.source_content);
     expect(after.selected_resume_option_id).toBe(original.selected_resume_option_id);
     expect(after.selected_cover_letter_template_id).toBe(original.selected_cover_letter_template_id);
+    await page.getByRole("navigation", { name: "Job views" }).getByRole("button", { name: "Resume", exact: true }).click();
     await expect(exports.getByRole("button", { name: "Download PDF", exact: true })).toBeEnabled();
+    await page.getByRole("navigation", { name: "Job views" }).getByRole("button", { name: "Cover letter" }).click();
     await expect(letter.getByRole("button", { name: "Download letter TXT", exact: true })).toBeEnabled();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBeTruthy();
     await letter.screenshot({ path: info.outputPath("accepted-letter.png") });

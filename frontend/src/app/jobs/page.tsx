@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { ListEditor } from "@/components/ui/list-editor";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { Badge, PageHeader, Panel } from "@/components/ui/panel";
+import { LocalTab, LocalTabs } from "@/components/ui/local-tabs";
 import { api } from "@/lib/api";
 import {
   jobCategories,
@@ -32,6 +33,7 @@ import {
   type RemoteType
 } from "@/lib/types";
 import { cn, formatDate } from "@/lib/utils";
+import { pushLocalView } from "@/lib/workspace-navigation";
 
 type IntakeState = {
   source_url: string;
@@ -203,6 +205,7 @@ function JobsContent() {
         description="Track opportunities, review next steps, and keep your application history together."
         action={<Button onClick={() => setShowIntake(!showIntake)} aria-expanded={showIntake} aria-controls="job-intake"><Plus className="h-4 w-4" />{showIntake ? "Hide add job" : "Add job"}</Button>}
       />
+      <LocalTabs label="Jobs views"><LocalTab active onClick={() => pushLocalView("/jobs", params, "tracker")}>Tracker</LocalTab></LocalTabs>
 
       {savedJob ? <Panel className="text-sm"><div role="status">Saved {savedJob.company}. <Link className="font-semibold underline" href={`/jobs/${savedJob.id}`}>Open saved job</Link></div></Panel> : null}
       <div className="grid min-w-0 gap-4">

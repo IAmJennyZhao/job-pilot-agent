@@ -19,7 +19,7 @@ test("letter export failure and denied clipboard preserve exact reviewed downloa
   const ready = (await (await request.get(`${backend}/api/jobs/${job.id}/cover-letters`)).json()).readiness;
   const run = await (await request.post(`${backend}/api/jobs/${job.id}/cover-letters`, { data: { request_key: crypto.randomUUID(), expected_input_hash: ready.input_hash, reviewed_description_hash: ready.description_hash, acknowledged_evaluation_hash: ready.evaluation.evaluation_hash, options: { count: 1, length: "short" } } })).json();
   expect(run.state).toBe("completed");
-  await page.goto(`/jobs/${job.id}`);
+  await page.goto(`/jobs/${job.id}?tab=letter`);
   const review = page.getByRole("region", { name: "Cover letter review", exact: true });
   await review.getByLabel("I reviewed all 1 saved letter variants and their supporting evidence.").check();
   await review.getByRole("button", { name: "Approve exact letter revision", exact: true }).click();
@@ -56,7 +56,7 @@ test("letters generate independently, recover edits, check evidence and export e
   let generations = 0, analysis = 0;
   page.on("request", r => { if (r.method() === "POST" && r.url().endsWith(`/jobs/${job.id}/cover-letters`)) generations++; if (r.method() === "POST" && /tailoring\/resume|\/api\/ai\//.test(r.url())) analysis++; });
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-  await page.goto(`/jobs/${job.id}`);
+  await page.goto(`/jobs/${job.id}?tab=letter`);
   const panel = page.getByRole("region", { name: "Cover letters", exact: true });
   await expect(panel.getByRole("button", { name: "Generate tailored cover letters", exact: true })).toBeDisabled();
   await panel.getByLabel("I reviewed the full saved posting for this letter.").check();
@@ -119,7 +119,7 @@ test("letter lost-save response retries without a duplicate revision", async ({ 
   const ready = (await (await request.get(`${backend}/api/jobs/${job.id}/cover-letters`)).json()).readiness;
   const run = await (await request.post(`${backend}/api/jobs/${job.id}/cover-letters`, { data: { request_key: crypto.randomUUID(), expected_input_hash: ready.input_hash, reviewed_description_hash: ready.description_hash, acknowledged_evaluation_hash: ready.evaluation.evaluation_hash, options: { count: 1, length: "short" } } })).json();
   expect(run.state).toBe("completed");
-  await page.goto(`/jobs/${job.id}`);
+  await page.goto(`/jobs/${job.id}?tab=letter`);
   const review = page.getByRole("region", { name: "Cover letter review", exact: true });
   await review.getByText("Edit letter sentences", { exact: true }).click();
   const sentence = review.getByLabel("Paragraph 1, sentence 1", { exact: true });
@@ -144,7 +144,7 @@ test("incompatible letter drafts remain downloadable and concurrent edits stay r
   const ready = (await (await request.get(`${backend}/api/jobs/${job.id}/cover-letters`)).json()).readiness;
   const run = await (await request.post(`${backend}/api/jobs/${job.id}/cover-letters`, { data: { request_key: crypto.randomUUID(), expected_input_hash: ready.input_hash, reviewed_description_hash: ready.description_hash, acknowledged_evaluation_hash: ready.evaluation.evaluation_hash, options: { count: 1, length: "short" } } })).json();
   const view = await (await request.get(`${backend}/api/cover-letters/${run.revision.id}`)).json();
-  await page.goto(`/jobs/${job.id}`);
+  await page.goto(`/jobs/${job.id}?tab=letter`);
   const storageKey = `job-pilot:draft:letter-edit-${view.profile_id}-${run.revision.id}`;
   await page.evaluate(key => localStorage.setItem(key, '{"future_version":99,"work":"keep this"}'), storageKey);
   await page.reload();
@@ -160,7 +160,7 @@ test("incompatible letter drafts remain downloadable and concurrent edits stay r
   const original = await first.inputValue();
   await first.fill(original.replace("thoughtful work", "careful work"));
   const other = await context.newPage();
-  await other.goto(`/jobs/${job.id}`);
+  await other.goto(`/jobs/${job.id}?tab=letter`);
   const second = other.getByRole("region", { name: "Cover letter review", exact: true });
   await second.getByText("Edit letter sentences", { exact: true }).click();
   await second.getByLabel("Paragraph 1, sentence 1", { exact: true }).fill(original.replace("thoughtful work", "practical work"));

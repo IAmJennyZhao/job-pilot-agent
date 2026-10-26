@@ -10,7 +10,7 @@ test("review, activate, reload and revoke fictional tailoring sources", async ({
   bundle.bank_markdown = bundle.bank_markdown.replace("bank_version: synthetic.1", `bank_version: browser.${Date.now()}`);
   let aiCalls = 0;
   page.on("request", request => { if (request.url().includes("/api/ai/")) aiCalls++; });
-  await page.goto("/profile?tab=base");
+  await page.goto("/profile?tab=sources");
   const panel = page.getByRole("region", { name: "Tailoring sources" });
   await expect(panel.getByRole("heading", { name: "Tailoring sources" })).toBeVisible();
   await panel.getByText("Import a source bundle", { exact: true }).click();

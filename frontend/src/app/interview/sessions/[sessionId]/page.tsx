@@ -4,16 +4,18 @@ import { useQuery } from "@tanstack/react-query";
 import { AttemptHistory } from "@/components/interview/attempt-history";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { FeedbackDetails, weakPointLabels } from "@/components/interview/feedback-details";
 import { Badge, PageHeader, Panel } from "@/components/ui/panel";
+import { LocalTab, LocalTabs } from "@/components/ui/local-tabs";
 import { api } from "@/lib/api";
 import { groupSessionEntries, sessionTarget } from "@/lib/interview";
 import { formatDate } from "@/lib/utils";
 
 export default function InterviewSessionDetailPage() {
+  const router = useRouter();
   const params = useParams<{ sessionId: string }>();
   const sessionId = params.sessionId;
 
@@ -62,6 +64,10 @@ export default function InterviewSessionDetailPage() {
           </Link>
         }
       />
+      <LocalTabs label="Interview views">
+        <LocalTab active={false} onClick={() => router.push("/interview?tab=practice")}>Practice</LocalTab>
+        <LocalTab active onClick={() => router.push("/interview?tab=history")}>History</LocalTab>
+      </LocalTabs>
 
       {isLoading ? <Panel>Loading session...</Panel> : null}
       {error ? <Panel><p role="alert">Could not load this session: {error.message}</p><Button onClick={() => refetch()}>Retry</Button></Panel> : null}

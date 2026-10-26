@@ -94,7 +94,7 @@ test("outcome report exposes counts and contributing jobs", async ({ page }) => 
   await expect(page.getByRole("heading", { name: /saved jobs in this cohort/ })).toBeVisible();
   await page.getByLabel("Group by", { exact: true }).selectOption("category");
   await expect(page.getByText("Interview rate", { exact: true }).first()).toBeVisible();
-  await page.locator("summary").first().click();
+  await page.getByText(/View \d+ contributing jobs/).first().click();
   await expect(page.getByRole("link", { name: "Open contributing job 1", exact: true }).first()).toBeVisible();
   await page.getByLabel("Jobs saved on or after (UTC)", { exact: true }).fill("2099-01-01");
   await expect(page.getByText("No jobs in this date range.")).toBeVisible();

@@ -136,3 +136,9 @@ Validation completed:
 - Typecheck, production build and whitespace checks passed. The build reports existing lint warnings.
 
 Run the browser suites from `frontend/` with `node node_modules/@playwright/test/cli.js test` followed by the relevant spec paths. The tests use the synthetic fixture and deterministic model responses. `review-capture.ts` records actual pages from the top and hides only the Next.js development indicator. Captures are written under `frontend/test-results/`; the local review gallery for this checkpoint is `frontend/logs/phase1-review/index.html` (generated, ignored by Git).
+
+## Phase 1 acceptance — October 26, 2026
+
+The complete browser suite passed: 80 desktop/mobile checks covering navigation, legacy links, browser history, intake, reusable assets, source versions, document drafts, generation recovery, review and approval, exact historical exports, PDF previews/downloads, interview workflows, and synthetic backup restore. After adding keyboard coverage for local tabs, hidden views, More, and visible focus, the affected suite passed again: 8 checks. `npm run typecheck`, `npm run build`, and `git diff --check` passed.
+
+The browser checks use a synthetic database and deterministic model responses. Live external AI behavior and real user records were not exercised. The production build still reports existing lint warnings; none block Phase 1. The desktop/mobile review gallery linked above contains 16 actual browser captures of the eight Job detail and Application Assets views. Content consolidation and feature removal remain deferred to later phases.

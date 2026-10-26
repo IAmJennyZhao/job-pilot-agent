@@ -35,6 +35,37 @@ test("keyboard users can see the skip link focus state", async ({ page }) => {
   expect(await skip.evaluate((element) => getComputedStyle(element).outlineStyle)).toBe("solid");
 });
 
+test("keyboard navigation opens local views and deferred tools with visible focus", async ({ page }) => {
+  await page.goto("/profile?tab=base");
+  const nav = page.getByRole("navigation", { name: "Application asset views" });
+  const resumes = nav.getByRole("button", { name: "Resumes", exact: true });
+  const base = nav.getByRole("button", { name: "Base profile", exact: true });
+
+  await resumes.focus();
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/tab=resumes/);
+  await expect(resumes).toBeFocused();
+  expect(await resumes.evaluate((element) => getComputedStyle(element).outlineStyle)).toBe("solid");
+  await expect(page.getByRole("region", { name: "Base profile", exact: true })).toBeHidden();
+
+  await page.keyboard.press("Tab");
+  await expect(base).toBeFocused();
+  await page.keyboard.press("Space");
+  await expect(page).toHaveURL(/tab=base/);
+  await expect(page.getByRole("region", { name: "Base profile", exact: true })).toBeVisible();
+
+  const more = nav.locator("summary", { hasText: "More" });
+  await more.focus();
+  await page.keyboard.press("Enter");
+  const coverage = nav.getByRole("link", { name: "Coverage audit" });
+  await page.keyboard.press("Tab");
+  await expect(coverage).toBeFocused();
+  expect(await coverage.evaluate((element) => getComputedStyle(element).outlineStyle)).toBe("solid");
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/tab=coverage/);
+  await expect(page.getByRole("heading", { name: /Coverage Audit/i }).first()).toBeVisible();
+});
+
 test("wide pages keep a centered readable content width", async ({ page }) => {
   await page.setViewportSize({ width: 2200, height: 1000 });
   await page.goto("/dashboard");

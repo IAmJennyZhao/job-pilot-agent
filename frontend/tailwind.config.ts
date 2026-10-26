@@ -4,6 +4,9 @@ const config: Config = {
   content: ["./src/**/*.{ts,tsx}"],
   theme: {
     extend: {
+      maxWidth: {
+        workspace: "88rem"
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",

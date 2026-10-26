@@ -24,6 +24,7 @@ import * as React from "react";
 import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
+import { LocalTab, LocalTabs } from "@/components/ui/local-tabs";
 import { Badge, PageHeader, Panel } from "@/components/ui/panel";
 import { api } from "@/lib/api";
 import type { CoverLetterTemplate, CoverageGapResponse, ResumeOption, ResumeProfile } from "@/lib/types";
@@ -84,27 +85,22 @@ function ProfileContent() {
       {isLoading ? <Panel>Loading application assets...</Panel> : null}
       {resumesError || templatesError ? <Panel><div role="alert">Could not load assets: {((resumesError || templatesError) as Error).message}</div><Button variant="secondary" onClick={invalidateProfileAssets}>Retry loading assets</Button></Panel> : null}
       {!isLoading && !resumesLoading && !templatesLoading && !error && !resumesError && !templatesError ? <ReadinessStrip profile={profile ?? null} resumeOptions={resumeOptions} templates={templates} onSelect={setActiveTab} /> : null}
-      <div className="flex flex-wrap gap-2 border-b border-border pb-2">
+      <LocalTabs label="Application asset views">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const active = activeTab === tab.key;
           return (
-            <button
+            <LocalTab
               key={tab.key}
-              type="button"
-              aria-pressed={active}
+              active={active}
               onClick={() => setActiveTab(tab.key)}
-              className={cn(
-                "inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition",
-                active ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card-strong/75 text-muted-foreground hover:bg-accent/50 hover:text-foreground"
-              )}
             >
               <Icon className="h-4 w-4" />
               {tab.label}
-            </button>
+            </LocalTab>
           );
         })}
-      </div>
+      </LocalTabs>
       <section id="asset-content" tabIndex={-1} className="scroll-mt-36">{activeTab === "base" && !isLoading && !error ? <><BaseProfileTab profile={profile ?? null} onSaved={invalidateProfileAssets} />{profile ? <TailoringSourceManager key={profile.id} profileId={profile.id} /> : null}</> : null}
       {activeTab === "resumes" && !resumesLoading && !resumesError ? <ResumeVariantsTab resumeOptions={resumeOptions} onChanged={invalidateProfileAssets} /> : null}
       {activeTab === "templates" && !templatesLoading && !templatesError ? <CoverLetterTemplatesTab templates={templates} onChanged={invalidateProfileAssets} /> : null}

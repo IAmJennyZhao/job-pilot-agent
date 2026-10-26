@@ -134,7 +134,7 @@ export function TailoringSourceManager({ profileId }: { profileId: string }) {
       </details>
       {mayActivate ? <div className="grid gap-3 border-t border-border pt-3">
         <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={reviewedHash === source.bundle_hash} onChange={event => setReviewedHash(event.target.checked ? source.bundle_hash : null)} />
-          I reviewed this version's facts, exclusions, preferences, and layout sources.</label>
+          I reviewed this version&apos;s facts, exclusions, preferences, and layout sources.</label>
         <Button className="justify-self-start" disabled={busy || reviewedHash !== source.bundle_hash || versions.isFetching || preview.isFetching || !versions.data} onClick={() => activate.mutate()}>{activate.isPending ? "Activating..." : "Activate reviewed sources"}</Button>
       </div> : null}
       {source.status === "active" ? <Button className="justify-self-start" variant="secondary" disabled={busy || versions.isFetching || !versions.data} onClick={() => revoke.mutate()}>{revoke.isPending ? "Revoking..." : "Revoke this version"}</Button> : null}

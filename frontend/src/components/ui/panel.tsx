@@ -9,7 +9,7 @@ export function Panel({
   children: React.ReactNode;
 }) {
   return (
-    <section className={cn("rounded-lg border border-border bg-card p-5 text-card-foreground shadow-panel", className)}>
+    <section className={cn("min-w-0 rounded-lg border border-border bg-card p-5 text-card-foreground shadow-panel sm:p-6", className)}>
       {children}
     </section>
   );
@@ -25,10 +25,10 @@ export function PageHeader({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-3 border-b border-border pb-5 sm:flex-row sm:items-end sm:justify-between">
+    <div className="flex min-w-0 flex-col gap-4 border-b border-border pb-6 sm:flex-row sm:items-end sm:justify-between sm:pb-7">
       <div>
-        <h1 className="text-2xl font-semibold text-foreground">{title}</h1>
-        {description ? <p className="mt-1 max-w-3xl text-sm text-muted-foreground">{description}</p> : null}
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">{title}</h1>
+        {description ? <p className="mt-2 max-w-3xl text-sm leading-relaxed text-muted-foreground sm:text-base">{description}</p> : null}
       </div>
       {action}
     </div>

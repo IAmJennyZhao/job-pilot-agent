@@ -145,8 +145,8 @@ export default function JobDetailPage() {
     window.addEventListener("hashchange", syncHash);
     window.addEventListener("popstate", syncHash);
     return () => { window.removeEventListener("hashchange", syncHash); window.removeEventListener("popstate", syncHash); };
-  }, []);
-  const hintedView = searchParams.get("tailoring") === "prepare" || hash === "#tailoring-preparation" ? "resume" : hash === "#status-history" ? "history" : "overview";
+  }, [searchParams]);
+  const hintedView = searchParams.get("tailoring") === "prepare" || ["#tailoring-preparation", "#resume-history"].includes(hash) ? "resume" : hash === "#letter-history" ? "letter" : hash === "#status-history" ? "history" : "overview";
   const activeView = selectLocalView(searchParams, jobViews, hintedView);
   const viewHref = (tab: typeof jobViews[number], anchor = "") => localViewHref(`/jobs/${jobId}`, searchParams, tab, anchor);
   const openView = (tab: typeof jobViews[number]) => { setHash(""); pushLocalView(`/jobs/${jobId}`, searchParams, tab); };
@@ -234,17 +234,25 @@ export default function JobDetailPage() {
   const assetRecommendation =
     aiAssetRankMutation.data ?? reviewMutation.data?.asset_recommendation ?? job?.latest_asset_recommendation ?? null;
 
+  const jobLoaded = Boolean(job);
   useEffect(() => {
-    if (!job || !hash) return;
-    const frame = requestAnimationFrame(() => {
+    if (!jobLoaded || !hash) return;
+    const reveal = () => {
       const target = document.getElementById(hash.slice(1));
-      if (target && !target.closest("[hidden]")) target.scrollIntoView({ block: "start" });
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [activeView, hash, job]);
+      if (!target || target.closest("[hidden]")) return;
+      target.scrollIntoView({ block: "start" });
+      target.focus({ preventScroll: true });
+      observer.disconnect();
+    };
+    // Document histories arrive after their workspace query resolves.
+    const observer = new MutationObserver(reveal);
+    observer.observe(document.getElementById("main-content") ?? document.body, { childList: true, subtree: true });
+    const frame = requestAnimationFrame(reveal);
+    return () => { cancelAnimationFrame(frame); observer.disconnect(); };
+  }, [activeView, hash, jobLoaded]);
 
   return (
-    <div className="grid gap-6">
+    <div className="grid gap-8">
       <PageHeader
         title={job ? `${job.company}: ${job.role_title}` : "Job Detail"}
         description={job ? `${job.status} - Last updated ${formatDate(job.updated_at)}` : "Review source links, extracted tracker details, and application history."}
@@ -287,9 +295,9 @@ export default function JobDetailPage() {
 
       {job ? (
         <>
-          <RetainedView key={`${job.id}-resume`} active={activeView === "resume"}><ResumeWorkspace jobId={job.id} updatedAt={job.updated_at} /></RetainedView>
-          <RetainedView key={`${job.id}-letter`} active={activeView === "letter"}><LetterWorkspace jobId={job.id} updatedAt={job.updated_at} /></RetainedView>
-          <RetainedView key={`${job.id}-overview`} active={activeView === "overview"}>
+          <RetainedView label="Resume workspace" key={`${job.id}-resume`} active={activeView === "resume"}><ResumeWorkspace jobId={job.id} updatedAt={job.updated_at} /></RetainedView>
+          <RetainedView label="Cover letter workspace" key={`${job.id}-letter`} active={activeView === "letter"}><LetterWorkspace jobId={job.id} updatedAt={job.updated_at} /></RetainedView>
+          <RetainedView label="Job overview" key={`${job.id}-overview`} active={activeView === "overview"}>
           <div className="grid gap-6">
           <JobActionEditor jobId={job.id} />
           <Panel>
@@ -366,7 +374,7 @@ export default function JobDetailPage() {
           ) : null}
           </div>
           </RetainedView>
-          <RetainedView key={`${job.id}-history`} active={activeView === "history"}>
+          <RetainedView label="Application history" key={`${job.id}-history`} active={activeView === "history"}>
             <div className="grid gap-4">
               <Panel>
                 <StatusHistoryEditor
@@ -378,8 +386,8 @@ export default function JobDetailPage() {
               </Panel>
               <Panel className="grid gap-3 text-sm">
                 <h2 className="font-semibold">Document history</h2>
-                <p className="text-muted-foreground">Document runs, revisions and approved exports stay with each document.</p>
-                <div className="flex flex-wrap gap-4"><Link className="text-primary underline" href={viewHref("resume")}>Resume history</Link><Link className="text-primary underline" href={viewHref("letter")}>Cover letter history</Link></div>
+                <p className="text-muted-foreground">Open the document to inspect its generation attempts, saved revisions and version-specific exports.</p>
+                <div className="flex flex-wrap gap-4"><Link className="text-primary underline" href={viewHref("resume", "#resume-history")}>Resume revisions and exports</Link><Link className="text-primary underline" href={viewHref("letter", "#letter-history")}>Cover letter revisions and exports</Link></div>
               </Panel>
             </div>
           </RetainedView>
@@ -659,7 +667,8 @@ function ApplicationAssetsPanel({
     <div>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 id="application-assets" tabIndex={-1} className="scroll-mt-28 text-base font-semibold">Application Assets</h2>
+          <h2 id="application-assets" tabIndex={-1} className="scroll-mt-28 text-base font-semibold">Reusable asset selection</h2>
+          <p className="mt-2 text-sm text-muted-foreground">Choose reusable documents for this application. Tailored drafts and their approvals live in Resume and Cover letter.</p>
           <p className="mt-1 text-xs text-muted-foreground">{latestSource}</p>
         </div>
         {recommendation ? <Badge tone={recommendation.source === "ai" ? "good" : "neutral"}>{recommendation.source}</Badge> : null}

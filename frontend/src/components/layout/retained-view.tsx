@@ -9,7 +9,7 @@ export function useViewActive() {
 }
 
 /** A visited workspace stays mounted so tab changes keep transient editor state. */
-export function RetainedView({ active, children }: { active: boolean; children: React.ReactNode }) {
+export function RetainedView({ active, label, children }: { active: boolean; label?: string; children: React.ReactNode }) {
   const [visited, setVisited] = React.useState(active);
   React.useEffect(() => {
     if (active) setVisited(true);
@@ -18,7 +18,7 @@ export function RetainedView({ active, children }: { active: boolean; children: 
   if (!active && !visited) return null;
   return (
     <ViewActiveContext.Provider value={active}>
-      <section hidden={!active} inert={!active} aria-hidden={!active} className="min-w-0">
+      <section hidden={!active} inert={!active} aria-hidden={!active} aria-label={label} className="min-w-0">
         {children}
       </section>
     </ViewActiveContext.Provider>

@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { useDraft } from "@/lib/use-draft";
 import { letterLocalDraft, letterCheckNonce, type LetterEdit, type LetterLocalDraft, type LetterReview, type LetterSentence } from "@/lib/letter-types";
 import { Button } from "@/components/ui/button";
+import { Panel } from "@/components/ui/panel";
 import { Field, Select, Textarea } from "@/components/ui/field";
 
 function saveBlob(blob: Blob, name: string) {
@@ -27,10 +28,12 @@ export function LetterReviewPanel({ baselineId, sourceKey }: { baselineId: strin
   };
   if (query.error) return <p role="alert">{query.error.message}</p>;
   if (!query.data) return <p role="status">Loading letter review…</p>;
-  return <section aria-label="Cover letter review" className="grid min-w-0 gap-4 border-t pt-4">
+  return <section aria-label="Cover letter review" className="grid min-w-0 gap-6">
+    <Panel className="grid gap-4">
     <h3 className="font-semibold">Review and edit letters</h3>
     <Button variant="ghost" className="w-fit" onClick={() => { setSelected(undefined); cache.invalidateQueries({ queryKey: ["letter-review", baselineId] }); }}>Refresh letter review</Button>
     <Field label="Letter revision history"><Select value={query.data.revision.id} onChange={e => setSelected(e.target.value)}>{query.data.history.map(r => <option key={r.id} value={r.id}>Revision {r.sequence} · {r.origin}{r.reviewed ? " · Reviewed" : ""}{r.id === query.data?.current_revision_id ? " · Current" : ""}</option>)}</Select></Field>
+    </Panel>
     <LetterEditor view={query.data} onUpdated={update} onRefresh={() => { setSelected(undefined); cache.invalidateQueries({ queryKey: ["letter-review", baselineId] }); }} />
   </section>;
 }
@@ -73,7 +76,8 @@ function LetterEditor({ view, onUpdated, onRefresh }: { view: LetterReview; onUp
   };
   const exportable = Boolean(view.approval && view.revision.validation.valid && (!current || !draft.dirty));
   const error = save.error ?? restore.error ?? check.error ?? approve.error ?? exporting.error;
-  return <div className="grid min-w-0 gap-4">
+  return <div className="grid min-w-0 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(18rem,0.7fr)]">
+    <Panel className="grid gap-5">
     {view.source_problem ? <p role="alert" className="text-sm">{view.source_problem} Previously reviewed downloads remain available.</p> : null}
     {draft.recoveryRaw !== null ? <div role="alert" className="grid gap-2 rounded border p-3"><p>A saved local letter draft has an incompatible format. Download it before discarding.</p><div className="flex flex-wrap gap-2"><Button variant="secondary" onClick={() => saveBlob(new Blob([draft.recoveryRaw!], { type: "application/json" }), "letter-draft-recovery.json")}>Download letter recovery</Button><Button variant="ghost" onClick={() => draft.discard()}>Discard incompatible letter draft</Button></div></div> : null}
     {draft.storageError || checks.storageError ? <p role="alert">Browser draft storage is unavailable. Keep this page open until your work is saved.</p> : null}
@@ -98,6 +102,9 @@ function LetterEditor({ view, onUpdated, onRefresh }: { view: LetterReview; onUp
       <Button variant="secondary" className="w-fit" disabled={busy || !draft.ready || chosen.paragraphs.length >= 5} onClick={() => update(e => { e.variants[variant].paragraphs.push({ sentences: [{ id: crypto.randomUUID(), text: "", sentence_kind: "motivation", candidate_evidence_ids: [], job_evidence_ids: [] }] }); })}>Add letter paragraph</Button>
       <div className="flex flex-wrap gap-2"><Button disabled={busy || !draft.ready || !draft.dirty} onClick={() => save.mutate()}>Save letter edits</Button><Button variant="ghost" disabled={busy || !draft.dirty} onClick={() => draft.discard()}>Discard local letter edits</Button></div>
     </div></details> : <Button variant="secondary" className="w-fit" disabled={busy || draft.dirty || !draft.ready} onClick={() => restore.mutate()}>Restore letter as new revision</Button>}
+    </Panel>
+    <Panel className="grid gap-5">
+    <h3 className="font-semibold">Evidence review and exports</h3>
     <details><summary className="cursor-pointer">Sentence evidence assessment</summary><div className="mt-3 grid gap-3">{view.sentence_assessment?.sentences.map(s => <div key={s.sentence_id} className="rounded border p-3 text-sm"><p className="font-medium">{s.sentence_id}: {s.supported ? "Supported" : "Needs correction"}</p><p>{s.explanation}</p>{s.supports.map((q, i) => <blockquote className="mt-2 border-l-2 pl-3 text-xs" key={i}>{q.source_id}: {q.quote}</blockquote>)}</div>) ?? <p className="text-sm">This saved revision needs an independent sentence check.</p>}</div></details>
     <details><summary className="cursor-pointer">Changes from generated letter</summary><div className="mt-2 grid gap-3">{view.changes_from_baseline.length ? view.changes_from_baseline.map(change => <div key={change.field_path} className="grid gap-2 rounded border p-3 text-sm sm:grid-cols-2"><div><strong>Before</strong><p className="whitespace-pre-wrap break-words">{change.before && typeof change.before === "object" && "text" in change.before ? String(change.before.text) : "Sentence added"}</p></div><div><strong>After</strong><p className="whitespace-pre-wrap break-words">{change.after && typeof change.after === "object" && "text" in change.after ? String(change.after.text) : "Sentence removed"}</p></div></div>) : <p className="text-sm">No sentence or citation changes from the generated draft.</p>}</div></details>
     <details><summary className="cursor-pointer">Posting context not cited in this variant</summary><p className="mt-2 text-xs">These excerpts are not cited by this saved variant. This list does not imply that you meet every cited requirement.</p><ul className="mt-2 grid gap-2 text-sm">{view.job_evidence.filter(e => !view.revision.edit.variants[variant].paragraphs.some(p => p.sentences.some(s => s.job_evidence_ids.includes(e.id)))).map(e => <li key={e.id} className="rounded border p-2">{e.text}</li>)}</ul></details>
@@ -110,5 +117,6 @@ function LetterEditor({ view, onUpdated, onRefresh }: { view: LetterReview; onUp
     </> : view.approval ? <p className="text-sm font-medium">This saved letter revision was reviewed.</p> : null}
     <div className="flex flex-wrap gap-2"><Button variant="secondary" disabled={!exportable || exporting.isPending} onClick={() => exporting.mutate("copy")}>Copy reviewed letter</Button><Button variant="secondary" disabled={!exportable || exporting.isPending} onClick={() => exporting.mutate("txt")}>Download letter TXT</Button><Button variant="secondary" disabled={!exportable || exporting.isPending} onClick={() => exporting.mutate("md")}>Download letter Markdown</Button></div>
     {notice ? <p role="status">{notice}</p> : null}{error ? <p role="alert">{error.message}</p> : null}
+    </Panel>
   </div>;
 }

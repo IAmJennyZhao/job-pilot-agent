@@ -1,3 +1,4 @@
+import { captureWorkspace } from "./review-capture";
 import { test, expect, type APIRequestContext } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
@@ -58,6 +59,19 @@ test("resume review edits survive reload, invalidate review, and restore history
   await expect(panel.getByText("Reviewed — this exact saved version is approved.", { exact: true })).toBeVisible();
   await panel.getByRole("button", { name: "Edit resume", exact: true }).click();
   await panel.getByLabel("Bullet 1", { exact: true }).fill("Successfully built an internal Python prototype.");
+  const tabs = page.getByRole("navigation", { name: "Job views" });
+  await tabs.getByRole("button", { name: "History", exact: true }).click();
+  await page.getByRole("button", { name: "Edit history", exact: true }).click();
+  await page.getByLabel("New history note", { exact: true }).fill("Keep this unsaved application note");
+  await captureWorkspace(page, info, "job-history-page.png");
+  await tabs.getByRole("button", { name: "Resume", exact: true }).click();
+  await expect(panel.getByLabel("Bullet 1", { exact: true })).toHaveValue("Successfully built an internal Python prototype.");
+  await expect(panel.getByRole("button", { name: "Mark reviewed", exact: true })).toBeDisabled();
+  await tabs.getByRole("button", { name: "History", exact: true }).click();
+  await expect(page.getByLabel("New history note", { exact: true })).toHaveValue("Keep this unsaved application note");
+  await tabs.getByRole("button", { name: "Overview", exact: true }).click();
+  await captureWorkspace(page, info, "job-overview-page.png");
+  await tabs.getByRole("button", { name: "Resume", exact: true }).click();
   await page.reload();
   await expect(panel.getByLabel("Bullet 1", { exact: true })).toHaveValue("Successfully built an internal Python prototype.");
   await expect(panel.getByRole("button", { name: "Mark reviewed", exact: true })).toBeDisabled();

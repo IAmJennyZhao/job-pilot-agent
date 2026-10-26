@@ -1,3 +1,4 @@
+import { captureWorkspace } from "./review-capture";
 import { test, expect, type APIRequestContext } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
@@ -81,6 +82,15 @@ test("preview, final approval, exact downloads and historical exports", async ({
   await expect(exports.getByRole("button", { name: "Approve final exports", exact: true })).toBeDisabled();
   await exports.getByLabel("I inspected this exact PDF and approve its layout.").check();
   await exports.screenshot({ path: info.outputPath("resume-pdf-preview.png") });
+  const tabs = page.getByRole("navigation", { name: "Job views" });
+  const selectedRender = await exports.getByLabel("Saved render history").inputValue();
+  await tabs.getByRole("button", { name: "History", exact: true }).click();
+  await page.getByRole("link", { name: "Resume revisions and exports" }).click();
+  await expect(page.locator("#resume-history")).toBeFocused();
+  await expect(exports.getByLabel("Saved render history")).toHaveValue(selectedRender);
+  await expect(exports.getByRole("img", { name: "Rendered resume page 1" })).toBeVisible();
+  await expect(exports.getByLabel("I inspected this exact PDF and approve its layout.")).toBeChecked();
+  await captureWorkspace(page, info, "job-resume-page.png");
   await exports.getByRole("button", { name: "Approve final exports", exact: true }).click();
   await expect(exports.getByText("1 page · Final approved export", { exact: true })).toBeVisible();
   const render = (await (await request.get(url + `/renders?revision_id=${run.revision.id}`)).json())[0];
@@ -103,6 +113,15 @@ test("preview, final approval, exact downloads and historical exports", async ({
   await expect(exports.getByText("No PDF has been rendered for this saved revision.")).toBeVisible();
   await review.getByLabel("Resume revision history").selectOption(run.revision.id);
   await expect(exports.getByRole("button", { name: "Download PDF", exact: true })).toBeEnabled();
+  await tabs.getByRole("button", { name: "Cover letter", exact: true }).click();
+  await tabs.getByRole("button", { name: "Resume", exact: true }).click();
+  await expect(review.getByLabel("Resume revision history")).toHaveValue(run.revision.id);
+  await expect(exports.getByLabel("Saved render history")).toHaveValue(render.id);
+  const historicalDownload = page.waitForEvent("download");
+  await exports.getByRole("button", { name: "Download PDF", exact: true }).click();
+  const historicalFile = info.outputPath("historical-after-tab-switch.pdf");
+  await (await historicalDownload).saveAs(historicalFile);
+  expect(createHash("sha256").update(await readFile(historicalFile)).digest("hex")).toBe(render.hashes.pdf);
   expect((await request.post(`${backend}/api/profile/tailoring-sources/${source.id}/revoke`, { data: { expected_hash: source.bundle_hash, expected_active_id: source.id } })).ok()).toBeTruthy();
   await page.reload();
   await review.getByLabel("Resume revision history").selectOption(run.revision.id);

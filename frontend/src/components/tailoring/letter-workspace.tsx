@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useDraft } from "@/lib/use-draft";
@@ -44,13 +45,15 @@ export function LetterWorkspace({ jobId, updatedAt }: { jobId: string; updatedAt
     generation.mutate({ payload: { ...values, request_key: key }, parent });
   };
   const run = result.data;
-  return <Panel><section aria-label="Cover letters" className="grid min-w-0 gap-4">
-    <h2 className="font-semibold">Cover letters</h2>
+  return <section aria-label="Cover letters" className="grid min-w-0 gap-8">
+    <Panel className="grid gap-5">
+    <h2 className="text-lg font-semibold">Cover letter preparation</h2>
     <p className="text-sm text-muted-foreground">Generate letters independently of your resume. Each sentence is checked against approved evidence before you review the saved draft.</p>
     {[{ name: "company context", draft: context }, { name: "generation request", draft: nonce }].map(item => item.draft.recoveryRaw !== null ? <div role="alert" key={item.name} className="grid gap-2"><p>The saved {item.name} has an incompatible format. Download a recovery copy before discarding it.</p><a className="text-sm underline" href={`data:application/json;charset=utf-8,${encodeURIComponent(item.draft.recoveryRaw)}`} download={`letter-${item.name.replaceAll(" ", "-")}-recovery.json`}>Download {item.name} recovery</a><Button variant="ghost" className="w-fit" onClick={() => item.draft.discard()}>Discard incompatible {item.name}</Button></div> : null)}
     {workspace.error ? <p role="alert">{workspace.error.message}</p> : !ready ? <p role="status">Loading letter readiness…</p> : <>
       <details><summary className="cursor-pointer">Preference checks and saved posting</summary><div className="grid gap-3 pt-3"><PreferenceFlags evaluation={ready.evaluation} /><pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words text-xs">{ready.source_content}</pre></div></details>
       {ready.missing.length ? <ul className="list-inside list-disc text-sm">{ready.missing.map(m => <li key={m}>{m.replaceAll("resume generation", "letter generation").replaceAll("generating a resume", "generating a letter")}</li>)}</ul> : null}
+      <Link className="w-fit text-sm underline" href="/profile?tab=sources">Review sources in Application Assets</Link>
       {!ready.description_reviewed ? <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={Boolean(reviewed)} onChange={e => setReviewedHash(e.target.checked ? ready.description_hash : undefined)} />I reviewed the full saved posting for this letter.</label> : null}
       <div className="grid gap-3 sm:grid-cols-3">
         <Field label="Letter variants"><Select value={options.count} disabled={Boolean(running)} onChange={e => setOptions({ ...options, count: Number(e.target.value) })}>{[1, 2, 3].map(n => <option key={n} value={n}>{n} {n === 1 ? "variant" : "variants"}</option>)}</Select></Field>
@@ -62,7 +65,11 @@ export function LetterWorkspace({ jobId, updatedAt }: { jobId: string; updatedAt
       <div className="flex flex-wrap gap-2"><Button disabled={!canGenerate} onClick={() => start()}>{generation.isPending ? "Generating letters…" : "Generate tailored cover letters"}</Button><Button variant="secondary" onClick={() => { workspace.refetch(); if (runId) result.refetch(); }}>Refresh letter progress</Button></div>
       {generation.error ? <p role="alert">{generation.error.message} Refresh progress before retrying; a request may still be running.</p> : null}
       {nonce.storageError ? <p role="alert">Browser recovery storage is unavailable. Check run history after a connection failure.</p> : null}
-      {workspace.data?.runs.length ? <Field label="Letter generation history"><Select value={runId ?? ""} onChange={e => setSelected(e.target.value)}>{workspace.data.runs.map(r => <option value={r.id} key={r.id}>{r.state} · {new Date(r.created_at).toLocaleString()} · {r.id.slice(0, 8)}</option>)}</Select></Field> : null}
+    </>}
+    </Panel>
+    {ready && workspace.data ? <Panel className="grid gap-5">
+      <h2 id="letter-history" tabIndex={-1} className="scroll-mt-28 text-lg font-semibold">Generation history</h2>
+      {workspace.data.runs.length ? <Field label="Letter generation history"><Select value={runId ?? ""} onChange={e => setSelected(e.target.value)}>{workspace.data.runs.map(r => <option value={r.id} key={r.id}>{r.state} · {new Date(r.created_at).toLocaleString()} · {r.id.slice(0, 8)}</option>)}</Select></Field> : <p className="text-sm text-muted-foreground">No saved letter generations for this job yet.</p>}
       {result.error ? <p role="alert">{result.error.message}</p> : null}
       {run ? <>
         <p role="status">Letter run: {run.state}</p>
@@ -70,8 +77,8 @@ export function LetterWorkspace({ jobId, updatedAt }: { jobId: string; updatedAt
         {run.source_changed ? <p className="text-sm">The posting or approved sources changed. This historical draft is preserved.</p> : null}
         {run.state === "failed" || run.state === "interrupted" ? <div className="grid gap-2"><Button variant="secondary" className="w-fit" disabled={!canGenerate} onClick={() => start(run.id)}>Retry letter generation</Button><p className="text-xs">Retry requires the same options and sources, creates a linked run, and repeats writing and checking. A previous uncertain request may have incurred usage.</p></div> : null}
         <details><summary className="cursor-pointer">Letter generation checks</summary><ul className="grid gap-2 pt-2">{run.stages.map(s => <li key={s.id} className="rounded border p-3 text-sm">{s.stage === "letter_draft" ? "Write draft" : "Check sentence evidence"} · attempt {s.attempt} · {s.state}{s.error ? <p>{s.error}</p> : null}{s.validation?.issues.map((i, n) => <p key={n}>{i.field_path}: {i.message}</p>)}</li>)}</ul></details>
-        {run.revision ? <LetterReviewPanel key={run.revision.id} baselineId={run.revision.id} sourceKey={ready.input_hash} /> : null}
       </> : null}
-    </>}
-  </section></Panel>;
+    </Panel> : null}
+    {ready && run?.revision ? <LetterReviewPanel key={run.revision.id} baselineId={run.revision.id} sourceKey={ready.input_hash} /> : null}
+  </section>;
 }

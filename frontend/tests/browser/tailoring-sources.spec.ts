@@ -1,3 +1,4 @@
+import { captureWorkspace } from "./review-capture";
 import { test, expect } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
@@ -22,18 +23,32 @@ test("review, activate, reload and revoke fictional tailoring sources", async ({
   ]) {
     await panel.getByLabel(label, { exact: true }).setInputFiles({ name: filename, mimeType: "text/plain", buffer: Buffer.from(bundle[key]) });
   }
+  const tabs = page.getByRole("navigation", { name: "Application asset views" });
+  await tabs.getByRole("button", { name: "Resumes", exact: true }).click();
+  await tabs.getByRole("button", { name: "Tailoring sources", exact: true }).click();
+  await expect(panel.getByLabel("Experience bank (.md)", { exact: true })).toHaveValue(/bank\.md$/);
+  await expect(panel.getByLabel("Job preferences (.yaml)", { exact: true })).toHaveValue(/preferences\.yaml$/);
+  await expect(panel.getByLabel("Resume layout (.tex)", { exact: true })).toHaveValue(/layout\.tex$/);
+  await expect(panel.getByLabel("Layout style guide (.md)", { exact: true })).toHaveValue(/style\.md$/);
   await panel.getByRole("button", { name: "Import and validate" }).click();
   await expect(panel.getByText("Source status: pending", { exact: true })).toBeVisible();
   await expect(panel.getByText("EXCLUDED_CLAIM_SECRET", { exact: false })).toBeVisible();
   const activate = panel.getByRole("button", { name: "Activate reviewed sources" });
   await expect(activate).toBeDisabled();
   await panel.getByLabel("I reviewed this version's facts, exclusions, preferences, and layout sources.").check();
+  const selectedVersion = await panel.getByLabel("Source version", { exact: true }).inputValue();
+  await tabs.getByRole("button", { name: "Base profile", exact: true }).click();
+  await tabs.getByRole("button", { name: "Tailoring sources", exact: true }).click();
+  await expect(panel.getByLabel("Source version", { exact: true })).toHaveValue(selectedVersion);
+  await expect(panel.getByLabel("I reviewed this version's facts, exclusions, preferences, and layout sources.")).toBeChecked();
+  await expect(panel.getByText("Source status: pending", { exact: true })).toBeVisible();
   await activate.click();
   await expect(panel.getByText("Source status: active", { exact: true })).toBeVisible();
   await page.reload();
   await expect(panel.getByText("Source status: active", { exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBeTruthy();
   await panel.screenshot({ path: testInfo.outputPath("active-sources.png") });
+  await captureWorkspace(page, testInfo, "assets-sources-page.png");
   await panel.getByRole("button", { name: "Revoke this version" }).click();
   await expect(panel.getByText("Source status: revoked", { exact: true })).toBeVisible();
   await expect(panel.getByRole("button", { name: "Activate reviewed sources" })).toHaveCount(0);

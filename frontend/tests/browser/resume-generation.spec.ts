@@ -34,8 +34,12 @@ test("resume generation survives reload, shows evidence and preserves job state"
   await panel.getByLabel("I reviewed this complete saved job description.").check();
   await generate.click();
   await expect(panel.getByRole("button", { name: "Generating resume…", exact: true })).toBeDisabled();
+  const tabs = page.getByRole("navigation", { name: "Job views" });
+  await tabs.getByRole("button", { name: "Cover letter", exact: true }).click();
   await expect.poll(async () => (await (await request.get(`${backend}/api/jobs/${job.id}/tailoring`)).json()).runs.length).toBe(1);
   await page.reload();
+  await expect(tabs.getByRole("button", { name: "Cover letter", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await tabs.getByRole("button", { name: "Resume", exact: true }).click();
   await expect(panel.getByText("Resume run: completed", { exact: true })).toBeVisible();
   await expect(panel.getByLabel("Resume draft preview")).toContainText("Built an internal Python prototype.");
   await panel.getByText("Evidence for each bullet", { exact: true }).click();

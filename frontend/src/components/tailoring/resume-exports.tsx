@@ -45,7 +45,7 @@ export function ResumeExports({ view, disabled }: { view: ReviewWorkspace; disab
     } catch (error) { setDownloadError(error instanceof Error ? error.message : "Download failed. Please retry."); }
   };
   const error = query.error || render.error || open.error || approve.error || remove.error;
-  return <section aria-label="Resume rendering and downloads" className="grid min-w-0 gap-3 rounded border border-border p-4">
+  return <section aria-label="Resume rendering and downloads" className="grid min-w-0 gap-5 rounded-lg border border-border bg-card p-5 shadow-panel sm:p-6">
     <h4 className="font-medium">PDF preview and final exports</h4>
     <p className="text-sm">Render the saved revision, inspect its layout, then approve the exact files. Page-fit changes must be saved as a new revision.</p>
     {disabled ? <p className="text-sm">Save or discard unsaved edits before previewing or approving exports.</p> : null}

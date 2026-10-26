@@ -58,13 +58,14 @@ export function ResumeWorkspace({ jobId, updatedAt }: { jobId: string; updatedAt
     saveKey.setValue({ fingerprint, key });
     generate.mutate({ payload: { ...values, request_key: key }, parent });
   };
-  return <Panel><section id="tailoring-preparation" aria-label="Resume tailoring" className="grid gap-4 scroll-mt-4">
-    <h2 className="font-semibold">Tailoring preparation</h2>
+  return <section aria-label="Resume tailoring" className="grid min-w-0 gap-8">
+    <div id="tailoring-preparation" className="scroll-mt-28"><Panel className="grid gap-5">
+    <h2 className="text-lg font-semibold">Tailoring preparation</h2>
     <DraftRecovery name="resume generation request" draft={saveKey} />
     <DraftRecovery name="job description" draft={description} />
     <p className="text-sm text-muted-foreground">Write a tailored draft, then receive advisory factual feedback. Detailed job analysis remains a separate optional action.</p>
     {workspace.isPending ? <p role="status">Loading tailoring readiness…</p> : workspace.error ? <p role="alert">{workspace.error.message} <Button onClick={() => workspace.refetch()}>Refresh readiness</Button></p> : ready ? <>
-      <PreferenceFlags evaluation={ready.evaluation} />
+      <details><summary className="cursor-pointer text-sm font-medium">Preference checks</summary><div className="mt-3"><PreferenceFlags evaluation={ready.evaluation} /></div></details>
       {ready.saved_evaluation ? <details><summary className="cursor-pointer text-sm">Checks recorded when saved</summary><div className="mt-2"><PreferenceFlags evaluation={ready.saved_evaluation} /></div></details> : null}
       {ready.missing.length ? <ul className="list-inside list-disc text-sm text-warning-foreground">{ready.missing.map(reason => <li key={reason}>{reason}</li>)}</ul> : null}
       <Link className="w-fit text-sm underline" href="/profile?tab=sources">Review sources in Application Assets</Link>
@@ -81,7 +82,11 @@ export function ResumeWorkspace({ jobId, updatedAt }: { jobId: string; updatedAt
       <p className="text-xs text-muted-foreground">Generate acknowledges the displayed preference checks. Red flags do not prevent generation. A draft does not mark this job Applied or select a resume asset.</p>
       {generate.error ? <p role="alert" className="text-sm text-destructive">{generate.error.message} Refresh progress before retrying; the server may still be working.</p> : null}
       {saveKey.storageError ? <p className="text-sm text-warning-foreground">Browser draft storage is unavailable. Check saved run history after a connection failure.</p> : null}
-      {current && current.runs.length > 0 ? <Field label="Resume generation history"><Select value={runId ?? ""} onChange={e => setSelected(e.target.value)}>{current.runs.map((r, index) => <option key={r.id} value={r.id}>{index === 0 ? "Latest: " : ""}{r.state} — {new Date(r.created_at).toLocaleString()} — {r.id.slice(0, 8)}</option>)}</Select></Field> : null}
+    </> : null}
+    </Panel></div>
+    {ready && current ? <Panel className="grid gap-5">
+      <h2 id="resume-history" tabIndex={-1} className="scroll-mt-28 text-lg font-semibold">Generation history</h2>
+      {current.runs.length > 0 ? <Field label="Resume generation history"><Select value={runId ?? ""} onChange={e => setSelected(e.target.value)}>{current.runs.map((r, index) => <option key={r.id} value={r.id}>{index === 0 ? "Latest: " : ""}{r.state} — {new Date(r.created_at).toLocaleString()} — {r.id.slice(0, 8)}</option>)}</Select></Field> : <p className="text-sm text-muted-foreground">No saved resume generations for this job yet.</p>}
       {runQuery.error ? <p role="alert" className="text-sm text-destructive">{runQuery.error.message}</p> : null}
       {run ? <>
         <RunProgress run={run} />
@@ -91,7 +96,6 @@ export function ResumeWorkspace({ jobId, updatedAt }: { jobId: string; updatedAt
           <Button className="w-fit" variant="secondary" disabled={!canGenerate || run.input_hash !== ready.input_hash} onClick={() => start(run.id)}>Retry from saved checkpoints</Button>
           <p className="text-xs text-muted-foreground">Retry creates a linked attempt with the same inputs and reuses validated stages. An uncertain provider request may have already incurred usage. Changed inputs require a new generation.</p>
         </div> : null}
-        {run.revision ? <ResumeReview key={run.revision.id} baselineId={run.revision.id} sourceKey={ready.input_hash} /> : null}
         <details><summary className="cursor-pointer text-sm">Generation steps and checks</summary><div className="mt-3 grid gap-3">{run.stages.map(attempt => <details key={attempt.id} className="rounded border border-border p-3"><summary className="cursor-pointer text-sm">{attempt.stage} — attempt {attempt.attempt}: {attempt.state}{attempt.metadata.reused_from_attempt ? " (reused checkpoint)" : ""}</summary>
           {attempt.error ? <p className="my-2 text-sm text-destructive">{attempt.error}</p> : null}
           {attempt.validation?.blocking_issues.map(issue => <p className="my-2 text-sm" key={issue}>{issue}</p>)}
@@ -99,9 +103,10 @@ export function ResumeWorkspace({ jobId, updatedAt }: { jobId: string; updatedAt
           <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words text-xs">{JSON.stringify(attempt.output, null, 2)}</pre>
         </details>)}</div></details>
       </> : running ? <p role="status" className="text-sm">Waiting for the server to persist the new run…</p> : null}
-      <p className="text-sm text-muted-foreground">Review the saved content, then inspect its PDF preview before approving final downloads.</p>
-    </> : null}
-  </section></Panel>;
+    </Panel> : null}
+    {ready && run?.revision ? <ResumeReview key={run.revision.id} baselineId={run.revision.id} sourceKey={ready.input_hash} /> : null}
+    <p className="text-sm text-muted-foreground">Review the saved content, then inspect its PDF preview before approving final downloads.</p>
+  </section>;
 }
 
 function RunProgress({ run }: { run: GenerationRun }) {

@@ -118,3 +118,21 @@ The remaining dashboard, validation and recovery work was completed in the final
 Final checks: 56 backend tests, both frontend regression scripts, TypeScript checking, production build, whitespace check, desktop/laptop/mobile browser checks and browser console inspection. Browser checks used synthetic databases only; the user’s normal database was not modified. Existing `.gitignore` changes are excluded from commits.
 
 For pending-state verification, start the fixture with `UI_FIXTURE_DELAY=3`; only synthetic POST/PATCH requests are delayed after fixture setup. AI responses are deterministic. This verifies UI loading and recovery behavior, not external AI content quality.
+
+## Phase 1 Job detail and Application Assets — October 26, 2026
+
+Job detail retains Overview, Resume, Cover letter and History. The document views separate preparation, generation history, editing/review and exports into responsive sections, reusing the existing workflow components. History links reveal and focus the owning document history after its data loads. Application Assets hosts the extracted reusable editors and the single source manager, with explicit links between reusable information and approved tailoring inputs.
+
+The existing draft keys, generation requests, saved revisions, content approvals, preview receipts and export APIs are unchanged. No backend or data migrations are included. Dashboard content, Jobs intake and deferred tools remain outside this checkpoint.
+
+Validation completed:
+
+- 54 desktop/mobile browser checks passed across `asset-workspace`, `navigation`, `shared-foundation`, `resume-generation`, `resume-review`, `resume-exports`, `cover-letters` and `tailoring-sources`.
+- After final presentation adjustments, 10 affected workflow checks passed again and captured all eight Job/Assets views at desktop and mobile sizes.
+- Tests switch views with unsaved resume bullets, letter sentences, application-history notes, reusable asset drafts and selected upload files. Readiness links focus the visible editor even when another retained editor has the same field label.
+- Generation started in a document view remains recoverable after switching to another view and refreshing; navigation does not submit another generation request.
+- PDF preview receipts and layout acknowledgments survive a trip through History. Selected historical revisions/renders remain selected. Downloaded historical PDF bytes match the stored SHA-256; historical letter bytes match the exact revision/variant endpoint.
+- Source import remains pending through tab changes; activation still requires explicit review. Version selection, file selections, revocation and activation history remain available.
+- Typecheck, production build and whitespace checks passed. The build reports existing lint warnings.
+
+Run the browser suites from `frontend/` with `node node_modules/@playwright/test/cli.js test` followed by the relevant spec paths. The tests use the synthetic fixture and deterministic model responses. `review-capture.ts` records actual pages from the top and hides only the Next.js development indicator. Captures are written under `frontend/test-results/`; the local review gallery for this checkpoint is `frontend/logs/phase1-review/index.html` (generated, ignored by Git).

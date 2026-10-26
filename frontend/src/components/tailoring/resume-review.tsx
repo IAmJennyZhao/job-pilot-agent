@@ -8,6 +8,7 @@ import { useDraft } from "@/lib/use-draft";
 import type { ReviewWorkspace, ResumeEdit, ResumeChange, SaveResumeEdit, RestoreResumeRevision } from "@/lib/review-types";
 import { Button } from "@/components/ui/button";
 import { Field, Select, Textarea } from "@/components/ui/field";
+import { Panel } from "@/components/ui/panel";
 import { ResumeExports } from "./resume-exports";
 import { acceptsResumeDraft, acceptsResumeRestore } from "@/lib/resume-draft";
 
@@ -68,7 +69,8 @@ function ReviewContent({ view, onSelect, onSaved, onRefresh, refreshing, refresh
   view.skill_groups.forEach(g => g.values.forEach(name => { if (!skills.has(name.toLowerCase())) skills.set(name.toLowerCase(), { name, source_ids: [g.id] }); }));
   // Keep an already selected approved alias visible too.
   edit.skills.forEach(s => { if (!skills.has(s.name.toLowerCase())) skills.set(s.name.toLowerCase(), s); });
-  return <section aria-label="Resume review and editing" className="grid min-w-0 gap-4 border-t border-border pt-4">
+  return <section aria-label="Resume review and editing" className="grid min-w-0 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(18rem,0.7fr)]">
+    <Panel className="grid gap-5">
     <h3 className="font-semibold">Generated resume draft</h3>
     {revision.content.advisory_review && <section aria-label="Advisory factual review" className="grid gap-2 rounded border border-border p-3 text-sm">
       <h4 className="font-medium">Advisory factual review</h4>
@@ -133,7 +135,6 @@ function ReviewContent({ view, onSelect, onSaved, onRefresh, refreshing, refresh
       {draft.storageError ? <p role="alert" className="text-sm text-warning-foreground">Browser storage is unavailable. Keep this page open until your edits are saved.</p> : null}
       <div className="flex flex-wrap gap-2"><Button disabled={busy || !draft.ready || !draft.value.request_key || edit.bullets.some(b => !b.text.trim())} onClick={() => save.mutate(draft.value)}>{save.isPending ? "Saving revision…" : "Save and validate"}</Button><Button variant="ghost" disabled={busy} onClick={() => { draft.discard(); setEditing(false); setComparedRevision(null); save.reset(); }}>Discard unsaved edits</Button></div>
     </div> : null}
-    <ResumeExports key={revision.id} view={view} disabled={isEditing || busy || !draft.ready || refreshing} />
     {revision.validation.issues.length ? <div className="grid gap-2 text-sm"><h4 className="font-medium">Saved revision validation issues</h4><ul className="list-inside list-disc">{revision.validation.issues.map((issue, i) => <li key={i}>{issue.message}</li>)}</ul></div> : null}
     <pre aria-label="Resume draft preview" className="whitespace-pre-wrap break-words rounded border border-border bg-background p-4 font-sans text-sm leading-relaxed">{revision.plain_text}</pre>
     <details><summary className="cursor-pointer text-sm">Changes and factual checks</summary><div className="mt-3 grid gap-3">
@@ -160,6 +161,8 @@ function ReviewContent({ view, onSelect, onSaved, onRefresh, refreshing, refresh
         </li>;
       })}</ul>
     </section> : <div className="text-sm"><strong>Unmet job requirements</strong>{revision.content.draft.unmet_requirement_ids.length ? <ul className="mt-1 list-inside list-disc">{revision.content.draft.requirements.filter(r => revision.content.draft.unmet_requirement_ids.includes(r.id)).map(r => <li key={r.id}>{r.description} — Posting: “{r.quote}”</li>)}</ul> : <p>No additional gaps in this revision’s requirement mapping; check it against the full posting.</p>}</div> }
+    </Panel>
+    <ResumeExports key={revision.id} view={view} disabled={isEditing || busy || !draft.ready || refreshing} />
   </section>;
 }
 

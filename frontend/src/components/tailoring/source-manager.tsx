@@ -63,15 +63,16 @@ export function TailoringSourceManager({ profileId }: { profileId: string }) {
   const mayActivate = source && source.status !== "active" && source.status !== "revoked" &&
     ["approved", "approved_with_exclusions"].includes(source.approval.status) && source.eligible_count > 0;
 
-  return <div role="region" aria-label="Tailoring sources"><Panel className="mt-6 grid gap-4">
-    <div>
+  return <section aria-label="Tailoring sources" className="grid gap-8">
+    <div className="grid gap-2">
       <h2 className="text-lg font-semibold">Tailoring sources</h2>
-      <p className="text-sm text-muted-foreground">Choose which approved facts future resumes may use. Importing a version keeps it pending until you review and activate it.</p>
+      <p className="text-sm text-muted-foreground">Choose which approved facts future resumes and cover letters may use. Importing a version keeps it pending until you review and activate it.</p>
+      {versions.data ? <p className="text-sm font-medium">Active source: {versions.data.versions.find(version => version.id === versions.data.active_id)?.bank_version ?? "No active bundle"}</p> : null}
     </div>
     {notice ? <p role="status" className="text-sm">{notice}</p> : null}
     {error ? <div role="alert" className="text-sm text-destructive">{error}<Button variant="ghost" onClick={() => { setLocalError(""); importSource.reset(); activate.reset(); revoke.reset(); versions.refetch(); preview.refetch(); }}>Clear error / reload</Button></div> : null}
     {versions.isPending ? <p role="status">Loading source versions...</p> : null}
-    <details>
+    <Panel><details>
       <summary className="cursor-pointer font-medium">Import a source bundle</summary>
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         {fields.map(field => <Field key={field.key} label={field.label}>
@@ -87,7 +88,9 @@ export function TailoringSourceManager({ profileId }: { profileId: string }) {
       <Button disabled={busy || Boolean(localError) || fields.some(field => !files[field.key])} onClick={() => { setNotice(""); importSource.mutate(); }}>
         {importSource.isPending ? "Validating sources..." : "Import and validate"}
       </Button>
-    </details>
+    </details></Panel>
+    <Panel className="grid gap-5">
+    <h3 id="source-versions" tabIndex={-1} className="scroll-mt-28 font-semibold">Source versions and review</h3>
     {versions.data?.versions.length ? <Field label="Source version">
       <Select value={sourceId} disabled={busy} onChange={event => { setSelected(event.target.value); setReviewedHash(null); setNotice(""); activate.reset(); revoke.reset(); }}>
         {versions.data.versions.map(version => <option key={version.id} value={version.id}>{version.bank_version} — {version.status} — {version.bundle_hash.slice(0, 8)}</option>)}
@@ -140,7 +143,7 @@ export function TailoringSourceManager({ profileId }: { profileId: string }) {
       {source.status === "active" ? <Button className="justify-self-start" variant="secondary" disabled={busy || versions.isFetching || !versions.data} onClick={() => revoke.mutate()}>{revoke.isPending ? "Revoking..." : "Revoke this version"}</Button> : null}
       <p className="text-xs text-muted-foreground">For corrections, import a new source version and review it. Existing versions remain in history.</p>
     </> : null}
-  </Panel></div>;
+  </Panel></section>;
 }
 
 function PreferenceValues({ value }: { value: Record<string, unknown> }) {

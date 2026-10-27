@@ -393,6 +393,7 @@ export type InterviewSession = {
 };
 
 export type DashboardSummary = {
+  action_suggestions: DashboardActionSuggestion[];
   total_jobs: number;
   archived_jobs: number;
   ghosted_jobs: number;
@@ -416,6 +417,10 @@ export type DashboardJobInsight = {
   last_movement_at: string;
   issue_label: string;
   recommended_action: string;
+};
+
+export type DashboardActionSuggestion = DashboardJobInsight & {
+  reasons: { kind: "stale" | "analysis" | "pay" | "confidence"; label: string }[];
 };
 
 export type DashboardSankeyNode = {

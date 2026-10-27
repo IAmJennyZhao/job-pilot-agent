@@ -1,11 +1,7 @@
-# Demo Asset Slots
+# JobPilot visual assets
 
-Place short portfolio demos in this directory when recordings are ready.
+The [screenshot guide](screenshots/README.md) contains the current website images, captions and alt text. **Jobs tracker** and **Dashboard** are the recommended primary images.
 
-Expected filenames:
+The PNG originals and optimized WebP copies show the actual application with fictional records from an isolated demo database. The downloadable gallery can be opened locally from `screenshots/index.html`.
 
-- `dashboard-flow.gif` - dashboard metrics, pipeline view, health signals, and priority focus.
-- `job-intelligence-flow.gif` - job intake, analysis, asset recommendations, and skill-gap output.
-- `interview-practice-flow.gif` - interview practice setup, generated questions, feedback, and insight trends.
-
-Keep recordings short, crop private data, and prefer anonymized seeded demo content.
+Superseded GIF/video recordings remain local and are ignored. New public assets should use fictional identities, reserved example domains and no private job-search records or credentials.

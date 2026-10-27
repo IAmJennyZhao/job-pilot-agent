@@ -12,8 +12,9 @@ export function Field({
 }) {
   const fieldId = React.useId();
   const errorId = `${fieldId}-error`;
-  const content = React.isValidElement(children)
-    ? React.cloneElement(children as React.ReactElement<React.InputHTMLAttributes<HTMLInputElement>>, { id: fieldId, "aria-invalid": Boolean(error), "aria-describedby": error ? errorId : undefined })
+  const input = React.isValidElement(children) ? children as React.ReactElement<React.InputHTMLAttributes<HTMLInputElement>> : null;
+  const content = input
+    ? React.cloneElement(input, { id: fieldId, "aria-invalid": Boolean(error) || input.props["aria-invalid"] || false, "aria-describedby": [input.props["aria-describedby"], error ? errorId : undefined].filter(Boolean).join(" ") || undefined })
     : children;
   return (
     <div className="grid min-w-0 gap-2 text-sm font-medium text-foreground">

@@ -3,17 +3,23 @@ import { test, expect } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 
-test("review, activate, reload and revoke fictional tailoring sources", async ({ page }, testInfo) => {
+test("review, activate, reload and revoke fictional tailoring sources", async ({ page, request }, testInfo) => {
   const command = process.platform === "win32" ? "py" : "python";
   const args = [...(process.platform === "win32" ? ["-3"] : []), "-c",
     "import sys,json;sys.path.insert(0,'tests');from tailoring_fixtures import import_payload;print(json.dumps(import_payload()))"];
   const bundle = JSON.parse(execFileSync(command, args, { cwd: path.resolve(process.cwd(), "../backend"), encoding: "utf8" }));
   bundle.bank_markdown = bundle.bank_markdown.replace("bank_version: synthetic.1", `bank_version: browser.${Date.now()}`);
+  const earlierResponse = await request.post("http://127.0.0.1:8100/api/profile/tailoring-sources/import", { data: { ...bundle, style_guide: `${bundle.style_guide}\nEarlier pending source for import-race coverage.` } });
+  expect(earlierResponse.ok()).toBeTruthy();
+  const earlier = await earlierResponse.json();
   let aiCalls = 0;
   page.on("request", request => { if (request.url().includes("/api/ai/")) aiCalls++; });
   await page.goto("/profile?tab=sources");
   const panel = page.getByRole("region", { name: "Tailoring sources" });
   await expect(panel.getByRole("heading", { name: "Tailoring sources" })).toBeVisible();
+  await panel.getByLabel("Source version", { exact: true }).selectOption(earlier.id);
+  await expect(panel.getByText("Source status: pending", { exact: true })).toBeVisible();
+  await panel.getByLabel("I reviewed this version's facts, exclusions, preferences, and layout sources.").check();
   await panel.getByText("Import a source bundle", { exact: true }).click();
   for (const [label, key, filename] of [
     ["Experience bank (.md)", "bank_markdown", "bank.md"],
@@ -30,13 +36,27 @@ test("review, activate, reload and revoke fictional tailoring sources", async ({
   await expect(panel.getByLabel("Job preferences (.yaml)", { exact: true })).toHaveValue(/preferences\.yaml$/);
   await expect(panel.getByLabel("Resume layout (.tex)", { exact: true })).toHaveValue(/layout\.tex$/);
   await expect(panel.getByLabel("Layout style guide (.md)", { exact: true })).toHaveValue(/style\.md$/);
+  let releaseImport!: () => void;
+  const held = new Promise<void>(resolve => { releaseImport = resolve; });
+  await page.route("**/api/profile/tailoring-sources/import", async route => {
+    const response = await route.fetch();
+    await held;
+    await route.fulfill({ response });
+  });
+  const importedResponse = page.waitForResponse(response => response.url().endsWith("/api/profile/tailoring-sources/import") && response.request().method() === "POST");
   await panel.getByRole("button", { name: "Import and validate" }).click();
+  await expect(panel.getByRole("button", { name: "Validating sources...", exact: true })).toBeVisible();
+  await expect(panel.getByLabel("I reviewed this version's facts, exclusions, preferences, and layout sources.")).toBeDisabled();
+  releaseImport();
+  const imported = await (await importedResponse).json();
+  await expect(panel.getByLabel("Source version", { exact: true })).toHaveValue(imported.id);
   await expect(panel.getByText("Source status: pending", { exact: true })).toBeVisible();
   await expect(panel.getByText("EXCLUDED_CLAIM_SECRET", { exact: false })).toBeVisible();
   const activate = panel.getByRole("button", { name: "Activate reviewed sources" });
   await expect(activate).toBeDisabled();
   await panel.getByLabel("I reviewed this version's facts, exclusions, preferences, and layout sources.").check();
   const selectedVersion = await panel.getByLabel("Source version", { exact: true }).inputValue();
+  expect(selectedVersion).toBe(imported.id);
   await tabs.getByRole("button", { name: "Base profile", exact: true }).click();
   await tabs.getByRole("button", { name: "Tailoring sources", exact: true }).click();
   await expect(panel.getByLabel("Source version", { exact: true })).toHaveValue(selectedVersion);

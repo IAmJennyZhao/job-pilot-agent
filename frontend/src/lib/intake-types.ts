@@ -10,7 +10,7 @@ export type IntakeEvaluation = {
   flags: { key: string; level: "red" | "amber" | "green"; message: string; secondary: boolean; evidence: IntakeFact | null }[];
   duplicate_candidates: JobDuplicateCandidate[];
 };
-export type IntakeSave = IntakeReview & { request_key: string; decision: "save_later" | "continue"; expected_evaluation_hash: string; allow_duplicate: boolean };
+export type IntakeSave = IntakeReview & { request_key: string; decision: "save_later" | "continue" | "apply" | "archive"; expected_evaluation_hash: string; allow_duplicate: boolean };
 export type IntakePreparation = {
   saved_evaluation: IntakeEvaluation | null; current_evaluation: IntakeEvaluation | null; review_stale: boolean;
   sources_ready: boolean; full_description_ready: boolean; generation_available: boolean; decision: string | null;

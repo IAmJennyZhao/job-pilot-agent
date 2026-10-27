@@ -100,6 +100,32 @@ def _build_sankey(jobs: list[models.Job]) -> schemas.DashboardSankey:
     return schemas.DashboardSankey(nodes=nodes, links=links)
 
 
+def _build_action_suggestions(open_jobs: list[models.Job]) -> list[schemas.DashboardActionSuggestion]:
+    """Complete reasons for consolidation; the legacy insight previews stay capped."""
+    suggestions = []
+    for job in open_jobs:
+        reasons = []
+        if job_service.is_stale(job):
+            reasons.append(schemas.DashboardActionReason(kind="stale", label=f"No movement for {job_service.days_since(job_service.latest_movement_at(job))}d"))
+        if job_service.needs_analysis(job):
+            missing = []
+            if job.fit_score is None:
+                missing.append("fit score")
+            if job.analysis is None:
+                missing.append("job analysis")
+            reasons.append(schemas.DashboardActionReason(kind="analysis", label=f"Missing {' and '.join(missing)}"))
+        if not job_service.has_pay(job):
+            reasons.append(schemas.DashboardActionReason(kind="pay", label="Missing pay"))
+        if job.extraction_confidence is None or job.extraction_confidence < job_service.LOW_CONFIDENCE_THRESHOLD:
+            label = "No extraction confidence" if job.extraction_confidence is None else f"Extraction confidence {job.extraction_confidence} (below {job_service.LOW_CONFIDENCE_THRESHOLD})"
+            reasons.append(schemas.DashboardActionReason(kind="confidence", label=label))
+        if reasons:
+            suggestions.append(schemas.DashboardActionSuggestion(
+                **_job_insight(job, reasons[0].label, "Review this opportunity.").model_dump(), reasons=reasons,
+            ))
+    return suggestions
+
+
 def _build_search_health(open_jobs: list[models.Job]) -> schemas.DashboardSearchHealth:
     stale_jobs: list[tuple[int, schemas.DashboardJobInsight]] = []
     needs_analysis: list[schemas.DashboardJobInsight] = []
@@ -325,6 +351,7 @@ def get_dashboard_summary(saved_since: date | None = None, db: Session = Depends
         next_action = "Add a job description to start tracking your search."
 
     return schemas.DashboardSummary(
+        action_suggestions=_build_action_suggestions(open_jobs),
         total_jobs=len(active_jobs),
         archived_jobs=archived_jobs,
         ghosted_jobs=ghosted_jobs,

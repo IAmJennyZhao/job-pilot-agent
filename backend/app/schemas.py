@@ -939,6 +939,15 @@ class DashboardHealth(BaseModel):
     archived_jobs: int
 
 
+class DashboardActionReason(BaseModel):
+    kind: Literal["stale", "analysis", "pay", "confidence"]
+    label: str
+
+
+class DashboardActionSuggestion(DashboardJobInsight):
+    reasons: list[DashboardActionReason] = Field(default_factory=list)
+
+
 class DashboardSearchHealth(BaseModel):
     stale_jobs: list[DashboardJobInsight] = Field(default_factory=list)
     missing_data: list[DashboardJobInsight] = Field(default_factory=list)
@@ -967,6 +976,7 @@ class DashboardSkillGap(BaseModel):
 
 
 class DashboardSummary(BaseModel):
+    action_suggestions: list[DashboardActionSuggestion] = Field(default_factory=list)
     total_jobs: int
     archived_jobs: int
     ghosted_jobs: int

@@ -112,14 +112,15 @@ def test_active_preferences_red_override_and_changed_preferences(client):
     assert not preparation["current_evaluation"]["available"]
 
 
-def test_intake_backup_roundtrip_and_legacy_v2(client, monkeypatch, tmp_path):
+@pytest.mark.parametrize("decision", ["save_later", "continue", "apply", "archive"])
+def test_intake_backup_roundtrip_and_legacy_v2(client, monkeypatch, tmp_path, decision):
     import json
     from app.config import get_settings
     monkeypatch.setattr(get_settings(), "asset_storage_dir", str(tmp_path))
     activate_preferences(client)
     payload = review().model_dump(mode="json")
     evaluation = client.post("/api/jobs/intake/evaluate", json=payload).json()
-    response = client.post("/api/jobs/intake/save", json={**payload, "request_key": str(uuid.uuid4()), "decision": "save_later", "expected_evaluation_hash": evaluation["evaluation_hash"]})
+    response = client.post("/api/jobs/intake/save", json={**payload, "request_key": str(uuid.uuid4()), "decision": decision, "expected_evaluation_hash": evaluation["evaluation_hash"]})
     assert response.status_code == 200
     archive = client.get("/api/data/backup").json()
     for legacy in (False, True):
@@ -139,6 +140,26 @@ def test_intake_backup_roundtrip_and_legacy_v2(client, monkeypatch, tmp_path):
     archive["tables"]["job_intake_reviews"][0]["evaluation"]["flags"][0]["level"] = "green"
     bad = client.post("/api/data/restore-preview", files={"file": ("bad.json", json.dumps(archive).encode())})
     assert bad.status_code == 400
+
+
+@pytest.mark.parametrize("decision,status", [("save_later", "Saved"), ("continue", "Saved"), ("apply", "Applied"), ("archive", "Archived")])
+def test_explicit_intake_decisions_are_atomic_idempotent_and_duplicate_protected(client, decision, status):
+    payload = review(source_content="Complete description").model_dump(mode="json")
+    evaluation = client.post("/api/jobs/intake/evaluate", json=payload).json()
+    request = {**payload, "request_key": str(uuid.uuid4()), "decision": decision, "expected_evaluation_hash": evaluation["evaluation_hash"]}
+    first = client.post("/api/jobs/intake/save", json=request)
+    assert first.status_code == 200, first.text
+    job = first.json()
+    assert job["status"] == status
+    assert [event["to_status"] for event in job["status_events"]] == [status]
+    assert client.post("/api/jobs/intake/save", json=request).json()["id"] == job["id"]
+    assert len(client.get("/api/jobs?include_archived=true").json()) == 1
+    assert client.post("/api/jobs/intake/save", json={**request, "decision": "archive" if decision != "archive" else "apply"}).status_code == 409
+    duplicate = client.post("/api/jobs/intake/evaluate", json=payload).json()
+    another = {**request, "request_key": str(uuid.uuid4()), "expected_evaluation_hash": duplicate["evaluation_hash"]}
+    assert client.post("/api/jobs/intake/save", json=another).status_code == 409
+    allowed = client.post("/api/jobs/intake/save", json={**another, "allow_duplicate": True})
+    assert allowed.status_code == 200 and allowed.json()["status"] == status
 
 
 def test_failed_intake_save_rolls_back_job_and_events(client, monkeypatch):

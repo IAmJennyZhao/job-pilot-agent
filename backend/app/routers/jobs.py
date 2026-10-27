@@ -49,6 +49,7 @@ def get_jobs(
     funnel_stage: str | None = None,
     funnel_from: str | None = None,
     saved_since: date | None = None,
+    funnel_stopped: bool = False,
     db: Session = Depends(get_db),
 ):
     try:
@@ -62,6 +63,7 @@ def get_jobs(
             funnel_stage=funnel_stage,
             funnel_from=funnel_from,
             saved_since=saved_since,
+            funnel_stopped=funnel_stopped,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc

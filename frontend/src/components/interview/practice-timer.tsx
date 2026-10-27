@@ -26,7 +26,7 @@ export function PracticeTimer({ timer, disabled }: { timer: ReturnType<typeof us
       <Button variant="secondary" disabled={disabled || !timer.ready} onClick={timer.running ? timer.stop : timer.start}>{timer.running ? "Pause timer" : "Start timer"}</Button>
       <Button variant="ghost" disabled={disabled} onClick={timer.reset}>Reset timer</Button>
     </div>
-    <p className="mt-2 text-xs text-muted-foreground">The timer keeps running across refreshes until paused. Reaching the target never submits your answer.</p>
+    <p className="mt-2 text-xs text-muted-foreground">The timer keeps running across History navigation and refreshes until paused. Reaching the target never submits your answer.</p>
     {timer.seconds >= timer.limit ? <p role="status" className="mt-2 text-sm text-warning-foreground">Time target reached. Finish your thought, then evaluate when ready.</p> : null}
   </div>;
 }

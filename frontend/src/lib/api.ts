@@ -145,6 +145,7 @@ export const api = {
     healthFilter?: string;
     funnelStage?: string;
     funnelFrom?: string;
+    funnelStopped?: boolean;
     savedSince?: string;
   }) => {
     const query = new URLSearchParams();
@@ -156,6 +157,7 @@ export const api = {
     if (params?.funnelStage) query.set("funnel_stage", params.funnelStage);
     if (params?.savedSince) query.set("saved_since", params.savedSince);
     if (params?.funnelFrom) query.set("funnel_from", params.funnelFrom);
+    if (params?.funnelStopped) query.set("funnel_stopped", "true");
     const suffix = query.toString() ? `?${query}` : "";
     return request<JobListItem[]>(`/api/jobs${suffix}`);
   },

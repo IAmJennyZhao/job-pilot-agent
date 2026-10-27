@@ -6,7 +6,7 @@ import { AttemptHistory } from "@/components/interview/attempt-history";
 import { RetainedView } from "@/components/layout/retained-view";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BarChart3, Brain, ChevronDown, ClipboardList, ExternalLink, MessageSquareText, Play, RotateCcw, Sparkles, Target, X } from "lucide-react";
+import { BarChart3, Brain, ClipboardList, ExternalLink, MessageSquareText, Play, RotateCcw, Sparkles, Target, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
@@ -18,7 +18,7 @@ import { LocalTab, LocalTabs } from "@/components/ui/local-tabs";
 import { MoreMenu } from "@/components/ui/more-menu";
 import { useDraft } from "@/lib/use-draft";
 import { api } from "@/lib/api";
-import { sessionTarget } from "@/lib/interview";
+import { hasUnansweredPrompts, sessionTarget } from "@/lib/interview";
 import {
   jobCategories,
   type InterviewFeedback,
@@ -65,7 +65,7 @@ export default function InterviewPage() {
 function InterviewPageFallback() {
   return (
     <div className="grid gap-6">
-      <PageHeader title="Interview" description="Focused answer reps for saved jobs and role targets." />
+      <PageHeader title="Interview" />
       <Panel>Loading interview workspace...</Panel>
     </div>
   );
@@ -86,9 +86,9 @@ function InterviewPageContent() {
 
   const jobsQuery = useQuery({ queryKey: ["jobs", "interview-all"], queryFn: () => api.jobs({ includeArchived: true }) });
   const jobs = jobsQuery.data ?? [];
-  const sessionsQuery = useQuery({ queryKey: ["interview-sessions"], queryFn: api.interviewSessions });
+  const sessionsQuery = useQuery({ queryKey: ["interview-sessions"], queryFn: api.interviewSessions, enabled: activeView === "history" });
   const sessions = sessionsQuery.data ?? [];
-  const insightsQuery = useQuery({ queryKey: ["interview-insights"], queryFn: api.interviewInsights });
+  const insightsQuery = useQuery({ queryKey: ["interview-insights"], queryFn: api.interviewInsights, enabled: activeView === "history" });
   const insights = insightsQuery.data;
   const resumeQuery = useQuery({
     queryKey: ["interview-resume", resumeSessionId],
@@ -115,17 +115,24 @@ function InterviewPageContent() {
   const answer = practiceDraft.value.answers[answerKey] ?? "";
   const setAnswer = (value: string) => practiceDraft.setValue(current => ({ ...current, answers: { ...current.answers, [answerKey]: value } }));
   const [feedback, setFeedback] = React.useState<InterviewPracticeFeedback | null>(null);
-  const [showInsightsHistory, setShowInsightsHistory] = React.useState(false);
   React.useEffect(() => {
     const revealShortcut = () => {
       const anchor = window.location.hash;
-      if (anchor === "#command-center" || anchor === "#interview-insights") setShowInsightsHistory(true);
-      requestAnimationFrame(() => document.getElementById(anchor.slice(1))?.scrollIntoView({ block: "start" }));
+      if (["#command-center", "#interview-insights", "#current-attempts"].includes(anchor) && activeView !== "history") {
+        window.history.replaceState(null, "", localViewHref("/interview", searchParams, "history", anchor));
+        return;
+      }
+      requestAnimationFrame(() => {
+        const target = document.getElementById(anchor.slice(1));
+        const disclosure = target?.closest("details");
+        if (disclosure) disclosure.open = true;
+        target?.scrollIntoView({ block: "start" });
+      });
     };
     revealShortcut();
     window.addEventListener("hashchange", revealShortcut);
     return () => window.removeEventListener("hashchange", revealShortcut);
-  }, [activeView, showInsightsHistory]);
+  }, [activeView, searchParams, sessionsQuery.isLoading, insightsQuery.isLoading]);
 
   const jobsById = React.useMemo(() => new Map(jobs.map((job) => [job.id, job])), [jobs]);
   const activeQuestion = queue.find((question) => question.id === activeQuestionId) ?? queue[0] ?? null;
@@ -155,7 +162,7 @@ function InterviewPageContent() {
   }, [requestedJobId, requestedTargetCategory, requestedTargetRole, requestedStage, requestedQuestionType]);
 
   React.useEffect(() => {
-    if (!resumeData || !practiceDraft.ready) return;
+    if (!resumeData?.questions.length || !practiceDraft.ready) return;
     setPracticeSet(resumeData);
     setQueue(resumeData.questions);
     setActiveQuestionId(resumeData.questions[0]?.id ?? "");
@@ -225,21 +232,24 @@ function InterviewPageContent() {
 
   return (
     <div className="grid gap-6">
-      <PageHeader title="Interview" description="Focused answer reps for saved jobs and role targets." />
+      <PageHeader title="Interview" />
       <LocalTabs label="Interview views">
         <LocalTab active={activeView === "practice"} onClick={() => pushLocalView("/interview", searchParams, "practice")}>Practice</LocalTab>
         <LocalTab active={activeView === "history"} onClick={() => pushLocalView("/interview", searchParams, "history")}>History</LocalTab>
         <MoreMenu items={[
-          { label: "Command Center", href: localViewHref("/interview", searchParams, "practice", "#command-center") },
-          { label: "Interview insights", href: localViewHref("/interview", searchParams, "practice", "#interview-insights") },
+          { label: "Command Center", href: localViewHref("/interview", searchParams, "history", "#command-center") },
+          { label: "Interview insights", href: localViewHref("/interview", searchParams, "history", "#interview-insights") },
           ...(isActive ? [{ label: "Practice timer", href: localViewHref("/interview", searchParams, "practice", "#practice-timer") }] : [])
         ]} />
       </LocalTabs>
       <RetainedView active={activeView === "practice"}>
       <div className="grid gap-6">
-      {[jobsQuery, sessionsQuery, insightsQuery, ...(resumeSessionId ? [resumeQuery] : [])].map((query, index) => query.error ? <Panel key={index}><p role="alert">Could not load {["job choices", "session history", "interview insights", "the requested session"][index]}: {(query.error as Error).message}</p><Button variant="secondary" onClick={() => query.refetch()}>Retry</Button></Panel> : query.isLoading ? <Panel key={index}>Loading {["job choices", "session history", "interview insights", "the requested session"][index]}...</Panel> : null)}
+      {jobsQuery.error && targetMode === "job" ? <Panel><p role="alert">Could not load job choices: {jobsQuery.error.message}</p><Button variant="secondary" onClick={() => jobsQuery.refetch()}>Retry job choices</Button></Panel> : null}
+      {resumeSessionId && resumeQuery.isLoading ? <Panel>Loading the requested session...</Panel> : null}
+      {resumeSessionId && resumeQuery.error ? <Panel><p role="alert">Could not load the requested session: {resumeQuery.error.message}</p><Button variant="secondary" onClick={() => resumeQuery.refetch()}>Retry session</Button></Panel> : null}
+      {resumeSessionId && resumeData && !resumeData.questions.length ? <Panel><p role="status">No unanswered questions remain in this session. Your saved practice draft is still available.</p><div className="mt-3 flex flex-wrap gap-3"><Link className="underline" href={`/interview/sessions/${resumeSessionId}`}>Review this session</Link><Link className="underline" href="/interview?tab=practice">Return to saved practice draft</Link></div></Panel> : null}
       {resumeSessionId && resumeQuery.error ? <Link href="/interview" className="text-sm font-medium underline">Return to saved practice draft</Link> : null}
-      {practiceDraft.dirty ? <p role="status" className="text-sm text-muted-foreground">{practiceDraft.storageError ? "Draft recovery is unavailable. Keep this page open until you submit your answer." : "Each question keeps its own draft. This practice set and your drafts recover after a refresh on this browser, including after closing the tab."}</p> : null}
+      {practiceDraft.dirty ? <p role="status" className="text-sm text-muted-foreground">{practiceDraft.storageError ? "Draft recovery is unavailable. Keep this page open until you submit your answer." : "Draft saved on this browser."}</p> : null}
       {isActive && practiceSet && activeQuestion ? (
         <Panel>
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -259,7 +269,7 @@ function InterviewPageContent() {
           </div>
           <div className="grid gap-4">
             <PracticeSetStats practiceSet={practiceSet} />
-            <QuestionQueue questions={queue} activeQuestionId={activeQuestion.id} onSelect={id => { if (!evaluateAnswer.isPending) { timer.stop(); setActiveQuestionId(id); setFeedback(null); } }} />
+            <details className="rounded-md border border-border p-3"><summary className="cursor-pointer text-sm font-medium">Questions: {queue.findIndex(question => question.id === activeQuestion.id) + 1} of {queue.length}</summary><div className="mt-3"><QuestionQueue questions={queue} activeQuestionId={activeQuestion.id} onSelect={id => { if (!evaluateAnswer.isPending) { timer.stop(); setActiveQuestionId(id); setFeedback(null); } }} /></div></details>
             <div className="rounded-md border border-border bg-muted/30 p-4">
               <div className="mb-3 flex flex-wrap items-center gap-2">
                 <Badge>{activeQuestion.question_type.replace("_", " ")}</Badge>
@@ -284,11 +294,11 @@ function InterviewPageContent() {
               </Button>
             </div>
             {feedback ? <FeedbackPanel feedback={feedback} /> : null}
-            <AttemptHistory key={activeQuestion.id} questionId={activeQuestion.id} disabled={evaluateAnswer.isPending} onRevise={async value => { if (!answer.trim() || answer === value || await confirm("Replace this answer draft with the selected attempt?")) { setAnswer(value); timer.reset(); setFeedback(null); } }} />
+            <Button className="justify-self-start" variant="secondary" onClick={() => window.history.pushState(null, "", localViewHref("/interview", searchParams, "history", "#current-attempts"))}>Review attempts in History</Button>
           </div>
         </Panel>
       ) : (
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,0.92fr)_minmax(360px,1.08fr)]">
+        <div className="grid gap-4">
           <Panel>
             <div className="mb-4 flex items-center gap-2">
               <Target className="h-4 w-4 text-primary" />
@@ -320,7 +330,7 @@ function InterviewPageContent() {
                   </Select>
                 </Field><p className="text-xs text-muted-foreground">The selected job stays visible while searching.</p></div>
               ) : (
-                <div className="grid gap-4">
+                <div className="grid gap-4 sm:grid-cols-2">
                   <Field label="Category">
                     <Select value={targetCategory} onChange={(event) => setTargetCategory(event.target.value as JobCategory)}>
                       {jobCategories.map((category) => (
@@ -336,7 +346,7 @@ function InterviewPageContent() {
                 </div>
               )}
 
-              <Field label="Stage">
+              <div className="grid gap-4 sm:grid-cols-3"><Field label="Stage">
                 <Select value={stage} onChange={(event) => setStage(event.target.value as InterviewStage)}>
                   {stages.map((item) => (
                     <option key={item.value} value={item.value}>
@@ -363,49 +373,34 @@ function InterviewPageContent() {
                   ))}
                 </Select>
               </Field>
+              </div>
               {createPracticeSet.error ? <p className="text-sm text-destructive">{(createPracticeSet.error as Error).message}</p> : null}
-              <Button onClick={() => createPracticeSet.mutate()} disabled={!practiceDraft.ready || !canStart || createPracticeSet.isPending || Boolean(resumeSessionId && resumeQuery.isLoading)}>
+              <Button className="justify-self-start" onClick={() => createPracticeSet.mutate()} disabled={!practiceDraft.ready || !canStart || createPracticeSet.isPending || Boolean(resumeSessionId && resumeQuery.isLoading)}>
                 <Play className="h-4 w-4" />
                 {createPracticeSet.isPending ? "Starting..." : "Start practice"}
               </Button>
             </fieldset>
           </Panel>
-          {!sessionsQuery.isLoading && !insightsQuery.isLoading && !sessionsQuery.error && !insightsQuery.error ? <CommandCenterPanel
-            insights={insights}
-            sessions={sessions}
-            jobsById={jobsById}
-          /> : null}
-        </div>
-      )}
-
-      {isActive ? (
-        <div>
-          <button
-            type="button"
-            aria-expanded={showInsightsHistory} aria-controls="practice-insights" onClick={() => setShowInsightsHistory((value) => !value)}
-            className="flex items-center gap-2 text-sm font-medium text-muted-foreground transition hover:text-foreground"
-          >
-            <ChevronDown className={cn("h-4 w-4 transition-transform", showInsightsHistory && "rotate-180")} />
-            {showInsightsHistory ? "Hide insights & history" : "Show insights & history"}
-          </button>
-          {showInsightsHistory ? (
-            <div id="practice-insights" className="mt-4 grid gap-4 xl:grid-cols-[1fr_420px]">
-              {!sessionsQuery.isLoading && !insightsQuery.isLoading && !sessionsQuery.error && !insightsQuery.error ? <CommandCenterPanel insights={insights} sessions={sessions} jobsById={jobsById} /> : null}
-              {!insightsQuery.isLoading && !insightsQuery.error ? <InsightsPanel insights={insights} /> : null}
-              {!sessionsQuery.isLoading && !sessionsQuery.error ? <SessionHistoryPanel sessions={sessions} jobsById={jobsById} /> : null}
-            </div>
-          ) : null}
-        </div>
-      ) : (
-        <div className="grid gap-4 xl:grid-cols-[1fr_420px]">
-          {!insightsQuery.isLoading && !insightsQuery.error ? <InsightsPanel insights={insights} /> : null}
-          {!sessionsQuery.isLoading && !sessionsQuery.error ? <SessionHistoryPanel sessions={sessions} jobsById={jobsById} /> : null}
         </div>
       )}
       </div>
       </RetainedView>
       <RetainedView active={activeView === "history"}>
-        {sessionsQuery.isLoading ? <Panel>Loading session history...</Panel> : sessionsQuery.error ? <Panel><p role="alert">Could not load session history: {sessionsQuery.error.message}</p><Button variant="secondary" onClick={() => sessionsQuery.refetch()}>Retry</Button></Panel> : <SessionHistoryPanel sessions={sessions} jobsById={jobsById} />}
+        <div className="grid gap-6">
+          {insightsQuery.isLoading ? <Panel>Loading interview insights...</Panel> : insightsQuery.error ? <Panel><p role="alert">Could not load interview insights: {insightsQuery.error.message}</p><Button variant="secondary" onClick={() => insightsQuery.refetch()}>Retry insights</Button></Panel> : <InsightsPanel insights={insights} />}
+          {isActive && practiceSet && activeQuestion ? <details className="rounded-lg border border-border bg-card p-5 sm:p-6">
+            <summary id="current-attempts" className="scroll-mt-28 cursor-pointer font-semibold">Current question: attempts & comparisons</summary>
+            <p className="my-3 text-sm text-muted-foreground">{activeQuestion.content}</p>
+            <AttemptHistory key={activeQuestion.id} questionId={activeQuestion.id} disabled={evaluateAnswer.isPending} onRevise={async value => {
+              if (!answer.trim() || answer === value || await confirm("Replace this answer draft with the selected attempt?")) {
+                setAnswer(value); timer.reset(); setFeedback(null); pushLocalView("/interview", searchParams, "practice");
+              }
+            }} />
+          </details> : null}
+          {sessionsQuery.isLoading ? <Panel>Loading session history...</Panel> : sessionsQuery.error ? <Panel><p role="alert">Could not load session history: {sessionsQuery.error.message}</p><Button variant="secondary" onClick={() => sessionsQuery.refetch()}>Retry sessions</Button></Panel> : <SessionHistoryPanel sessions={sessions} jobsById={jobsById} />}
+          {jobsQuery.error ? <p role="alert" className="text-sm">Job titles could not load: {jobsQuery.error.message}. Sessions are still available.</p> : null}
+          {!sessionsQuery.isLoading && !insightsQuery.isLoading && !sessionsQuery.error && !insightsQuery.error ? <details className="rounded-lg border border-border bg-card p-5 sm:p-6"><summary className="cursor-pointer font-semibold">Score trends & session cues</summary><div className="mt-4"><CommandCenterPanel insights={insights} sessions={sessions} jobsById={jobsById} /></div></details> : null}
+        </div>
       </RetainedView>
     </div>
   );
@@ -417,20 +412,6 @@ function scoreTone(score: number): "good" | "warn" | "bad" {
 
 function labelForWeakPoint(tag: string) {
   return weakPointLabels[tag] ?? tag.replace("_", " ");
-}
-
-function hasUnansweredPrompts(session: InterviewSession) {
-  const asked = new Set(
-    session.messages
-      .filter((message) => message.role === "ai" && message.score == null && message.question_id)
-      .map((message) => message.question_id as string)
-  );
-  const answered = new Set(
-    session.messages
-      .filter((message) => message.role === "user" && message.question_id)
-      .map((message) => message.question_id as string)
-  );
-  return [...asked].some((questionId) => !answered.has(questionId));
 }
 
 function CommandCenterPanel({
@@ -457,15 +438,17 @@ function CommandCenterPanel({
     <Panel>
       <div className="mb-4 flex items-center gap-2">
         <BarChart3 className="h-4 w-4 text-primary" />
-        <h2 id="command-center" className="scroll-mt-28 text-base font-semibold">Command Center</h2>
+        <h2 id="command-center" className="scroll-mt-28 text-base font-semibold">Score trends & session cues</h2>
       </div>
 
       <div className="grid gap-4">
         <div className="grid gap-3 md:grid-cols-3">
-          <TrendMetric title="Overall" points={insights?.trends?.overall ?? []} />
-          <TrendMetric title="Knowledge" points={insights?.trends?.knowledge ?? []} />
-          <TrendMetric title="Interview skills" points={insights?.trends?.interview_skills ?? []} />
+          <TrendMetric title="Overall score" points={insights?.trends?.overall ?? []} />
+          <TrendMetric title="Overall score: Knowledge tags" points={insights?.trends?.knowledge ?? []} />
+          <TrendMetric title="Overall score: Interview skills tags" points={insights?.trends?.interview_skills ?? []} />
         </div>
+        <p className="text-xs text-muted-foreground">Knowledge and Interview skills filter overall answer scores by feedback tags. They are not independent subscores, and the same answer can appear in both series. These trends use up to the latest 50 scored answers.</p>
+        <details className="text-xs text-muted-foreground"><summary className="cursor-pointer">Which feedback tags are included?</summary><p className="mt-2">Knowledge: technical depth, missing skill and company context. Interview skills: answer structure, specific evidence, role alignment, concision, communication clarity and resume positioning.</p></details>
 
         <div className="grid gap-3 md:grid-cols-2">
           <div className="rounded-md border border-border bg-card-strong/60 p-3">
@@ -492,7 +475,7 @@ function CommandCenterPanel({
               <div className="grid gap-3">
                 <p className="text-sm leading-6 text-muted-foreground">{sessionTarget(resumableSession, jobsById)}</p>
                 <Link href={`/interview?resumeSessionId=${resumableSession.id}`}>
-                  <Button size="sm" variant="secondary">Resume session</Button>
+                  <Button size="sm" variant="secondary">Continue unanswered questions</Button>
                 </Link>
               </div>
             ) : (
@@ -509,20 +492,20 @@ function TrendMetric({ title, points }: { title: string; points: InterviewTrendP
   const first = points[0]?.score ?? null;
   const delta = latest != null && first != null && points.length > 1 ? latest - first : null;
   return (
-    <div className="rounded-md border border-border bg-muted/25 p-3">
+    <section aria-label={title} className="rounded-md border border-border bg-muted/25 p-3">
       <div className="flex items-center justify-between gap-2">
         <span className="text-xs font-medium text-muted-foreground">{title}</span>
-        <span className="text-sm font-semibold">{latest ?? "--"}</span>
+        <span className="shrink-0 text-sm font-semibold">{latest == null ? "--" : `${latest}/100`}</span>
       </div>
-      <TrendSparkline points={points} />
+      <TrendSparkline points={points} title={title} />
       <div className="mt-1 text-[11px] text-muted-foreground">
-        {delta == null ? `${points.length} scored` : `${delta >= 0 ? "+" : ""}${delta} since first`}
+        {points.length} scored answers{delta == null ? "" : ` · ${delta >= 0 ? "+" : ""}${delta} points from first shown`}
       </div>
-    </div>
+    </section>
   );
 }
 
-function TrendSparkline({ points }: { points: InterviewTrendPoint[] }) {
+function TrendSparkline({ points, title }: { points: InterviewTrendPoint[]; title: string }) {
   const width = 160;
   const height = 44;
   const padding = 4;
@@ -543,7 +526,7 @@ function TrendSparkline({ points }: { points: InterviewTrendPoint[] }) {
   const last = coordinates.at(-1)!;
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="mt-2 h-11 w-full" role="img" aria-label="Score trend">
+    <svg viewBox={`0 0 ${width} ${height}`} className="mt-2 h-11 w-full" role="img" aria-label={`${title}: ${points.map(point => point.score).join(", ")} in chronological order`}>
       <path d={`M ${padding} ${height - padding} L ${width - padding} ${height - padding}`} stroke="hsl(var(--border))" strokeWidth="1" />
       {points.length > 1 ? <path d={path} fill="none" stroke="hsl(var(--chart-tech))" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" /> : null}
       <circle cx={last.x} cy={last.y} r="3.5" fill="hsl(var(--chart-tech))" />
@@ -556,8 +539,6 @@ function PracticeSetStats({ practiceSet }: { practiceSet: InterviewPracticeSet }
     <div className="flex flex-wrap gap-2 text-xs">
       <Badge>{practiceSet.reused_count} reused</Badge>
       <Badge>{practiceSet.generated_count} new</Badge>
-      <Badge>{practiceSet.stage.replace("_", " ")}</Badge>
-      <Badge>{practiceSet.question_type.replace("_", " ")}</Badge>
     </div>
   );
 }
@@ -647,9 +628,11 @@ function InsightsPanel({ insights }: { insights?: InterviewInsights }) {
         <Sparkles className="h-4 w-4 text-primary" />
         <h2 id="interview-insights" className="scroll-mt-28 text-base font-semibold">Interview Insights</h2>
       </div>
+      <p className="mb-4 text-sm text-muted-foreground">Review recurring weaknesses and recent attempts first. Patterns use the latest 50 scored answers; one answer can have multiple feedback tags. Scores are AI coaching estimates.</p>
       <div className="grid gap-4 md:grid-cols-2">
         <div>
-          <h3 className="text-sm font-medium">Weak points</h3>
+          <h3 className="text-sm font-medium">Weaknesses to revisit</h3>
+          <p className="mt-1 text-xs text-muted-foreground">Most frequent feedback tags first.</p>
           <div className="mt-2 grid gap-2">
             {insights?.weak_points.length ? (
               insights.weak_points.slice(0, 6).map((item) => (
@@ -677,7 +660,8 @@ function InsightsPanel({ insights }: { insights?: InterviewInsights }) {
           </div>
         </div>
         <div>
-          <h3 className="text-sm font-medium">Recent scores</h3>
+          <h3 className="text-sm font-medium">Recent attempts</h3>
+          <p className="mt-1 text-xs text-muted-foreground">Newest evaluated answers first. Select one for its answer and feedback.</p>
           <div className="mt-2 grid gap-2">
             {insights?.recent_scores.length ? (
               insights.recent_scores.slice(0, 5).map((item) => (
@@ -780,15 +764,17 @@ function SessionHistoryPanel({
   sessions: InterviewSession[];
   jobsById: Map<string, { company: string; role_title: string }>;
 }) {
+  const [showAll, setShowAll] = React.useState(false);
   return (
     <Panel>
       <div className="mb-4 flex items-center gap-2">
         <ClipboardList className="h-4 w-4 text-primary" />
         <h2 className="text-base font-semibold">Session History</h2>
       </div>
+      <p className="mb-4 text-sm text-muted-foreground">Up to 50 sessions, most recently updated first. Open a session for its recorded answers, feedback and question comparisons.</p>
       <div className="grid gap-3">
         {sessions.length ? (
-          sessions.map((session) => (
+          (showAll ? sessions : sessions.slice(0, 5)).map((session) => (
             <Link
               key={session.id}
               href={`/interview/sessions/${session.id}`}
@@ -807,6 +793,7 @@ function SessionHistoryPanel({
           <p className="text-sm text-muted-foreground">No interview sessions yet.</p>
         )}
       </div>
+      {sessions.length > 5 ? <Button className="mt-4" variant="secondary" onClick={() => setShowAll(value => !value)}>{showAll ? "Show recent five sessions" : `Show all ${sessions.length} sessions`}</Button> : null}
     </Panel>
   );
 }

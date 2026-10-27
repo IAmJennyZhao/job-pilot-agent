@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useDraft } from "@/lib/use-draft";
@@ -11,6 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Field, Select, Input, Textarea } from "@/components/ui/field";
 import { Panel } from "@/components/ui/panel";
 import { LetterReviewPanel } from "./letter-review";
+import { ActiveSourceSummary } from "./active-source-summary";
+import { DocumentWorkflowSteps, usePreparationDisclosure } from "./document-workflow";
 
 const active = (state?: string) => state === "pending" || state === "running";
 export function LetterWorkspace({ jobId, updatedAt }: { jobId: string; updatedAt: string }) {
@@ -45,28 +46,34 @@ export function LetterWorkspace({ jobId, updatedAt }: { jobId: string; updatedAt
     generation.mutate({ payload: { ...values, request_key: key }, parent });
   };
   const run = result.data;
+  const preparation = usePreparationDisclosure(Boolean(run?.revision), context.recoveryRaw !== null || nonce.recoveryRaw !== null || Boolean(workspace.error || generation.error), "letter-preparation");
   return <section aria-label="Cover letters" className="grid min-w-0 gap-8">
-    <Panel className="grid gap-5">
-    <h2 className="text-lg font-semibold">Cover letter preparation</h2>
+    <DocumentWorkflowSteps kind="letter" preparationId="letter-preparation" hasDraft={Boolean(run?.revision)} onPrepare={() => preparation.setOpen(true)} />
+    <div id="letter-preparation" tabIndex={-1} className="scroll-mt-28"><Panel>
+    <details open={preparation.open} onToggle={event => preparation.setOpen(event.currentTarget.open)}>
+    <summary className="cursor-pointer text-lg font-semibold"><h2 className="inline">Cover letter preparation</h2><span className="ml-3 text-xs font-normal text-muted-foreground">{run?.revision ? "Saved letters available · expand to prepare another generation" : "Choose inputs and generate independently"}</span></summary>
+    <div className="mt-5 grid gap-4">
     <p className="text-sm text-muted-foreground">Generate letters independently of your resume. Each sentence is checked against approved evidence before you review the saved draft.</p>
     {[{ name: "company context", draft: context }, { name: "generation request", draft: nonce }].map(item => item.draft.recoveryRaw !== null ? <div role="alert" key={item.name} className="grid gap-2"><p>The saved {item.name} has an incompatible format. Download a recovery copy before discarding it.</p><a className="text-sm underline" href={`data:application/json;charset=utf-8,${encodeURIComponent(item.draft.recoveryRaw)}`} download={`letter-${item.name.replaceAll(" ", "-")}-recovery.json`}>Download {item.name} recovery</a><Button variant="ghost" className="w-fit" onClick={() => item.draft.discard()}>Discard incompatible {item.name}</Button></div> : null)}
     {workspace.error ? <p role="alert">{workspace.error.message}</p> : !ready ? <p role="status">Loading letter readiness…</p> : <>
+      <p className="text-sm font-medium">Generation prerequisites: {ready.ready ? "inputs available" : "inputs missing"}. {reviewed ? "Saved posting reviewed." : "Review the saved posting before generating."}</p>
+      <ActiveSourceSummary expectedSourceId={ready.evaluation.source_id} onRefreshPreparation={() => workspace.refetch()} />
       <details><summary className="cursor-pointer">Preference checks and saved posting</summary><div className="grid gap-3 pt-3"><PreferenceFlags evaluation={ready.evaluation} /><pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words text-xs">{ready.source_content}</pre></div></details>
       {ready.missing.length ? <ul className="list-inside list-disc text-sm">{ready.missing.map(m => <li key={m}>{m.replaceAll("resume generation", "letter generation").replaceAll("generating a resume", "generating a letter")}</li>)}</ul> : null}
-      <Link className="w-fit text-sm underline" href="/profile?tab=sources">Review sources in Application Assets</Link>
       {!ready.description_reviewed ? <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={Boolean(reviewed)} onChange={e => setReviewedHash(e.target.checked ? ready.description_hash : undefined)} />I reviewed the full saved posting for this letter.</label> : null}
       <div className="grid gap-3 sm:grid-cols-3">
         <Field label="Letter variants"><Select value={options.count} disabled={Boolean(running)} onChange={e => setOptions({ ...options, count: Number(e.target.value) })}>{[1, 2, 3].map(n => <option key={n} value={n}>{n} {n === 1 ? "variant" : "variants"}</option>)}</Select></Field>
         <Field label="Letter length"><Select value={options.length} disabled={Boolean(running)} onChange={e => setOptions({ ...options, length: e.target.value as LetterOptions["length"] })}><option value="standard">Standard · 180–250 words</option><option value="short">Short · 100–150 words</option></Select></Field>
-        <Field label="Letter style template"><Select value={options.template_id ?? ""} disabled={Boolean(running)} onChange={e => setOptions({ ...options, template_id: e.target.value || null })}><option value="">No template</option>{workspace.data?.templates.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}</Select></Field>
+        <Field label="Letter style template (optional)"><Select value={options.template_id ?? ""} disabled={Boolean(running)} onChange={e => setOptions({ ...options, template_id: e.target.value || null })}><option value="">No template</option>{workspace.data?.templates.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}</Select></Field>
       </div>
       <details><summary className="cursor-pointer text-sm">Optional company-source excerpt</summary><div className="mt-3 grid gap-3"><p className="text-xs">Paste an exact excerpt you checked. This supplies company context only; it cannot support claims about your experience. No URL is fetched automatically.</p><Field label="Company context source URL"><Input value={context.value.source_url} disabled={Boolean(running)} onChange={e => context.setValue({ ...context.value, source_url: e.target.value, confirmed: false })} /></Field><Field label="Company source excerpt"><Textarea maxLength={4000} value={context.value.text} disabled={Boolean(running)} onChange={e => context.setValue({ ...context.value, text: e.target.value, confirmed: false })} /></Field><label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={context.value.confirmed} disabled={Boolean(running)} onChange={e => context.setValue({ ...context.value, confirmed: e.target.checked })} />I checked this excerpt against its source and approve using it as company context.</label><Button variant="ghost" className="w-fit" disabled={Boolean(running)} onClick={() => context.discard()}>Clear company context</Button></div></details>
-      <p className="text-xs text-muted-foreground">Templates guide paragraph rhythm only. Their personal history is not used as evidence. Generate acknowledges the displayed preference checks.</p>
-      <div className="flex flex-wrap gap-2"><Button disabled={!canGenerate} onClick={() => start()}>{generation.isPending ? "Generating letters…" : "Generate tailored cover letters"}</Button><Button variant="secondary" onClick={() => { workspace.refetch(); if (runId) result.refetch(); }}>Refresh letter progress</Button></div>
+      <p className="text-xs text-muted-foreground">A style template is optional. Templates guide paragraph rhythm only; their personal history is not evidence. Generate acknowledges the displayed preference checks.</p>
+      <div className="flex flex-wrap gap-2"><Button disabled={!canGenerate} onClick={() => start()}>{generation.isPending ? "Generating letters…" : "Generate tailored cover letters"}</Button><Button variant="ghost" onClick={() => { workspace.refetch(); if (runId) result.refetch(); }}>Refresh letter progress</Button></div>
       {generation.error ? <p role="alert">{generation.error.message} Refresh progress before retrying; a request may still be running.</p> : null}
       {nonce.storageError ? <p role="alert">Browser recovery storage is unavailable. Check run history after a connection failure.</p> : null}
     </>}
-    </Panel>
+    </div></details>
+    </Panel></div>
     {ready && workspace.data ? <Panel className="grid gap-5">
       <h2 id="letter-history" tabIndex={-1} className="scroll-mt-28 text-lg font-semibold">Generation history</h2>
       {workspace.data.runs.length ? <Field label="Letter generation history"><Select value={runId ?? ""} onChange={e => setSelected(e.target.value)}>{workspace.data.runs.map(r => <option value={r.id} key={r.id}>{r.state} · {new Date(r.created_at).toLocaleString()} · {r.id.slice(0, 8)}</option>)}</Select></Field> : <p className="text-sm text-muted-foreground">No saved letter generations for this job yet.</p>}

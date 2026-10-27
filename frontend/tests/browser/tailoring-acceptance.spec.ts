@@ -27,7 +27,7 @@ for (const family of ["ai", "backend", "fullstack"]) {
     await page.getByLabel("Role title", { exact: true }).fill(`${fixture.case.title} ${info.project.name} ${Date.now()}`);
     await expect(page.getByText(/Base pay is below your USD 135,000 target/)).toBeVisible();
     await page.getByLabel("I reviewed the full job description for later tailoring.").check();
-    await page.getByRole("button", { name: "Continue to tailoring", exact: true }).click();
+    await page.getByRole("button", { name: "Tailor resume", exact: true }).click();
     await expect(page).toHaveURL(/\/jobs\/.+tailoring=prepare/);
     const id = new URL(page.url()).pathname.split("/").pop();
     const original = await (await request.get(`${backend}/api/jobs/${id}`)).json();
@@ -66,7 +66,8 @@ for (const family of ["ai", "backend", "fullstack"]) {
     expect((await (await analysisResponse).json()).status).toBe("complete");
     await expect(page.getByRole("button", { name: "Run again", exact: true })).toBeVisible();
     expect(analysis).toBe(1);
-    const after = await (await request.get(`${backend}/api/jobs/${id}`)).json();
+    // Retry only a dropped transport connection on this read, never a model or approval mutation.
+    const after = await (await request.get(`${backend}/api/jobs/${id}`, { maxRetries: 2 })).json();
     expect(after.status).toBe("Saved");
     expect(after.source_content).toBe(original.source_content);
     expect(after.selected_resume_option_id).toBe(original.selected_resume_option_id);

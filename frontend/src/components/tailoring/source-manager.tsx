@@ -4,7 +4,9 @@ import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/field";
-import { Panel } from "@/components/ui/panel";
+import { Badge, Panel } from "@/components/ui/panel";
+import { sourceStatusExplanation } from "./active-source-summary";
+import { formatDate } from "@/lib/utils";
 import { api } from "@/lib/api";
 import type { TailoringSourceImport, TailoringSourcePreview } from "@/lib/types";
 
@@ -34,6 +36,11 @@ export function TailoringSourceManager({ profileId }: { profileId: string }) {
     cache.invalidateQueries({ queryKey: ["tailoring-sources", profileId] });
     cache.invalidateQueries({ queryKey: ["tailoring-source", profileId] });
   }
+  function refreshPreparation() {
+    for (const key of ["resume-workspace", "letter-workspace", "resume-run", "letter-run", "resume-review", "letter-review", "intake-evaluation"]) {
+      cache.invalidateQueries({ queryKey: [key] });
+    }
+  }
 
   const importSource = useMutation({
     mutationFn: async () => {
@@ -50,12 +57,12 @@ export function TailoringSourceManager({ profileId }: { profileId: string }) {
   });
   const activate = useMutation({
     mutationFn: () => api.activateTailoringSource(source!.id, source!.bundle_hash, versions.data!.active_id),
-    onSuccess: data => { refreshed(data); setNotice("Source version activated. Excluded claims remain unavailable."); },
+    onSuccess: data => { refreshed(data); refreshPreparation(); setNotice("Source version activated. Excluded claims remain unavailable."); },
     onError: () => { setReviewedHash(null); versions.refetch(); preview.refetch(); }
   });
   const revoke = useMutation({
     mutationFn: () => api.revokeTailoringSource(source!.id, source!.bundle_hash, versions.data!.active_id),
-    onSuccess: data => { refreshed(data); setNotice("Source version revoked. Its history is preserved."); },
+    onSuccess: data => { refreshed(data); refreshPreparation(); setNotice("Source version revoked. Its history is preserved."); },
     onError: () => { versions.refetch(); preview.refetch(); }
   });
   const busy = importSource.isPending || activate.isPending || revoke.isPending;
@@ -67,7 +74,6 @@ export function TailoringSourceManager({ profileId }: { profileId: string }) {
     <div className="grid gap-2">
       <h2 className="text-lg font-semibold">Tailoring sources</h2>
       <p className="text-sm text-muted-foreground">Choose which approved facts future resumes and cover letters may use. Importing a version keeps it pending until you review and activate it.</p>
-      {versions.data ? <p className="text-sm font-medium">Active source: {versions.data.versions.find(version => version.id === versions.data.active_id)?.bank_version ?? "No active bundle"}</p> : null}
     </div>
     {notice ? <p role="status" className="text-sm">{notice}</p> : null}
     {error ? <div role="alert" className="text-sm text-destructive">{error}<Button variant="ghost" onClick={() => { setLocalError(""); importSource.reset(); activate.reset(); revoke.reset(); versions.refetch(); preview.refetch(); }}>Clear error / reload</Button></div> : null}
@@ -84,7 +90,7 @@ export function TailoringSourceManager({ profileId }: { profileId: string }) {
           }} />
         </Field>)}
       </div>
-      <p className="my-3 text-sm text-muted-foreground">Use the Markdown experience bank, preferences, and layout sources. The layout is stored for later rendering; it is not compiled here. Files stay in this local app and its private backups.</p>
+      <p className="my-3 text-sm text-muted-foreground">Use the Markdown experience bank, preferences, and layout references. Imported TeX is not executed. Files stay in this local app and its private backups.</p>
       <Button disabled={busy || Boolean(localError) || fields.some(field => !files[field.key])} onClick={() => { setNotice(""); importSource.mutate(); }}>
         {importSource.isPending ? "Validating sources..." : "Import and validate"}
       </Button>
@@ -93,16 +99,17 @@ export function TailoringSourceManager({ profileId }: { profileId: string }) {
     <h3 id="source-versions" tabIndex={-1} className="scroll-mt-28 font-semibold">Source versions and review</h3>
     {versions.data?.versions.length ? <Field label="Source version">
       <Select value={sourceId} disabled={busy} onChange={event => { setSelected(event.target.value); setReviewedHash(null); setNotice(""); activate.reset(); revoke.reset(); }}>
-        {versions.data.versions.map(version => <option key={version.id} value={version.id}>{version.bank_version} — {version.status} — {version.bundle_hash.slice(0, 8)}</option>)}
+        {versions.data.versions.map(version => <option key={version.id} value={version.id}>{version.bank_version} — {version.status} — {version.bundle_hash.slice(0, 8)} — {formatDate(version.created_at)}</option>)}
       </Select>
     </Field> : versions.data ? <p className="text-sm">No sources imported yet.</p> : null}
     {preview.isFetching && sourceId ? <p role="status">Loading source review...</p> : null}
     {source ? <>
+      <div className="flex flex-wrap items-center gap-2"><h4 className="font-semibold">Selected version: {source.bank_version}</h4><Badge tone={source.status === "active" ? "good" : source.status === "revoked" ? "bad" : "neutral"}>Source status: {source.status}</Badge></div>
+      <p className="text-sm">{sourceStatusExplanation[source.status]}</p>
       <div className="flex flex-wrap gap-3 text-sm">
-        <strong>Source status: {source.status}</strong>
-        <span>{source.eligible_count} allowed claims</span><span>{source.excluded_count} excluded claims</span>
+        <span>{source.eligible_count} allowed {source.eligible_count === 1 ? "claim" : "claims"}</span><span>{source.excluded_count} excluded {source.excluded_count === 1 ? "claim" : "claims"}</span>
       </div>
-      <p className="text-sm">Recorded approval: {source.approval.status}{source.approval.approved_at ? ` (${source.approval.approved_at})` : ""}. Activation keeps every exclusion and does not approve a final resume.</p>
+      <p className="text-sm">Source file approval: {source.approval.status.replaceAll("_", " ")}. Excluded claims cannot be used. Generated content and final resume PDFs require separate review.</p>
       <details><summary className="cursor-pointer font-medium">Identity, education, and records</summary>
         <div className="mt-2 grid gap-2 text-sm">
           <p>{[source.identity.name, source.identity.location, source.identity.email, source.identity.phone, source.identity.website, source.identity.github, source.identity.linkedin].filter(Boolean).join(" · ")}</p>
@@ -110,8 +117,8 @@ export function TailoringSourceManager({ profileId }: { profileId: string }) {
           {source.records.map(item => <p key={item.id}>{item.employer || item.name} · {item.title_display || item.kind} · {item.dates_display || [item.start, item.end].filter(Boolean).join(" – ") || "Dates not supplied"}</p>)}
         </div>
       </details>
-      {[false, true].map(excluded => <details key={String(excluded)} open={excluded}>
-        <summary className="cursor-pointer font-medium">{excluded ? "Excluded claims" : "Allowed claims"}</summary>
+      {[false, true].map(excluded => <details key={String(excluded)} open={excluded && source.excluded_count > 0}>
+        <summary className="cursor-pointer font-medium">{excluded ? `Excluded claims (${source.excluded_count})` : `Allowed claims (${source.eligible_count})`}</summary>
         <ul className="mt-2 grid gap-3 text-sm">
           {source.claims.filter(claim => source.validation.excluded_claim_ids.includes(claim.id) === excluded).map(claim => <li key={claim.id} className="border-l-2 border-border pl-3">
             <p><strong>{claim.id}</strong> — {claim.text}</p>
@@ -124,8 +131,11 @@ export function TailoringSourceManager({ profileId }: { profileId: string }) {
         <p className="mt-2 text-sm">Unknown: {Object.keys(source.unknowns).map(key => key.replaceAll("_", " ")).join(", ") || "None recorded"}. Missing values are not filled in automatically.</p>
         <PreferenceValues value={source.preferences} />
       </details>
-      <details><summary className="cursor-pointer font-medium">Layout and validation notes</summary>
+      <details><summary className="cursor-pointer font-medium">Validation notes ({source.validation.warnings.length})</summary>
         <ul className="my-2 list-disc pl-5 text-sm">{source.validation.warnings.map(warning => <li key={warning}>{warning}</li>)}</ul>
+      </details>
+      <details><summary className="cursor-pointer font-medium">Technical source details</summary>
+        <p className="my-2 text-xs">Recorded approval: {source.approval.status}{source.approval.approved_at ? ` (${source.approval.approved_at})` : ""}. Validator: {source.validation.validator_version}</p>
         <p className="break-all text-xs text-muted-foreground">Template: {source.template_hash}<br />Bundle: {source.bundle_hash}</p>
         <details className="mt-2"><summary className="cursor-pointer text-sm">View layout sources</summary>
           <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words text-xs">{source.template_tex}</pre>
@@ -136,7 +146,7 @@ export function TailoringSourceManager({ profileId }: { profileId: string }) {
         {source.events.length ? <ul className="mt-2 text-sm">{source.events.map(event => <li key={event.sequence}>{event.action} · {event.created_at}</li>)}</ul> : <p className="mt-2 text-sm">Imported, not activated.</p>}
       </details>
       {mayActivate ? <div className="grid gap-3 border-t border-border pt-3">
-        <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={reviewedHash === source.bundle_hash} onChange={event => setReviewedHash(event.target.checked ? source.bundle_hash : null)} />
+        <label className="flex items-start gap-2 text-sm"><input type="checkbox" disabled={busy || preview.isFetching || versions.isFetching} checked={reviewedHash === source.bundle_hash} onChange={event => setReviewedHash(event.target.checked ? source.bundle_hash : null)} />
           I reviewed this version&apos;s facts, exclusions, preferences, and layout sources.</label>
         <Button className="justify-self-start" disabled={busy || reviewedHash !== source.bundle_hash || versions.isFetching || preview.isFetching || !versions.data} onClick={() => activate.mutate()}>{activate.isPending ? "Activating..." : "Activate reviewed sources"}</Button>
       </div> : null}

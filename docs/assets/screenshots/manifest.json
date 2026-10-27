@@ -1,0 +1,248 @@
+{
+  "captured": "2026-10-26",
+  "fictional": true,
+  "ai": "Deterministic authored demo output; no live AI evaluation.",
+  "deviceScaleFactor": 2,
+  "screenshots": [
+    {
+      "file": "01-jobs-tracker",
+      "title": "Jobs tracker",
+      "alt": "JobPilot Jobs tracker with fictional employers, application stages, salaries, and filters.",
+      "recommended": "Primary website image: the day-to-day job search workspace.",
+      "viewport": {
+        "width": 1920,
+        "height": 1100
+      },
+      "original": {
+        "file": "01-jobs-tracker.png",
+        "width": 3840,
+        "height": 2200,
+        "bytes": 548949,
+        "sha256": "6a6e4c2c7b25f1db26a43c1f1bac5ec41450fe3f417cf2584251eaaade0f71b7"
+      },
+      "web": {
+        "file": "01-jobs-tracker.webp",
+        "width": 1920,
+        "height": 1100,
+        "bytes": 170690,
+        "sha256": "ca68ad8cce39102404cd9875ba4c2d029244c66fb4d474a9b5528e5ebf263bd5"
+      }
+    },
+    {
+      "file": "02-dashboard",
+      "title": "Dashboard",
+      "alt": "JobPilot Dashboard showing a proportional application Sankey and summary metrics for fictional applications.",
+      "recommended": "Primary website image: application progress at a glance.",
+      "viewport": {
+        "width": 1600,
+        "height": 1100
+      },
+      "original": {
+        "file": "02-dashboard.png",
+        "width": 3200,
+        "height": 2200,
+        "bytes": 276464,
+        "sha256": "a217d0e332de99b0c093379d757984edd7871b8ab6bc70f7af380c16fb8c30b4"
+      },
+      "web": {
+        "file": "02-dashboard.webp",
+        "width": 1920,
+        "height": 1320,
+        "bytes": 85652,
+        "sha256": "fea1cb4b6e65aeb2c5917e8da4ae30d21fd0671d59b6c6cd73e311955c6d143b"
+      }
+    },
+    {
+      "file": "03-job-intake",
+      "title": "Job intake",
+      "alt": "JobPilot extracts a fictional posting into editable job fields with Save, Apply, Tailor resume, and Archive actions.",
+      "recommended": "Supporting image: turn a job posting into a reviewed opportunity.",
+      "viewport": {
+        "width": 1600,
+        "height": 1100
+      },
+      "original": {
+        "file": "03-job-intake.png",
+        "width": 3200,
+        "height": 2200,
+        "bytes": 198641,
+        "sha256": "5da2cd280c263d5dde836a1f0f5c81787eb5c60f7b80ec3e394ae5d00f6eb760"
+      },
+      "web": {
+        "file": "03-job-intake.webp",
+        "width": 1920,
+        "height": 1320,
+        "bytes": 81958,
+        "sha256": "5b30265cca94262aa7d6faf44628265d6b48f42e4fbae43e85e1ae96233f32f9"
+      }
+    },
+    {
+      "file": "04-outcomes",
+      "title": "Outcomes comparisons",
+      "alt": "Compact JobPilot table comparing saved applications, interviews, offers, and conversion rates across fictional role categories.",
+      "recommended": "Supporting image: compare outcomes without a long page of cards.",
+      "viewport": {
+        "width": 1600,
+        "height": 1100
+      },
+      "original": {
+        "file": "04-outcomes.png",
+        "width": 3200,
+        "height": 2200,
+        "bytes": 175008,
+        "sha256": "a4ed0bd73144d8122a90f0b92502e428518493860eff16b82e3ac8f1d3300fea"
+      },
+      "web": {
+        "file": "04-outcomes.webp",
+        "width": 1920,
+        "height": 1320,
+        "bytes": 60552,
+        "sha256": "c2c8e4ef6ab069ccdb82e9a6201dfa3384158f0ef10a4fe23ce8d9e0d899d870"
+      }
+    },
+    {
+      "file": "05-job-overview",
+      "title": "Job overview",
+      "alt": "A fictional Cedarline Studio role in JobPilot, with saved job facts, application context, and analysis controls.",
+      "recommended": "Supporting image: keep a job's information and workflows together.",
+      "viewport": {
+        "width": 1600,
+        "height": 1100
+      },
+      "original": {
+        "file": "05-job-overview.png",
+        "width": 3200,
+        "height": 2200,
+        "bytes": 317261,
+        "sha256": "0e661cfebe8cfa36db63daa0d47e0a70be3029ae4c0a8f661486ac5487225a5b"
+      },
+      "web": {
+        "file": "05-job-overview.webp",
+        "width": 1920,
+        "height": 1320,
+        "bytes": 125980,
+        "sha256": "54682b0a4d00901408dac3bbb8b93e65e804de745b7509c6eef8dd286473550a"
+      }
+    },
+    {
+      "file": "06-resume-tailoring",
+      "title": "Resume tailoring",
+      "alt": "JobPilot reviewing an evidence-backed resume draft for the fictional candidate Alex Rivera.",
+      "recommended": "Supporting image: generated content remains reviewable and editable.",
+      "viewport": {
+        "width": 1600,
+        "height": 1100
+      },
+      "original": {
+        "file": "06-resume-tailoring.png",
+        "width": 3200,
+        "height": 2200,
+        "bytes": 437769,
+        "sha256": "83b481a81df18136d70021763516fa3d271329fc31b3cbd7c551ab16ba5cb1de"
+      },
+      "web": {
+        "file": "06-resume-tailoring.webp",
+        "width": 1920,
+        "height": 1320,
+        "bytes": 158044,
+        "sha256": "50893d4704665acb38244ecd5f1421ece9572a49fc1808229ca2e719552a6980"
+      }
+    },
+    {
+      "file": "07-skills-learning",
+      "title": "Learning through projects",
+      "alt": "JobPilot shows fictional saved project ideas and progress for API reliability and retrieval evaluation.",
+      "recommended": "Supporting image: turn recurring skill gaps into saved project work.",
+      "viewport": {
+        "width": 1600,
+        "height": 1100
+      },
+      "original": {
+        "file": "07-skills-learning.png",
+        "width": 3200,
+        "height": 2200,
+        "bytes": 225403,
+        "sha256": "14e39922d217279ad7f2809355f084ce1b88246efff8275d97db5e2dbcedc147"
+      },
+      "web": {
+        "file": "07-skills-learning.webp",
+        "width": 1920,
+        "height": 1320,
+        "bytes": 86088,
+        "sha256": "307f32399dc9c520ccc71bb0f77a6125b6ebf69206fe9ffa0b5e0e09de90319c"
+      }
+    },
+    {
+      "file": "08-interview-practice",
+      "title": "Interview practice",
+      "alt": "JobPilot Interview Practice with a fictional answer, timing controls, and illustrative coaching feedback.",
+      "recommended": "Supporting image: practice an answer and review targeted feedback.",
+      "viewport": {
+        "width": 1600,
+        "height": 1100
+      },
+      "original": {
+        "file": "08-interview-practice.png",
+        "width": 3200,
+        "height": 2200,
+        "bytes": 235644,
+        "sha256": "fd8d48983524588f429eab8e64840f15020931ed4db5dc68904cc0db8b260dd9"
+      },
+      "web": {
+        "file": "08-interview-practice.webp",
+        "width": 1920,
+        "height": 1320,
+        "bytes": 111284,
+        "sha256": "4c23f41c2dabf1e9e7e53e9f4eee14fbf76f47126cf5b57b1395b964f29857c6"
+      }
+    },
+    {
+      "file": "09-jobs-mobile",
+      "title": "Jobs on mobile",
+      "alt": "JobPilot's mobile job tracker with fictional application cards and status filters.",
+      "recommended": "Mobile companion to the Jobs hero; an actual viewport capture.",
+      "viewport": {
+        "width": 430,
+        "height": 932
+      },
+      "original": {
+        "file": "09-jobs-mobile.png",
+        "width": 860,
+        "height": 1864,
+        "bytes": 90948,
+        "sha256": "759133f37bb6d1ec066714ea53306dddfd59d1c3831edc7d4e636cc85df2765f"
+      },
+      "web": {
+        "file": "09-jobs-mobile.webp",
+        "width": 860,
+        "height": 1864,
+        "bytes": 64256,
+        "sha256": "24071358add3ec4d23d5f6055d076773ddc396f16857813ae7d68268620f88aa"
+      }
+    },
+    {
+      "file": "10-dashboard-mobile",
+      "title": "Dashboard on mobile",
+      "alt": "JobPilot mobile Dashboard with summary metrics and a horizontally scrollable application Sankey using demo records.",
+      "recommended": "Mobile companion to the Dashboard hero; full page for flexible cropping.",
+      "viewport": {
+        "width": 430,
+        "height": 932
+      },
+      "original": {
+        "file": "10-dashboard-mobile.png",
+        "width": 860,
+        "height": 5106,
+        "bytes": 339976,
+        "sha256": "6087598e96b7a280302644bd73972c6955a4e146ad04fffcc2faffc664d0696e"
+      },
+      "web": {
+        "file": "10-dashboard-mobile.webp",
+        "width": 860,
+        "height": 5106,
+        "bytes": 175094,
+        "sha256": "19c0fa04a2412f895712f6ec9ed5c69e785e7967941db611fef75778b09b14d6"
+      }
+    }
+  ]
+}

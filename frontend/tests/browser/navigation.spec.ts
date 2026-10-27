@@ -1,3 +1,4 @@
+import { openAnalytics } from "./review-capture";
 import { expect, test } from "@playwright/test";
 
 const backend = "http://127.0.0.1:8100";
@@ -22,16 +23,17 @@ test("four primary destinations and backup utility remain reachable", async ({ p
 
 test("Dashboard views, old report links and filters survive refresh and history", async ({ page }) => {
   await page.goto("/reports?since=2099-01-01&group=category");
-  await expect(page).toHaveURL(/\/dashboard\?.*outcomesSince=2099-01-01.*group=category.*tab=outcomes/);
+  await expect(page).toHaveURL(/\/dashboard\?.*since=2099-01-01.*group=category.*tab=outcomes/);
   await expect(page.getByRole("heading", { name: "Search outcomes" })).toBeVisible();
   await expect(page.getByLabel("Group by", { exact: true })).toHaveValue("category");
   await page.reload();
+  await openAnalytics(page);
   await expect(page.getByLabel("Jobs saved on or after (UTC)", { exact: true })).toHaveValue("2099-01-01");
 
   const tabs = page.getByRole("navigation", { name: "Dashboard views" });
   await tabs.getByRole("button", { name: "Skills & learning" }).click();
   await expect(page).toHaveURL(/tab=skills/);
-  await expect(page.getByRole("heading", { name: "Skill Gaps" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Skills & learning", exact: true })).toBeVisible();
   await page.goBack();
   await expect(tabs.getByRole("button", { name: "Outcomes" })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByLabel("Group by", { exact: true })).toHaveValue("category");
@@ -39,8 +41,8 @@ test("Dashboard views, old report links and filters survive refresh and history"
   await expect(tabs.getByRole("button", { name: "Skills & learning" })).toHaveAttribute("aria-pressed", "true");
   await page.goto("/skills?focus=python");
   await expect(page).toHaveURL(/\/dashboard\?.*focus=python.*tab=skills/);
-  await tabs.locator("summary").click();
-  await tabs.getByRole("link", { name: "Study plan" }).click();
+  await expect(tabs.locator("summary")).toHaveCount(0);
+  await page.goto("/dashboard?focus=python&tab=skills#study-plan");
   await expect(page).toHaveURL(/tab=skills.*#study-plan/);
   await expect(page.locator("#study-plan")).toBeVisible();
 });
@@ -56,7 +58,7 @@ test("Assets views keep a draft while tabs and browser history change", async ({
   await page.goBack();
   await expect(name).toHaveValue("Navigation draft");
   await tabs.getByRole("button", { name: "Tailoring sources" }).click();
-  await expect(page.getByRole("heading", { name: "Tailoring sources" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Tailoring sources", exact: true })).toBeVisible();
   await page.reload();
   await expect(tabs.getByRole("button", { name: "Tailoring sources" })).toHaveAttribute("aria-pressed", "true");
   await page.goto("/profile?tab=coverage");
@@ -101,6 +103,6 @@ test("Interview Practice and History are direct-entry views", async ({ page }) =
   await expect(tabs.getByRole("button", { name: "History" })).toHaveAttribute("aria-pressed", "true");
   await tabs.locator("summary").click();
   await tabs.getByRole("link", { name: "Command Center" }).click();
-  await expect(tabs.getByRole("button", { name: "Practice" })).toHaveAttribute("aria-pressed", "true");
+  await expect(tabs.getByRole("button", { name: "History" })).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator("#command-center")).toBeVisible();
 });

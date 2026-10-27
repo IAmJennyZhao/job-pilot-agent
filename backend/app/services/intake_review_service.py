@@ -33,7 +33,8 @@ def save(db, payload: IntakeSave):
     if (source.id if source else None) != evaluation["source_id"]:
         raise HTTPException(409, "Active sources changed. Refresh the preference checks.")
     try:
-        job = job_service.save_job(db, payload.job.model_copy(update={"status": models.JobStatus.saved, "status_note": None}), commit=False)
+        status = {"apply": models.JobStatus.applied, "archive": models.JobStatus.archived}.get(payload.decision, models.JobStatus.saved)
+        job = job_service.save_job(db, payload.job.model_copy(update={"status": status, "status_note": None}), commit=False)
         db.add(models.JobIntakeReview(job_id=job.id, request_key=payload.request_key, request_hash=fingerprint,
             review=review.model_dump(mode="json"), evaluation=evaluation,
             preference_snapshot=source.preferences if source else None, source_id=source.id if source else None,

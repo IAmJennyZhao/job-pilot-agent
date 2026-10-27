@@ -1,168 +1,142 @@
-# Job Pilot Agent
+# JobPilot
 
-Job Pilot Agent is a FastAPI + Next.js dashboard for managing the job search with AI-assisted workflows. It tracks opportunities, analyzes job fit, ranks resume assets, plans skill gaps, and supports interview practice from one focused workspace.
+A local-first workspace for managing a job search: track applications, tailor documents from reviewed evidence, compare outcomes, and practise interviews.
 
-## Core Workflows
+Built with **Next.js, React, TypeScript, FastAPI, SQLAlchemy and SQLite**.
 
-Job Pilot Agent is organized around three main job-search workflows:
+## The workspace
 
-### 1. Search Dashboard
+| Destination | Features |
+| --- | --- |
+| **Dashboard** | Proportional application Sankey, scheduled actions, stale applications, compact Outcomes comparisons, project ideas and learning progress |
+| **Jobs** | URL/text/manual intake, duplicate protection, filters, application history, job analysis, resume and cover letter workspaces |
+| **Application Assets** | Reusable resumes, candidate profile, letter templates, versioned tailoring sources, coverage and ranking |
+| **Interview** | Active practice, answer timers, feedback, previous sessions and attempt comparisons |
 
-Use the dashboard to track active opportunities, spot stale applications, monitor pipeline movement, and surface missing data, active risks, and priority skill gaps.
+**Export & backups** provides CSV, full archives, validated restore and recovery copies. Views and filters use URLs, and supported drafts survive navigation and refresh.
 
-[![Dashboard demo](docs/assets/dashboard-flow-quick.gif)](docs/assets/dashboard-flow.mp4)
-[Watch Full Dashboard demo](docs/assets/dashboard-flow.mp4)
+Intake offers **Save**, **Apply**, **Tailor resume** and **Archive**. Apply records the Applied status locally. Tailor resume saves the job and opens preparation; generation remains an explicit action.
 
-### 2. Job Intelligence
+## Screenshots
 
-Save jobs from pasted descriptions or URLs, extract structured details, flag duplicates, and run AI-assisted analysis for resume fit, company research, interview prep, asset recommendations, skill gaps, and study plans.
+The images below show the actual interface with **fictional demo data**. AI responses in the screenshots are authored examples, not live model evaluations.
 
-With approved tailoring sources active, open a saved job, review its description and preference checks, then choose **Generate tailored resume**. A writing pass creates a tailored draft using approved facts; a focused factual reviewer adds advisory findings without rewriting or discarding it. Local evidence, number and qualifier checks can block approval while preserving the draft for editing. Detailed job analysis remains a separate action. Drafts support evidence comparison, manual edits, revision history and restoration. **Mark reviewed** approves the exact saved content; inspect its PDF preview before approving matching PDF, TeX and text downloads. Older four-pass runs remain available under their original validation rules. See [Simple writer implementation and verification](docs/resume-tailoring-v6.md).
+### Jobs tracker
 
-[![Job Intelligence Flow Demo](docs/assets/job-intelligence-flow-quick.gif)](docs/assets/job-intelligence-flow.mp4)
-[Watch Full Job Intelligence Flow Demo](docs/assets/job-intelligence-flow.mp4)
+[![JobPilot tracker with fictional applications and status filters](docs/assets/screenshots/01-jobs-tracker.webp)](docs/assets/screenshots/01-jobs-tracker.png)
 
-### 3. Interview Practice
+### Dashboard
 
-Generate role-specific practice questions, answer them in a guided session, and review feedback, follow-up prompts, score trends, and weak-point insights.
+[![JobPilot dashboard with a proportional demo application pipeline](docs/assets/screenshots/02-dashboard.webp)](docs/assets/screenshots/02-dashboard.png)
 
-[![Interview Practice demo](docs/assets/interview-practiced-flow-quick.gif)](docs/assets/interview-practiced-flow.mp4)
-[Watch Full Interview Practice demo](docs/assets/interview-practiced-flow.mp4)
+[More screenshots, captions and alt text](docs/assets/screenshots/README.md)
 
+## Run locally
 
-### 4. Skill Gap Study Planning
+### Requirements
 
-Review major skill gaps from saved job analyses, prioritize the highest-impact gaps, and generate study plans tied to target roles.
+- Python **3.12 or 3.13**; the Windows examples use the Python 3.13 launcher.
+- Node.js **22** and npm.
+- An OpenAI key/model for AI actions; tracking and deterministic demo captures work without a live provider.
+- Optional Tavily key for public company research.
+- **TeX Live pdfLaTeX** for resume PDF rendering/export. Tracking and text workflows remain available without it.
 
-![Study Plan creation demo](docs/assets/study-plan-demo.gif)
+### Install
 
-## Technical Architecture
-
-### Backend
-
-- **FastAPI API layer**: Routers under `backend/app/routers/` expose jobs, profile assets, dashboard summaries, AI actions, skill gaps, study plans, and interview practice.
-- **SQLAlchemy domain model**: `backend/app/models.py` defines the job tracker, status events, analyses, resume assets, interview sessions, skill gaps, and saved study plans.
-- **Alembic migrations**: Schema state is managed through Alembic, with migrations applied at startup by default and verified by tests.
-- **Service layer**: Business workflows live in `backend/app/services/`, including job intake, job health logic, advanced analysis, profile asset ranking, interview practice, research retrieval, and skill-gap aggregation.
-- **Structured schemas**: Pydantic models in `backend/app/schemas.py` define request and response contracts for the API and AI outputs.
-- **Operational basics**: Request IDs are attached to responses and logs, logs rotate under `backend/logs/`, and local development defaults to SQLite.
-
-### Frontend
-
-- **Next.js App Router**: Routes under `frontend/src/app/` cover the dashboard, jobs, job detail, profile, skills, interview setup, and interview sessions.
-- **Typed API client**: `frontend/src/lib/api.ts` centralizes backend calls, error handling, file uploads, downloads, and AI workflow requests.
-- **Shared UI primitives**: Reusable buttons, fields, panels, layout shell, theme utilities, and typed frontend models keep screens consistent.
-- **Workflow screens**: The UI is organized around job search operations: triage the dashboard, maintain job records, manage profile assets, inspect skill gaps, and practice interviews.
-
-### AI And Agent Ideas
-
-- **Structured output over loose chat**: OpenAI calls request typed outputs for repeatable job extraction, job insights, resume fit, interview prep, resume parsing, asset ranking, and study plans.
-- **Human-triggered workflows**: AI actions are explicit button-triggered operations so the user controls cost, timing, and saved results.
-- **Retrieval-assisted company research**: Tavily can provide public web snippets for company research; without it, the app falls back to limited context and records the coverage note.
-- **Reusable context**: Saved profile assets, job descriptions, status history, previous analyses, and skill gaps feed later workflows instead of treating each action as isolated.
-- **Portfolio-safe local default**: The app runs locally with SQLite and environment-based API keys, keeping private job search data out of the repository.
-
-## Running Locally
-
-### Prerequisites
-
-- Python 3.12 or 3.13
-- Node.js and npm
-- PowerShell if using `pilot.ps1`
-- Optional: OpenAI API key for AI actions
-- Optional: Tavily API key for public company research
-
-### Environment
-
-Copy `.env.example` to `.env` and fill in values as needed:
+From the repository root, in PowerShell:
 
 ```powershell
+py -3.13 -m venv backend/.venv
+.\backend\.venv\Scripts\python -m pip install -e "./backend[dev]"
+npm --prefix frontend ci
 Copy-Item .env.example .env
 ```
 
-Important settings:
+Set `OPENAI_API_KEY` and `OPENAI_MODEL` in `.env` when enabling AI. Keep `.env` local.
 
-- `DATABASE_URL` defaults to local SQLite at `backend/careerpilot.db`.
-- `OPENAI_API_KEY` and `OPENAI_MODEL` enable AI actions.
-- `TAILORING_CONTEXT_TOKENS` bounds resume-generation inputs (default `128000`); keep it within the configured model's context window.
-- `TAVILY_API_KEY` enables public web retrieval for company research.
-- `NEXT_PUBLIC_API_BASE_URL` points the frontend at the backend.
-
-If AI settings are missing, the backend returns a clear `503` for AI actions and the frontend displays the missing requirement.
-
-### One-Command Development
-
-From the repo root:
-
-```powershell
-.\pilot.ps1 dev
-```
-
-This starts the backend at `http://localhost:8000` and the frontend at `http://localhost:3000` in the current terminal. Stop both with `Ctrl+C`.
-
-Other helper modes:
-
-```powershell
-.\pilot.ps1 dev-windows  # backend + frontend in separate visible PowerShell windows
-.\pilot.ps1 status       # show whether ports 3000 and 8000 are occupied
-.\pilot.ps1 backend      # backend only
-.\pilot.ps1 frontend     # frontend only
-.\pilot.ps1 test         # backend tests + frontend typecheck
-.\pilot.ps1 build        # backend tests + frontend typecheck + frontend production build
-```
-
-### Manual Backend Setup
+Start the backend in one terminal:
 
 ```powershell
 cd backend
-py -3.13 -m venv .venv
-.\.venv\Scripts\python -m pip install -e ".[dev]"
-.\.venv\Scripts\python scripts\seed.py
-.\.venv\Scripts\python -m uvicorn app.main:app --reload --port 8000
+.\.venv\Scripts\python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-The seed script resets the local SQLite development database, applies migrations, and inserts demo data.
-
-Health check:
+Start the frontend in another:
 
 ```powershell
-Invoke-RestMethod http://localhost:8000/health
+cd frontend
+npm run dev -- --hostname 127.0.0.1
 ```
 
-Backend tests:
+Open **http://127.0.0.1:3000**. Backend health is available at **http://127.0.0.1:8000/health**. On macOS/Linux, use `python3 -m venv backend/.venv` and `backend/.venv/bin/python` for the equivalent commands.
+
+The optional `pilot.ps1` helpers use `py -3.13` and require dependencies available to that interpreter. The separate-terminal commands above explicitly use the virtual environment.
+
+### Configuration and storage
+
+| Setting | Purpose |
+| --- | --- |
+| `DATABASE_URL` | Defaults to `backend/careerpilot.db`; relative SQLite paths are anchored to `backend/` |
+| `OPENAI_API_KEY`, `OPENAI_MODEL` | Explicit AI operations |
+| `TAILORING_CONTEXT_TOKENS` | Generation input budget |
+| `TAVILY_API_KEY` | Optional company research |
+| `NEXT_PUBLIC_API_BASE_URL` | Frontend backend URL, normally `http://localhost:8000` |
+| `RESUME_PDFLATEX` | Optional path to the TeX Live executable; otherwise resolved from PATH |
+
+Files default to `backend/storage/`. Migrations run at backend startup; `AUTO_MIGRATE=0` disables that behavior. The optional seed script resets its configured development database and is not needed for normal startup.
+
+For PDFs, install the template packages `lmodern`, `microtype`, `enumitem`, `titlesec`, `geometry` and `hyperref`. Ubuntu setup:
+
+```bash
+sudo apt-get install texlive-latex-base texlive-latex-recommended texlive-latex-extra lmodern
+```
+
+### Review and privacy boundaries
+
+JobPilot is intended for local use and does not provide multi-user authentication. Keep its API bound to localhost unless adding appropriate deployment controls. AI actions send the necessary job/profile/source content to configured providers; company research can use Tavily.
+
+Reusable resume Ready status, source activation, saved-document content review and PDF layout approval are separate decisions. Source versions remain immutable. Profile edits and merges do not activate sources. Resume exports preserve exact saved revision/render bytes; reusable original-PDF downloads preserve the uploaded file. Cover letters export as TXT/Markdown.
+
+Local databases, source documents, uploads, credentials, backups, logs and browser drafts are excluded from Git. Use fictional data for screenshots or issue reports. Public code does not make private application records public.
+
+## Development checks
 
 ```powershell
+# backend
 cd backend
-.\.venv\Scripts\python -m pytest
-```
+.\.venv\Scripts\python -m pytest -q -p no:cacheprovider
 
-### Manual Frontend Setup
-
-```powershell
+# frontend, from a separate terminal
 cd frontend
-npm install
-npm run dev
-```
-
-Open `http://localhost:3000`.
-
-Frontend checks:
-
-```powershell
-cd frontend
+npm run lint
 npm run typecheck
+node tests/list-editing.cjs
+node tests/form-validation.cjs
+npx playwright install chromium
+npm run test:browser
 npm run build
 ```
 
-## Database And Migrations
+The browser suite starts isolated servers and synthetic data. PDF regressions require TeX Live. Run browser checks and builds sequentially. [Verification details](docs/verification.md) include scope and limitations. GitHub Actions is configured for backend tests, frontend checks/build and Chromium desktop/mobile workflows.
 
-Alembic owns schema changes. Migrations run automatically at backend startup unless `AUTO_MIGRATE=0` is set.
+## Recreate the portfolio assets
 
-To make a schema change:
+After installing backend/frontend development dependencies:
 
 ```powershell
-cd backend
-alembic revision --autogenerate -m "describe change"
+cd frontend
+npx playwright install chromium
+node node_modules/@playwright/test/cli.js test -c playwright.portfolio.config.ts
+node scripts/package-portfolio.mjs
+node scripts/verify-portfolio.mjs
 ```
 
-Review the generated migration before committing it. The backend test suite checks that a fresh migrated database matches the SQLAlchemy models and that legacy migration states are handled correctly.
+This uses temporary demo storage, deterministic AI output and ports 3120/8120. It refuses to reuse existing servers and never opens the normal database. PNG originals, WebP website copies, a local gallery and captions live in [docs/assets/screenshots](docs/assets/screenshots/README.md).
+
+## Documentation
+
+- [Documentation index](docs/README.md)
+- [Page architecture and compatibility contracts](docs/page-architecture.md)
+- [Document workflow implementation references](docs/README.md#document-workflows)
+
+Local mockups, execution notes and superseded recordings are intentionally excluded from the public source tree.

@@ -1,7 +1,20 @@
 # Local environment
 .env
+.env.*
+!.env.example
+!.env.*.example
 scope.md
+
+# Agent and editor workspace state
+.agents/
+.claude/
+.codex/
+.aws/
 .vscode/
+.idea/
+skills-lock.json
+.DS_Store
+Thumbs.db
 
 # Local databases and generated storage
 .private/
@@ -9,6 +22,14 @@ scope.md
 *.db.bak*
 *.sqlite
 *.sqlite3
+*.db-wal
+*.db-shm
+*.sqlite-wal
+*.sqlite-shm
+*.pem
+*.key
+*.p12
+*.pfx
 storage/
 
 # Python
@@ -30,3 +51,23 @@ logs/
 dist/
 build/
 coverage/
+.coverage
+htmlcov/
+*.log
+*.pid
+
+# Local design iterations, execution notes, and superseded recordings
+docs/mockups/
+docs/archive/
+docs/issues/
+docs/plans/
+docs/ui-cleanup-*.md
+docs/ux-verification.md
+docs/workflow-features.md
+docs/resume-pipeline-comparison-*.md
+docs/tailoring-phase*.md
+docs/tailoring-consolidation.md
+docs/resume-grounding-v*.md
+docs/resume-tailoring-v*.md
+docs/assets/*.gif
+docs/assets/*.mp4

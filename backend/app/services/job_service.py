@@ -294,6 +294,7 @@ def list_jobs(
     funnel_stage: str | None = None,
     funnel_from: str | None = None,
     saved_since: date | None = None,
+    funnel_stopped: bool = False,
 ) -> list[models.Job]:
     stages = [stage.value for stage in FUNNEL_STATUSES]
     terminals = ["Rejected", "Withdrawn", "Ghosted"]
@@ -303,6 +304,8 @@ def list_jobs(
         raise ValueError("A valid funnel destination and source are required")
     if funnel_from and funnel_stage in stages and stages.index(funnel_stage) != stages.index(funnel_from) + 1:
         raise ValueError("Funnel stages must be consecutive")
+    if funnel_stopped and (funnel_stage not in stages or funnel_from):
+        raise ValueError("Stopped flow requires a stage and no source filter")
     statement = select(models.Job).order_by(models.Job.updated_at.desc())
     if saved_since:
         statement = statement.where(models.Job.created_at >= datetime.combine(saved_since, time.min, tzinfo=timezone.utc))
@@ -321,6 +324,8 @@ def list_jobs(
             or (funnel_stage in terminals and job.status.value == funnel_stage
                 and (not funnel_from or furthest_stage_rank(job) == stages.index(funnel_from)))
         )]
+    if funnel_stopped:
+        jobs = [job for job in jobs if is_open_opportunity(job) and furthest_stage_rank(job) == stages.index(funnel_stage)]
     if search:
         jobs = [job for job in jobs if _matches_search(job, search)]
     jobs = health_filtered_jobs(jobs, health_filter)
@@ -365,6 +370,7 @@ def list_job_items(
     funnel_stage: str | None = None,
     funnel_from: str | None = None,
     saved_since: date | None = None,
+    funnel_stopped: bool = False,
 ) -> list[schemas.JobListItem]:
     return [
         to_job_list_item(db, job)
@@ -378,6 +384,7 @@ def list_job_items(
             funnel_stage=funnel_stage,
             funnel_from=funnel_from,
             saved_since=saved_since,
+            funnel_stopped=funnel_stopped,
         )
     ]
 

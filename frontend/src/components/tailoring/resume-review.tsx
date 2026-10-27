@@ -8,8 +8,9 @@ import { useDraft } from "@/lib/use-draft";
 import type { ReviewWorkspace, ResumeEdit, ResumeChange, SaveResumeEdit, RestoreResumeRevision } from "@/lib/review-types";
 import { Button } from "@/components/ui/button";
 import { Field, Select, Textarea } from "@/components/ui/field";
-import { Panel } from "@/components/ui/panel";
+import { Badge, Panel } from "@/components/ui/panel";
 import { ResumeExports } from "./resume-exports";
+import { SavedTextPreview } from "./document-workflow";
 import { acceptsResumeDraft, acceptsResumeRestore } from "@/lib/resume-draft";
 
 export function ResumeReview({ baselineId, sourceKey }: { baselineId: string; sourceKey?: string | null }) {
@@ -69,14 +70,16 @@ function ReviewContent({ view, onSelect, onSaved, onRefresh, refreshing, refresh
   view.skill_groups.forEach(g => g.values.forEach(name => { if (!skills.has(name.toLowerCase())) skills.set(name.toLowerCase(), { name, source_ids: [g.id] }); }));
   // Keep an already selected approved alias visible too.
   edit.skills.forEach(s => { if (!skills.has(s.name.toLowerCase())) skills.set(s.name.toLowerCase(), s); });
-  return <section aria-label="Resume review and editing" className="grid min-w-0 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(18rem,0.7fr)]">
+  return <section id="resume-review" tabIndex={-1} aria-label="Resume review and editing" data-baseline-id={view.baseline_id} data-revision-id={revision.id} className="grid min-w-0 scroll-mt-28 gap-6">
     <Panel className="grid gap-5">
-    <h3 className="font-semibold">Generated resume draft</h3>
+    <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-lg font-semibold">Review and edit resume</h3><div className="flex flex-wrap gap-2"><Badge>{revision.id === view.current_revision_id ? "Current saved revision" : "Historical revision"}</Badge>{isEditing ? <Badge tone="warn">Unsaved local edits</Badge> : null}</div></div>
     {revision.content.advisory_review && <section aria-label="Advisory factual review" className="grid gap-2 rounded border border-border p-3 text-sm">
       <h4 className="font-medium">Advisory factual review</h4>
-      <p>Compare every rewritten bullet with its cited facts. AI feedback can be mistaken; your approval applies to this exact saved version.</p>
       {!view.advisory_current ? <p>These findings apply to an earlier draft. Your edits have not been reviewed by the model.</p> : revision.content.advisory_review.status === 'unavailable' ? <p>AI review was unavailable. Your draft is preserved for your review.</p> : <p>AI review completed. This is advisory feedback, not factual certification.</p>}
+      <details open={!view.advisory_current || revision.content.advisory_review.findings.some(f => f.verdict !== "supported")}><summary className="cursor-pointer font-medium">Factual findings and review guidance</summary><div className="mt-2 grid gap-2">
+      <p>Compare every rewritten bullet with its cited facts. AI feedback can be mistaken; your approval applies to this exact saved version.</p>
       <ul className="grid gap-2">{revision.content.advisory_review.findings.filter(f => f.verdict !== 'supported').map(f => <li key={f.bullet_id}><strong>{view.advisory_current ? 'Check' : 'Earlier finding'}:</strong> {f.explanation}<p className="text-muted-foreground">{revision.content.draft.bullets.find(b => b.id === f.bullet_id)?.text ?? 'The referenced bullet is no longer selected.'}</p></li>)}</ul>
+      </div></details>
     </section>}
     {revision.content.content_budget && <p aria-label="Resume content budget" className="text-sm">
       {revision.content.content_budget.bullets} selected {revision.content.content_budget.bullets === 1 ? 'bullet' : 'bullets'}. {revision.content.content_budget.within_budget ? 'Within the estimated page budget.' : 'Above the estimated page budget; consider fewer or shorter approved claims.'} Render the saved revision to check actual one-page fit.
@@ -93,16 +96,18 @@ function ReviewContent({ view, onSelect, onSaved, onRefresh, refreshing, refresh
     </Select></Field>
     <p className="text-xs text-muted-foreground">Saved {new Date(revision.created_at).toLocaleString()} · {revision.origin === "generated" ? "Original generation" : `Revision ${revision.sequence} · ${revision.origin}`}</p>
     <p role="status" className="text-sm font-medium">{isEditing ? "Unsaved edits — save and validate before review." : view.approved_current ? "Reviewed — this exact saved version is approved." : view.approval ? "Historically reviewed — this is not the current eligible version." : revision.validation.valid ? "Awaiting review — automated checks passed." : "Needs correction — resolve the saved validation issues."}</p>
+    <p aria-label="Saved resume review eligibility" className="text-xs text-muted-foreground">Saved revision: {view.approval_eligible ? "eligible for content review" : "not eligible for new content review"}. {isEditing ? "Save or discard local edits before reviewing. " : ""}Final PDF approval is separate.</p>
     {view.source_problem ? <p className="text-sm text-warning-foreground">{view.source_problem} Historical drafts and review records remain available.</p> : null}
     {view.approval ? <p className="text-xs text-muted-foreground">Reviewed {new Date(view.approval.reviewed_at).toLocaleString()}. Approval belongs only to this saved revision.</p> : null}
     <div className="flex flex-wrap gap-2">
       {!isEditing ? <Button variant="secondary" disabled={busy || !draft.ready || revision.id !== view.current_revision_id} onClick={startEditing}>Edit resume</Button> : null}
-      <Button disabled={busy || refreshing || isEditing || !draft.ready || !view.approval_eligible || view.approved_current} onClick={() => review.mutate()}>{review.isPending ? "Recording review…" : "Mark reviewed"}</Button>
+      <Button variant={isEditing ? "secondary" : "primary"} disabled={busy || refreshing || isEditing || !draft.ready || !view.approval_eligible || view.approved_current} onClick={() => review.mutate()}>{review.isPending ? "Recording review…" : "Mark reviewed"}</Button>
       {revision.id !== view.current_revision_id ? <Button variant="secondary" disabled={busy || isEditing || !restoreRequest.ready} onClick={restoreSelected}>Restore as new revision</Button> : null}
       <Button variant="ghost" disabled={busy || refreshing} onClick={onRefresh}>Refresh resume</Button>
     </div>
     {review.error || restore.error || refreshError ? <p role="alert" className="text-sm text-destructive">{review.error?.message || restore.error?.message || refreshError}</p> : null}
     <p className="text-xs text-muted-foreground">Mark reviewed confirms the saved content and its supporting evidence. It does not approve new source facts or verify PDF layout.</p>
+    <div className="grid min-w-0 items-start gap-6 xl:grid-cols-2"><div className="grid min-w-0 gap-4">
     {isEditing ? <div className="grid gap-4 rounded border border-border p-3">
       <h4 className="font-medium">Edit resume content</h4>
       <p className="text-sm">Identity, employers, titles, dates and education stay tied to approved sources. Unsupported wording can be saved, but must be corrected before review. <Link className="underline" href="/profile?tab=sources">New facts require source approval.</Link></p>
@@ -136,7 +141,6 @@ function ReviewContent({ view, onSelect, onSaved, onRefresh, refreshing, refresh
       <div className="flex flex-wrap gap-2"><Button disabled={busy || !draft.ready || !draft.value.request_key || edit.bullets.some(b => !b.text.trim())} onClick={() => save.mutate(draft.value)}>{save.isPending ? "Saving revision…" : "Save and validate"}</Button><Button variant="ghost" disabled={busy} onClick={() => { draft.discard(); setEditing(false); setComparedRevision(null); save.reset(); }}>Discard unsaved edits</Button></div>
     </div> : null}
     {revision.validation.issues.length ? <div className="grid gap-2 text-sm"><h4 className="font-medium">Saved revision validation issues</h4><ul className="list-inside list-disc">{revision.validation.issues.map((issue, i) => <li key={i}>{issue.message}</li>)}</ul></div> : null}
-    <pre aria-label="Resume draft preview" className="whitespace-pre-wrap break-words rounded border border-border bg-background p-4 font-sans text-sm leading-relaxed">{revision.plain_text}</pre>
     <details><summary className="cursor-pointer text-sm">Changes and factual checks</summary><div className="mt-3 grid gap-3">
       <p className="text-sm">{revision.content.advisory_review ? 'Checks cover evidence references, selected numeric boundaries and required qualifiers. Faithful paraphrases are allowed; review their meaning against the source facts.' : 'Checks compare wording with approved sources.'} Human review is required; employment facts and complete job coverage are not independently verified.</p>
       <Field label="Compare saved revision with"><Select value={comparison} onChange={e => setComparison(e.target.value)}><option value="baseline">Original generated draft</option><option value="parent">Previous revision</option><option value="source">Approved source wording</option></Select></Field>
@@ -161,6 +165,7 @@ function ReviewContent({ view, onSelect, onSaved, onRefresh, refreshing, refresh
         </li>;
       })}</ul>
     </section> : <div className="text-sm"><strong>Unmet job requirements</strong>{revision.content.draft.unmet_requirement_ids.length ? <ul className="mt-1 list-inside list-disc">{revision.content.draft.requirements.filter(r => revision.content.draft.unmet_requirement_ids.includes(r.id)).map(r => <li key={r.id}>{r.description} — Posting: “{r.quote}”</li>)}</ul> : <p>No additional gaps in this revision’s requirement mapping; check it against the full posting.</p>}</div> }
+    </div><SavedTextPreview kind="resume" text={revision.plain_text} revision={revision.sequence === 0 ? "Original generated draft" : `Revision ${revision.sequence}`} historical={revision.id !== view.current_revision_id} unsaved={isEditing} /></div>
     </Panel>
     <ResumeExports key={revision.id} view={view} disabled={isEditing || busy || !draft.ready || refreshing} />
   </section>;

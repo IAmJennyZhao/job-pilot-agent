@@ -11,7 +11,7 @@ import { FeedbackDetails, weakPointLabels } from "@/components/interview/feedbac
 import { Badge, PageHeader, Panel } from "@/components/ui/panel";
 import { LocalTab, LocalTabs } from "@/components/ui/local-tabs";
 import { api } from "@/lib/api";
-import { groupSessionEntries, sessionTarget } from "@/lib/interview";
+import { groupSessionEntries, hasUnansweredPrompts, sessionTarget } from "@/lib/interview";
 import { formatDate } from "@/lib/utils";
 
 export default function InterviewSessionDetailPage() {
@@ -28,7 +28,7 @@ export default function InterviewSessionDetailPage() {
 
   const jobsById = React.useMemo(() => new Map(jobs.map((job) => [job.id, job])), [jobs]);
   const entries = React.useMemo(() => (session ? groupSessionEntries(session.messages) : []), [session]);
-  const hasUnanswered = entries.some((entry) => !entry.answer);
+  const hasUnanswered = Boolean(session && hasUnansweredPrompts(session));
   const answeredCount = entries.filter((entry) => entry.answer).length;
 
   const startAnotherHref = React.useMemo(() => {
@@ -56,10 +56,10 @@ export default function InterviewSessionDetailPage() {
             : isLoading ? "Loading session..." : "Session unavailable"
         }
         action={
-          <Link href="/interview">
+          <Link href="/interview?tab=history">
             <Button variant="secondary">
               <ArrowLeft className="h-4 w-4" />
-              Back to Interview Practice
+              Back to Interview History
             </Button>
           </Link>
         }
@@ -76,15 +76,16 @@ export default function InterviewSessionDetailPage() {
       {session ? (
         <>
           <div className="flex flex-wrap gap-2">
-            {entries.length ? (
+            {hasUnanswered ? (
               <Link href={`/interview?resumeSessionId=${session.id}`}>
-                <Button>Resume / revise answers</Button>
+                <Button>Continue unanswered questions</Button>
               </Link>
             ) : null}
             <Link href={startAnotherHref}>
               <Button variant="secondary">Start another session</Button>
             </Link>
           </div>
+          <p className="text-sm text-muted-foreground">{hasUnanswered ? "Continue loads only unanswered questions. Recorded answers stay in this session." : entries.length ? "All recorded questions have answers. Start another session for a new practice set." : "No resumable questions were recorded for this session."} Comparisons show saved attempts to each exact question across sessions.</p>
 
           <div className="grid gap-4">
             {entries.length ? (
@@ -101,7 +102,6 @@ export default function InterviewSessionDetailPage() {
                     {!entry.answer ? <Badge tone="bad">Not answered</Badge> : null}
                   </div>
                   <p className="text-base font-medium leading-7">{entry.question}</p>
-                  {entry.questionId ? <AttemptHistory questionId={entry.questionId} /> : null}
                   {entry.whyItMatters ? <p className="mt-1 text-xs text-muted-foreground">{entry.whyItMatters}</p> : null}
                   {entry.answer ? (
                     <div className="mt-4 grid gap-4">
@@ -116,6 +116,7 @@ export default function InterviewSessionDetailPage() {
                       ) : null}
                     </div>
                   ) : null}
+                  {entry.questionId ? <details className="mt-4"><summary className="cursor-pointer text-sm font-medium">Saved attempts & comparisons</summary><div className="mt-3"><AttemptHistory questionId={entry.questionId} /></div></details> : null}
                 </Panel>
               ))
             ) : (

@@ -21,6 +21,9 @@ os.environ["BACKEND_CORS_ORIGINS"] = f"http://localhost:3000,http://127.0.0.1:30
 from fastapi.testclient import TestClient
 from app import models, schemas
 from app.database import Base, get_engine
+from app import logging_config
+logging_config.LOG_DIR = directory / "logs"
+logging_config.LOG_FILE = logging_config.LOG_DIR / "app.log"
 from app.main import app
 from app.services import ai_service
 from generation_fixtures import fake_generation
@@ -29,7 +32,7 @@ from app.letter_schemas import LetterDraft, LetterAssessment
 from acceptance_fixtures import provider as acceptance_provider, extraction as acceptance_extraction, case_key
 from app.generation_schemas import RevisedResume
 from app.services.tailoring_provider import ProviderFailure
-from test_api import create_job, fake_analysis_output, fake_resume_suggestion_output
+from test_api import create_job, fake_analysis_output, fake_resume_suggestion_output, fake_resume_parse_output
 from test_api import fake_job_insights_output, fake_resume_fit_output, fake_advanced_interview_output, fake_company_research_output
 from app.services.advanced_analysis_service import CompanyResearchRetrievalAgent
 from types import SimpleNamespace
@@ -66,6 +69,26 @@ async def optional_ui_latency(request, call_next):
 
 
 def fake_output(output_model, *_args):
+    if output_model is schemas.StudyPlanResponse:
+        prompt = _args[-1]
+        return schemas.StudyPlanResponse(
+            top_gaps=["Python"], priority_order=["Python"],
+            study_plan=[] if "Return an empty study_plan list" in prompt else [
+                schemas.StudyPlanItem(period="Week 1", focus="Python", tasks=["Write API tests", "Measure a response"])
+            ],
+            project_ideas=[] if "Return an empty project_ideas list" in prompt else ["Build a small API", "Build a small API"],
+        )
+    if output_model is schemas.ResumeParseOutput:
+        return fake_resume_parse_output()
+    if output_model is schemas.AIAssetRankingOutput:
+        import ast
+        prompt = _args[-1]
+        resumes = ast.literal_eval(prompt.split("Resume options:\n", 1)[1].split("\n\nCover letter templates:", 1)[0])
+        letters = ast.literal_eval(prompt.split("Cover letter templates:\n", 1)[1].split("\n\nRules:", 1)[0])
+        def rank(items):
+            return [schemas.AssetRanking(asset_id=item["asset_id"], title=item["title"], score=91-index,
+                reasons=["Synthetic AI suggestion; selection requires an explicit action."], matched_keywords=["Python"], missing_keywords=[]) for index, item in enumerate(items)]
+        return schemas.AIAssetRankingOutput(resume_rankings=rank(resumes), cover_letter_rankings=rank(letters))
     advanced = {schemas.JobInsightsOutput: fake_job_insights_output, schemas.ResumeFitOutput: fake_resume_fit_output,
                 schemas.AdvancedInterviewPrepOutput: fake_advanced_interview_output, schemas.CompanyResearchOutput: fake_company_research_output}
     if output_model in advanced:

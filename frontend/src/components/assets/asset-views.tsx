@@ -1,7 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import Link from "next/link";
+import { RetainedView } from "@/components/layout/retained-view";
 import { CheckCircle2, ChevronDown, ChevronRight, Download, FileSearch, FileText, Mail, Pencil, Save, Search, Trash2, Upload, UserRound } from "lucide-react";
 import { useConfirm } from "@/components/ui/confirm-provider";
 import { Button } from "@/components/ui/button";
@@ -85,7 +87,7 @@ export function BaseProfileTab({ profile, onSaved }: { profile: ResumeProfile | 
 export function ResumeVariantsTab({ resumeOptions, onChanged }: { resumeOptions: ResumeOption[]; onChanged: () => void }) {
   const [file, setFile] = React.useState<File | null>(null);
   const [fileInputKey, setFileInputKey] = React.useState(0);
-  const [expandedResumeId, setExpandedResumeId] = React.useState<string | null>(null);
+  const [expandedResumeId, setExpandedResumeId] = React.useState<string | null>(resumeOptions[0]?.id ?? null);
   const pendingResumeId = React.useRef<string | null>(null);
 
   React.useEffect(() => {
@@ -100,8 +102,8 @@ export function ResumeVariantsTab({ resumeOptions, onChanged }: { resumeOptions:
       }
       return;
     }
-    if (!expandedResumeId || !resumeOptions.some((option) => option.id === expandedResumeId)) {
-      setExpandedResumeId(resumeOptions[0].id);
+    if (expandedResumeId && !resumeOptions.some((option) => option.id === expandedResumeId)) {
+      setExpandedResumeId(null);
     }
   }, [expandedResumeId, resumeOptions]);
 
@@ -143,7 +145,7 @@ export function ResumeVariantsTab({ resumeOptions, onChanged }: { resumeOptions:
   return (
     <div className="grid gap-6">
       <div className="flex flex-col gap-4">
-        <div className="grid gap-2"><SectionHeader icon={Upload} title="Reusable resume library" /><p className="text-sm text-muted-foreground">Upload a PDF or create a reusable variant. Review its extracted content, mark it ready, or merge it into your base profile.</p></div>
+        <div className="grid gap-2"><SectionHeader icon={Upload} title="Reusable resume library" /><p className="text-sm text-muted-foreground">Upload a PDF or create a reusable variant. Mark ready is your manual library status for selection. Generated document review and PDF approval happen in each job.</p><p className="text-xs text-muted-foreground">Merging updates reusable profile information. It never updates or activates tailoring sources.</p></div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <Input
             aria-label="Resume PDF"
@@ -167,21 +169,23 @@ export function ResumeVariantsTab({ resumeOptions, onChanged }: { resumeOptions:
       {importMutation.error ? <p className="text-sm text-destructive">{(importMutation.error as Error).message}</p> : null}
       {resumeOptions.length ? (
         resumeOptions.map((option) =>
-          option.id === expandedResumeId ? (
+          <div key={option.id} data-asset-id={option.id}>
+          <RetainedView label={`Resume editor: ${option.title}`} active={option.id === expandedResumeId}>
             <ResumeOptionEditor
-              key={option.id}
               option={option}
               onChanged={onChanged}
               onDeleted={() => setExpandedResumeId(null)}
+              onClose={() => setExpandedResumeId(null)}
             />
-          ) : (
+          </RetainedView>
+          {option.id !== expandedResumeId ? (
             <ResumeOptionCard
               key={option.id}
               option={option}
               onEdit={() => setExpandedResumeId(option.id)}
               onChanged={onChanged}
             />
-          )
+          ) : null}</div>
         )
       ) : (
         <Panel className="text-sm text-muted-foreground">No resume variants yet.</Panel>
@@ -200,7 +204,7 @@ function ResumeOptionCard({
   onChanged: () => void;
 }) {
   const confirm = useConfirm();
-  const draft = useDraft(`resume-${option.id}`, resumeFormFromOption(option));
+  const draft = useAssetDraftStatus(`resume-${option.id}`);
   const confirmMutation = useMutation({
     mutationFn: () => api.confirmResumeOption(option.id, false),
     onSuccess: onChanged
@@ -214,38 +218,25 @@ function ResumeOptionCard({
   };
 
   return (
-    <Panel className="p-4">
+    <Panel className="p-4 sm:p-4">
       {confirmMutation.error || deleteMutation.error ? <p role="alert" className="text-destructive">{((confirmMutation.error || deleteMutation.error) as Error).message}</p> : null}
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <AssetHeading
           title={option.title}
-          badge={<Badge tone={option.status === "ready" ? "good" : "warn"}>{option.status}</Badge>}
+          badge={<Badge tone={option.status === "ready" ? "good" : "neutral"}>{option.status === "ready" ? "Marked ready" : "Draft"}</Badge>}
           meta={`${option.source_filename ? `${option.source_filename} - ` : ""}Updated ${formatDate(option.updated_at)}`}
         />
         <div className="flex flex-wrap gap-2">
-          <Button variant="secondary" size="sm" onClick={onEdit}>
+          <Button size="sm" onClick={onEdit}>
             <Pencil className="h-4 w-4" />
             Edit
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => confirmMutation.mutate()}
-            disabled={confirmMutation.isPending || option.status === "ready" || draft.dirty}
-          >
-            <CheckCircle2 className="h-4 w-4" />
-            Ready
           </Button>
           {option.source_filename ? (
             <a href={api.resumeOptionDownloadUrl(option.id)} className="inline-flex h-8 items-center gap-2 rounded-md border border-border bg-secondary px-3 text-xs font-medium text-secondary-foreground hover:border-primary/35 hover:bg-accent">
               <Download className="h-4 w-4" />
-              PDF
+              Download original PDF
             </a>
           ) : null}
-          <Button variant="ghost" size="sm" onClick={deleteOption} disabled={deleteMutation.isPending}>
-            <Trash2 className="h-4 w-4" />
-            Delete
-          </Button>
         </div>
       </div>
       {draft.dirty ? <p className="mt-2 text-sm">Unsaved draft available. Edit and save it before marking ready.</p> : null}
@@ -253,6 +244,7 @@ function ResumeOptionCard({
         <PreviewTags label="Roles" items={option.target_roles} />
         <PreviewTags label="Skills/keywords" items={[...option.skills, ...option.target_keywords]} />
       </div>
+      <details className="mt-2"><summary className="cursor-pointer text-xs font-medium text-muted-foreground">Library actions</summary><div className="mt-2 flex flex-wrap gap-2"><Button variant="secondary" size="sm" onClick={() => confirmMutation.mutate()} disabled={!draft.ready || confirmMutation.isPending || option.status === "ready" || draft.dirty}><CheckCircle2 className="h-4 w-4" />Mark ready</Button><Button variant="ghost" size="sm" onClick={deleteOption} disabled={deleteMutation.isPending}><Trash2 className="h-4 w-4" />Delete</Button></div></details>
     </Panel>
   );
 }
@@ -260,11 +252,13 @@ function ResumeOptionCard({
 function ResumeOptionEditor({
   option,
   onChanged,
-  onDeleted
+  onDeleted,
+  onClose
 }: {
   option: ResumeOption;
   onChanged: () => void;
   onDeleted: () => void;
+  onClose: () => void;
 }) {
   const confirm = useConfirm();
   const draft = useDraft(`resume-${option.id}`, resumeFormFromOption(option));
@@ -314,31 +308,31 @@ function ResumeOptionEditor({
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <AssetHeading
           title={option.title}
-          badge={<Badge tone={option.status === "ready" ? "good" : "warn"}>{option.status}</Badge>}
+          badge={<Badge tone={option.status === "ready" ? "good" : "neutral"}>{option.status === "ready" ? "Marked ready" : "Draft"}</Badge>}
           meta={`${option.source_filename ? `${option.source_filename} - ` : ""}Updated ${formatDate(option.updated_at)}`}
         />
         <div className="flex flex-wrap gap-2">
+          <Button variant="ghost" size="sm" onClick={onClose}>Close editor</Button>
           {option.source_filename ? (
             <a href={api.resumeOptionDownloadUrl(option.id)} className="inline-flex h-8 items-center gap-2 rounded-md border border-border bg-secondary px-3 text-xs font-medium text-secondary-foreground hover:border-primary/35 hover:bg-accent">
               <Download className="h-4 w-4" />
-              PDF
+              Download original PDF
             </a>
           ) : null}
-          <Button variant="secondary" size="sm" onClick={() => confirmMutation.mutate(false)} disabled={confirmMutation.isPending || saveMutation.isPending || (!draft.dirty && option.status === "ready")}>
+          <Button size="sm" onClick={() => saveMutation.mutate()} disabled={!draft.ready || saveMutation.isPending || confirmMutation.isPending}>Save resume variant</Button>
+          <Button variant="secondary" size="sm" onClick={() => confirmMutation.mutate(false)} disabled={!draft.ready || confirmMutation.isPending || saveMutation.isPending || (!draft.dirty && option.status === "ready")}>
             <CheckCircle2 className="h-4 w-4" />
             Save & mark ready
-          </Button>
-          <Button variant="secondary" size="sm" onClick={() => confirmMutation.mutate(true)} disabled={confirmMutation.isPending || saveMutation.isPending}>
-            <UserRound className="h-4 w-4" />
-            Save, mark ready & merge
-          </Button>
-          <Button variant="ghost" size="sm" onClick={deleteOption} disabled={deleteMutation.isPending}>
-            <Trash2 className="h-4 w-4" />
-            Delete
           </Button>
         </div>
       </div>
       <div className="grid gap-4">
+        <p className="text-sm text-muted-foreground">Edit reusable resume information. {option.source_filename ? "These extracted fields do not modify the originally uploaded PDF. Downloads return that original file." : "This variant has no uploaded PDF to download."}</p>
+        <p className="text-xs text-muted-foreground">Save keeps the library status you choose below. Save &amp; mark ready saves your edits and assigns Ready for reusable selection; it is separate from job-document approval.</p>
+        <details className="rounded-md border border-border p-3"><summary className="cursor-pointer text-sm font-medium">Merge and library actions</summary><div className="mt-3 grid gap-3">
+          <p className="text-sm text-muted-foreground">Merging saves edits, marks this resume Ready, and adds its information to the saved Base profile. Existing name, summary and resume text are filled only when empty; skills and records are combined. Unsaved Base profile edits remain local. Tailoring sources stay unchanged.</p>
+          <div className="flex flex-wrap gap-2"><Button variant="secondary" onClick={() => confirmMutation.mutate(true)} disabled={!draft.ready || confirmMutation.isPending || saveMutation.isPending}>Save, mark ready &amp; merge into Base profile</Button><Button variant="ghost" onClick={deleteOption} disabled={deleteMutation.isPending}><Trash2 className="h-4 w-4" />Delete</Button></div>
+        </div></details>
         <div className="grid gap-4 lg:grid-cols-3">
           <Field label="Title">
             <Input value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} />
@@ -346,24 +340,24 @@ function ResumeOptionEditor({
           <Field label="Candidate name">
             <Input value={form.candidate_name} onChange={(event) => setForm({ ...form, candidate_name: event.target.value })} />
           </Field>
-          <Field label="Status">
+          <Field label="Library status">
             <Select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as ResumeOption["status"] })}>
-              <option value="draft">draft</option>
-              <option value="ready">ready</option>
+              <option value="draft">Draft</option>
+              <option value="ready">Ready (manually assigned)</option>
             </Select>
           </Field>
         </div>
         <Field label="Summary">
           <Textarea value={form.summary} onChange={(event) => setForm({ ...form, summary: event.target.value })} />
         </Field>
-        <div className="grid gap-4 lg:grid-cols-2">
+        <details><summary className="cursor-pointer text-sm font-medium">Matching targets</summary><div className="mt-3 grid gap-4 lg:grid-cols-2">
           <Field label="Target roles (one per line)">
             <Textarea value={form.target_roles} onChange={(event) => setForm({ ...form, target_roles: event.target.value })} />
           </Field>
           <Field label="Target keywords (one per line)">
             <Textarea value={form.target_keywords} onChange={(event) => setForm({ ...form, target_keywords: event.target.value })} />
           </Field>
-        </div>
+        </div></details>
         <Field label="Skills (one per line)">
           <Textarea value={form.skills} onChange={(event) => setForm({ ...form, skills: event.target.value })} />
         </Field>
@@ -388,10 +382,6 @@ function ResumeOptionEditor({
         {confirmMutation.error || deleteMutation.error ? <p role="alert" className="text-sm text-destructive">{((confirmMutation.error || deleteMutation.error) as Error).message}</p> : null}
         <DraftNotice onDiscard={draft.discard} dirty={draft.dirty} storageError={draft.storageError} saved={saveMutation.isSuccess} />
         {saveMutation.error ? <p className="text-sm text-destructive">{(saveMutation.error as Error).message}</p> : null}
-        <Button className="justify-self-start" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending || confirmMutation.isPending}>
-          <Save className="h-4 w-4" />
-          {saveMutation.isPending ? "Saving..." : "Save resume variant"}
-        </Button>
       </div>
     </fieldset></Panel>
   );
@@ -435,21 +425,24 @@ export function CoverLetterTemplatesTab({ templates, onChanged }: { templates: C
       {createMutation.error ? <p role="alert" className="text-destructive">{createMutation.error.message}</p> : null}
       {templates.length ? (
         templates.map((template) =>
-          template.id === expandedTemplateId ? (
+          <div key={template.id} data-asset-id={template.id}>
+          <RetainedView label={`Letter template editor: ${template.title}`} active={template.id === expandedTemplateId}>
             <CoverLetterTemplateEditor
               key={template.id}
               template={template}
               onChanged={onChanged}
               onDeleted={() => setExpandedTemplateId(null)}
+              onClose={() => setExpandedTemplateId(null)}
             />
-          ) : (
+          </RetainedView>
+          {template.id !== expandedTemplateId ? (
             <CoverLetterTemplateCard
               key={template.id}
               template={template}
               onEdit={() => setExpandedTemplateId(template.id)}
               onChanged={onChanged}
             />
-          )
+          ) : null}</div>
         )
       ) : (
         <Panel className="text-sm text-muted-foreground">No cover letter templates yet.</Panel>
@@ -468,6 +461,7 @@ function CoverLetterTemplateCard({
   onChanged: () => void;
 }) {
   const confirm = useConfirm();
+  const draft = useAssetDraftStatus(`template-${template.id}`);
   const deleteMutation = useMutation({ mutationFn: () => api.deleteCoverLetterTemplate(template.id), onSuccess: onChanged });
 
   const deleteTemplate = async () => {
@@ -477,25 +471,24 @@ function CoverLetterTemplateCard({
   };
 
   return (
-    <Panel className="p-4">
+    <Panel className="p-4 sm:p-4">
       {deleteMutation.error ? <p role="alert" className="text-destructive">{deleteMutation.error.message}</p> : null}
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <AssetHeading title={template.title} meta={`Updated ${formatDate(template.updated_at)}`} />
         <div className="flex flex-wrap gap-2">
-          <Button variant="secondary" size="sm" onClick={onEdit}>
+          <Button size="sm" onClick={onEdit}>
             <Pencil className="h-4 w-4" />
             Edit
-          </Button>
-          <Button variant="ghost" size="sm" onClick={deleteTemplate} disabled={deleteMutation.isPending}>
-            <Trash2 className="h-4 w-4" />
-            Delete
           </Button>
         </div>
       </div>
       <div className="mt-3 grid gap-2">
+        {draft.dirty ? <p className="text-sm">Unsaved template edits available. Reopen the editor to continue.</p> : null}
+        <p className="line-clamp-2 whitespace-pre-wrap text-sm text-muted-foreground">{template.body || "No saved template text yet."}</p>
         <PreviewTags label="Roles" items={template.target_roles} />
         <PreviewTags label="Keywords" items={template.target_keywords} />
       </div>
+      <details className="mt-2"><summary className="cursor-pointer text-xs font-medium text-muted-foreground">Library actions</summary><div className="mt-2"><Button variant="ghost" size="sm" onClick={deleteTemplate} disabled={deleteMutation.isPending}><Trash2 className="h-4 w-4" />Delete</Button></div></details>
     </Panel>
   );
 }
@@ -503,20 +496,16 @@ function CoverLetterTemplateCard({
 function CoverLetterTemplateEditor({
   template,
   onChanged,
-  onDeleted
+  onDeleted,
+  onClose
 }: {
   template: CoverLetterTemplate;
   onChanged: () => void;
   onDeleted: () => void;
+  onClose: () => void;
 }) {
   const confirm = useConfirm();
-  const draft = useDraft(`template-${template.id}`, {
-    title: template.title,
-    target_roles: listToLines(template.target_roles),
-    target_keywords: listToLines(template.target_keywords),
-    body: template.body,
-    notes: template.notes ?? ""
-  });
+  const draft = useDraft(`template-${template.id}`, templateFormFromTemplate(template));
   const { value: form, setValue: setForm } = draft;
   const saveMutation = useMutation({
     mutationFn: () =>
@@ -547,15 +536,20 @@ function CoverLetterTemplateEditor({
     <Panel><fieldset disabled={saveMutation.isPending || deleteMutation.isPending} className="min-w-0">
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <AssetHeading title={template.title} meta={`Updated ${formatDate(template.updated_at)}`} />
-        <Button variant="ghost" size="sm" onClick={deleteTemplate} disabled={deleteMutation.isPending}>
+        <div className="flex flex-wrap gap-2"><Button variant="ghost" size="sm" onClick={onClose}>Close editor</Button><Button size="sm" onClick={() => saveMutation.mutate()} disabled={!draft.ready || saveMutation.isPending}>Save template</Button><Button variant="ghost" size="sm" onClick={deleteTemplate} disabled={deleteMutation.isPending}>
           <Trash2 className="h-4 w-4" />
           Delete
-        </Button>
+        </Button></div>
       </div>
       <div className="grid gap-4">
+        <p className="text-sm text-muted-foreground">Save updates this reusable style template. Job-specific letters, sentence checks and document approvals stay in each job. A template is optional for generation and has no manual Ready status.</p>
         <Field label="Title">
           <Input value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} />
         </Field>
+        <Field label="Body">
+          <Textarea className="min-h-56" value={form.body} onChange={(event) => setForm({ ...form, body: event.target.value })} />
+        </Field>
+        <AdvancedDetails>
         <div className="grid gap-4 lg:grid-cols-2">
           <Field label="Target roles (one per line)">
             <Textarea value={form.target_roles} onChange={(event) => setForm({ ...form, target_roles: event.target.value })} />
@@ -564,10 +558,7 @@ function CoverLetterTemplateEditor({
             <Textarea value={form.target_keywords} onChange={(event) => setForm({ ...form, target_keywords: event.target.value })} />
           </Field>
         </div>
-        <Field label="Body">
-          <Textarea className="min-h-56" value={form.body} onChange={(event) => setForm({ ...form, body: event.target.value })} />
-        </Field>
-        <AdvancedDetails>
+
           <Field label="Notes">
             <Textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} />
           </Field>
@@ -575,10 +566,6 @@ function CoverLetterTemplateEditor({
         {deleteMutation.error ? <p role="alert" className="text-destructive">{deleteMutation.error.message}</p> : null}
         <DraftNotice onDiscard={draft.discard} dirty={draft.dirty} storageError={draft.storageError} saved={saveMutation.isSuccess} />
         {saveMutation.error ? <p className="text-sm text-destructive">{(saveMutation.error as Error).message}</p> : null}
-        <Button className="justify-self-start" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
-          <Save className="h-4 w-4" />
-          {saveMutation.isPending ? "Saving..." : "Save template"}
-        </Button>
       </div>
     </fieldset></Panel>
   );
@@ -587,6 +574,7 @@ function CoverLetterTemplateEditor({
 export function CoverageAuditTab() {
   const [result, setResult] = React.useState<CoverageGapResponse | null>(null);
   const mutation = useMutation({ mutationFn: api.generateCoverageGaps, onSuccess: setResult });
+  const jobs = useQuery({ queryKey: ["jobs", "asset-coverage-labels"], queryFn: () => api.jobs(), enabled: Boolean(result?.gaps.length) });
   return (
     <Panel>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -596,12 +584,19 @@ export function CoverageAuditTab() {
           {mutation.isPending ? "Checking..." : "Generate audit"}
         </Button>
       </div>
+      <p className="mt-4 text-sm text-muted-foreground">A keyword heuristic for gaps in reusable assets across recent job categories. This is separate from document validation, factual review and approval.</p>
+      <details className="mt-3 text-sm"><summary className="cursor-pointer font-medium">How coverage is calculated</summary><div className="mt-3 grid gap-2 text-muted-foreground">
+        <p>Includes jobs with a creation, update or status event in the last 30 days. Archived, Ghosted, Withdrawn and Rejected jobs are excluded.</p>
+        <p>Category, role titles and required skills form category keywords. A gap is flagged when the best keyword-match score is below 45, using only manually Ready resumes and all reusable letter templates.</p>
+        <p>Letter-template gaps are optional style suggestions. Neither a gap nor its absence determines whether a job-specific document is ready to generate, review or export.</p>
+      </div></details>
       {mutation.error ? <p className="mt-3 text-sm text-destructive">{(mutation.error as Error).message}</p> : null}
       {result ? (
         <div className="mt-5 grid gap-3">
           <p className="text-sm text-muted-foreground">
             {result.jobs_considered} recent jobs considered - {formatDate(result.generated_at)}
           </p>
+          <p className="text-xs text-muted-foreground">Result from this audit run. Run again after changing assets or jobs.</p>
           {result.gaps.length ? (
             result.gaps.map((gap) => (
               <div key={`${gap.asset_type}-${gap.title}`} className="rounded-md border border-border p-4">
@@ -611,15 +606,33 @@ export function CoverageAuditTab() {
                 </div>
                 <p className="mt-2 text-sm text-muted-foreground">{gap.rationale}</p>
                 <TagList items={gap.target_keywords} />
+                {gap.affected_job_ids.length ? <details className="mt-3"><summary className="cursor-pointer text-sm font-medium">Affected jobs ({gap.affected_job_ids.length})</summary><ul className="mt-2 grid gap-2">{gap.affected_job_ids.map(id => {
+                  const job = jobs.data?.find(item => item.id === id);
+                  return <li key={id}><Link className="text-sm text-primary underline" href={`/jobs/${encodeURIComponent(id)}?tab=overview#application-assets`}>{job ? `${job.company} · ${job.role_title}` : `Open job ${id.slice(0, 8)}`}</Link></li>;
+                })}</ul></details> : null}
               </div>
             ))
           ) : (
-            <p className="text-sm text-muted-foreground">No coverage gaps found.</p>
+            <p className="text-sm text-muted-foreground">{result.jobs_considered ? "No category keyword gaps below 45 were found. This does not validate or approve any document." : "No eligible job activity in the last 30 days. No category comparison was made."}</p>
           )}
         </div>
       ) : null}
     </Panel>
   );
+}
+
+function templateFormFromTemplate(template: CoverLetterTemplate) {
+  return { title: template.title, target_roles: listToLines(template.target_roles), target_keywords: listToLines(template.target_keywords), body: template.body, notes: template.notes ?? "" };
+}
+
+/** Cards read recovery availability only; the retained editor owns draft persistence. */
+function useAssetDraftStatus(key: string) {
+  const [status, setStatus] = React.useState({ dirty: false, ready: false });
+  React.useEffect(() => {
+    try { const storageKey = `job-pilot:draft:${key}`; setStatus({ dirty: (sessionStorage.getItem(storageKey) ?? localStorage.getItem(storageKey)) !== null, ready: true }); }
+    catch { setStatus({ dirty: true, ready: true }); }
+  }, [key]);
+  return status;
 }
 
 function SectionHeader({ icon: Icon, title }: { icon: React.ElementType; title: string }) {
@@ -666,7 +679,7 @@ function AdvancedDetails({ children }: { children: React.ReactNode }) {
   );
 }
 
-function PreviewTags({ label, items, max = 6 }: { label: string; items: string[]; max?: number }) {
+function PreviewTags({ label, items, max = 3 }: { label: string; items: string[]; max?: number }) {
   const unique = uniqueStrings(items);
   if (!unique.length) return null;
   const visible = unique.slice(0, max);

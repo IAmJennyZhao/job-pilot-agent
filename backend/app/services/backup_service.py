@@ -84,7 +84,7 @@ def validate_intake_tables(tables):
     for row in tables["job_intake_reviews"]:
         review = IntakeReview.model_validate(row["review"])
         evaluation = row["evaluation"]
-        if row["decision"] not in {"save_later", "continue"} or evaluation["input_hash"] != digest(review.model_dump(mode="json")):
+        if row["decision"] not in {"save_later", "continue", "apply", "archive"} or evaluation["input_hash"] != digest(review.model_dump(mode="json")):
             raise ValueError("Invalid intake review snapshot")
         signed = {key: value for key, value in evaluation.items() if key not in {"evaluation_hash", "duplicate_candidates"}}
         if evaluation["evaluation_hash"] != digest(signed):

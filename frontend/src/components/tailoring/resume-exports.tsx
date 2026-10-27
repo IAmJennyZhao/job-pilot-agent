@@ -15,6 +15,7 @@ export function ResumeExports({ view, disabled }: { view: ReviewWorkspace; disab
   const [checked, setChecked] = useState(false);
   const [message, setMessage] = useState("");
   const [downloadError, setDownloadError] = useState("");
+  const [zoom, setZoom] = useState(100);
   const key = ["resume-renders", view.baseline_id, view.revision.id];
   const query = useQuery({ queryKey: key, queryFn: () => api.resumeRenders(view.baseline_id, view.revision.id) });
   const selected = query.data?.find(r => r.id === selectedId) ?? query.data?.[0];
@@ -45,11 +46,16 @@ export function ResumeExports({ view, disabled }: { view: ReviewWorkspace; disab
     } catch (error) { setDownloadError(error instanceof Error ? error.message : "Download failed. Please retry."); }
   };
   const error = query.error || render.error || open.error || approve.error || remove.error;
-  return <section aria-label="Resume rendering and downloads" className="grid min-w-0 gap-5 rounded-lg border border-border bg-card p-5 shadow-panel sm:p-6">
+  return <section id="resume-exports" tabIndex={-1} aria-label="Resume rendering and downloads" data-revision-id={view.revision.id} data-render-id={selected?.id} className="grid min-w-0 scroll-mt-28 gap-5 rounded-lg border border-border bg-card p-5 shadow-panel sm:p-6">
     <h4 className="font-medium">PDF preview and final exports</h4>
     <p className="text-sm">Render the saved revision, inspect its layout, then approve the exact files. Page-fit changes must be saved as a new revision.</p>
+    <ol aria-label="Resume export requirements" className="grid gap-1 text-sm text-muted-foreground">
+      <li>1. Saved content: {disabled ? "save or discard local edits first" : view.approved_current ? "content review recorded" : view.approval ? "historical content review preserved" : "Mark reviewed after checking content and evidence"}.</li>
+      <li>2. PDF layout: {selected?.approved_at ? "approved for this saved render" : preview ? "inspect this saved PDF and acknowledge its layout" : selected ? "open the saved PDF to inspect its layout" : "render the saved revision to inspect its layout"}.</li>
+      <li>3. Final exports: {selected?.approved_at ? "available for this exact render" : "require final approval of these exact files"}.</li>
+    </ol>
     {disabled ? <p className="text-sm">Save or discard unsaved edits before previewing or approving exports.</p> : null}
-    <Button className="w-fit" variant="secondary" disabled={busy || !view.approval_eligible} onClick={() => { clearPreview(); render.reset(); open.reset(); approve.reset(); remove.reset(); render.mutate(); }}>{render.isPending ? "Rendering PDF…" : "Render saved revision"}</Button>
+    <Button className="w-fit" variant={query.data?.length ? "ghost" : "primary"} disabled={busy || !view.approval_eligible} onClick={() => { clearPreview(); render.reset(); open.reset(); approve.reset(); remove.reset(); render.mutate(); }}>{render.isPending ? "Rendering PDF…" : "Render saved revision"}</Button>
     {query.isLoading ? <p role="status">Loading saved exports…</p> : null}
     {query.data?.length ? <Field label="Saved render history"><Select value={selected?.id ?? ""} disabled={busy} onChange={e => { setSelectedId(e.target.value); clearPreview(); open.reset(); approve.reset(); remove.reset(); }}>
       {query.data.map(r => <option key={r.id} value={r.id}>{new Date(r.created_at).toLocaleString()} · {r.approved_at ? "Final approved" : r.validation.valid ? "Awaiting layout review" : "Layout needs correction"}</option>)}
@@ -58,13 +64,22 @@ export function ResumeExports({ view, disabled }: { view: ReviewWorkspace; disab
       <p className="text-sm">{selected.validation.pages} {selected.validation.pages === 1 ? "page" : "pages"} · {selected.approved_at ? "Final approved export" : "Draft preview"}</p>
       {selected.validation.issues.map(issue => <p key={issue} role="alert" className="text-sm text-warning-foreground">{issue}</p>)}
       <div className="flex flex-wrap gap-2">
-        <Button variant="secondary" disabled={busy} onClick={() => open.mutate()}>{open.isPending ? "Opening preview…" : "Open PDF preview"}</Button>
+        <Button variant={selected.approved_at ? "secondary" : "primary"} disabled={busy} onClick={() => open.mutate()}>{open.isPending ? "Opening preview…" : "Open PDF preview"}</Button>
         {!selected.approved_at ? <Button variant="ghost" disabled={busy} onClick={() => remove.mutate()}>Remove unapproved preview</Button> : null}
       </div>
       {preview && !disabled ? <div className="grid min-w-0 gap-3">
         <p className="text-sm">Inspect spacing, page fit, links and text. Automated checks cannot guarantee visual quality or factual accuracy.</p>
         {pdfUrl ? <a href={pdfUrl} target="_blank" rel="noreferrer" className="w-fit underline">Open full-size PDF</a> : null}
-        {preview.page_images.map((page, i) => <img key={i} src={`data:image/png;base64,${page}`} alt={`Rendered resume page ${i + 1}`} className="h-auto w-full border border-border bg-white" />)}
+        <p className="text-xs text-muted-foreground">Saved revision {view.revision.sequence} · Saved render {selected.id.slice(0, 8)}. This PDF does not include unsaved editor changes. Zoom changes the view only.</p>
+        <div role="group" aria-label="PDF preview zoom" className="flex flex-wrap items-center gap-2">
+          <Button variant="secondary" disabled={zoom <= 100} onClick={() => setZoom(value => Math.max(100, value - 25))}>Zoom out</Button>
+          <span role="status" aria-label="PDF zoom level" className="text-sm tabular-nums">{zoom}%</span>
+          <Button variant="secondary" disabled={zoom >= 200} onClick={() => setZoom(value => Math.min(200, value + 25))}>Zoom in</Button>
+          <Button variant="ghost" onClick={() => setZoom(100)}>Fit width</Button>
+        </div>
+        <div tabIndex={0} aria-label="Saved PDF preview" className="max-h-[70vh] min-w-0 overflow-auto rounded border border-border bg-muted/30 p-2">
+          <div style={{ width: `${zoom}%`, minWidth: "100%" }} className="grid gap-4">{preview.page_images.map((page, i) => <figure key={i}><figcaption className="mb-2 text-xs text-muted-foreground">Page {i + 1} of {preview.page_images.length}</figcaption><img src={`data:image/png;base64,${page}`} alt={`Rendered resume page ${i + 1}`} className="h-auto w-full border border-border bg-white" /></figure>)}</div>
+        </div>
         {!selected.approved_at ? <>
           <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={checked} disabled={busy} onChange={e => setChecked(e.target.checked)} />I inspected this exact PDF and approve its layout.</label>
           {!view.approved_current ? <p className="text-sm">Use Mark reviewed above to confirm the current content and evidence before final approval.</p> : null}
@@ -73,7 +88,7 @@ export function ResumeExports({ view, disabled }: { view: ReviewWorkspace; disab
       </div> : null}
       {selected.approved_at ? <>
         <p className="text-sm">Approved {new Date(selected.approved_at).toLocaleString()}. Downloads return these saved bytes, including when viewing historical revisions.</p>
-        <div className="flex flex-wrap gap-2">{(["pdf", "tex", "txt"] as const).map(format => <Button key={format} variant="secondary" disabled={busy} onClick={() => download(format)}>Download {format === "txt" ? "text" : format === "tex" ? "TeX" : "PDF"}</Button>)}<Button variant="ghost" disabled={busy} onClick={() => download("txt", true)}>Copy approved text</Button></div>
+        <div className="flex flex-wrap gap-2">{(["pdf", "tex", "txt"] as const).map(format => <Button key={format} variant={format === "pdf" ? "primary" : "secondary"} disabled={busy} onClick={() => download(format)}>Download {format === "txt" ? "text" : format === "tex" ? "TeX" : "PDF"}</Button>)}<Button variant="ghost" disabled={busy} onClick={() => download("txt", true)}>Copy approved text</Button></div>
       </> : null}
     </> : null}
     {message ? <p role="status" className="text-sm">{message}</p> : null}

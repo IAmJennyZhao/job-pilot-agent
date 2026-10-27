@@ -476,7 +476,8 @@ function JobOverview({
   const source = job.links.find((link) => link.kind === "source") ?? job.links[0];
   const companyLink = job.links.find((link) => link.kind === "company_info" || link.kind === "company_portal");
   const annualPay = formatAnnualPay(job);
-  const payDisplay = annualPay === "Annual not calculated" ? formatPay(job) : `${formatPay(job)} · ${annualPay}`;
+  const postedPay = formatPay(job);
+  const payDisplay = annualPay === "Annual not calculated" || annualPay === postedPay ? postedPay : `${postedPay} · ${annualPay}`;
   const locationDisplay = [job.location, job.remote_type].filter(Boolean).join(" · ") || "Unknown";
   return (
     <div>
@@ -484,7 +485,7 @@ function JobOverview({
         <span className="text-sm text-muted-foreground">Application Status:</span>
         <QuickStatusSelect value={job.status} onChange={onStatusChange} disabled={isSavingStatus} />
         <Badge>{job.category}</Badge>
-        {job.extraction_confidence !== null ? <Badge tone={job.extraction_confidence >= 80 ? "good" : "warn"}>Confidence {job.extraction_confidence}</Badge> : null}
+        {job.extraction_confidence !== null ? <Badge tone={job.extraction_confidence >= 80 ? "good" : "warn"}>Saved extraction confidence {job.extraction_confidence}</Badge> : null}
       </div>
       <div className="mt-5 grid gap-3 text-sm md:grid-cols-2">
         <InfoRow label="Company" value={job.company} href={companyLink?.url} />
@@ -527,15 +528,16 @@ function MergedJobDetail({
   const skillKeys = new Set<string>();
   const insightKeys = new Set<string>();
   const roleSignals = compactItems([...(insights?.role_focus ?? []), insights?.seniority_signal], { limit: 4, usedKeys: insightKeys, textLimit: 56 });
-  const responsibilities = compactItems(insights?.responsibilities?.length ? insights.responsibilities : job.responsibilities, { limit: 7, usedKeys: insightKeys, textLimit: 1000 });
-  const mustHaveTech = compactItems([...(job.required_skills ?? []), ...(insights?.must_have_skills ?? [])], { limit: 10, techOnly: true, usedKeys: skillKeys, textLimit: 1000 });
+  const responsibilities = job.responsibilities;
+  const mustHaveTech = compactItems(insights?.must_have_skills ?? [], { limit: 10, techOnly: true, usedKeys: skillKeys, textLimit: 1000 });
   const niceToHaveTech = compactItems(insights?.nice_to_have_skills ?? [], { limit: 7, techOnly: true, usedKeys: skillKeys, textLimit: 1000 });
-  const benefits = compactItems(job.benefits, { limit: 5, textLimit: 48 });
+  const benefits = job.benefits;
   const companySignals = compactItems([sentiment?.summary, ...(sentiment?.themes ?? [])], { limit: 7, textLimit: 1000 });
   const fitSignals = compactItems(analysis?.top_company_fit ?? [], { limit: 5, textLimit: 1000 });
   const resumeKeywords = compactItems(analysis?.resume_keywords ?? [], { limit: 8, techOnly: true, textLimit: 38 });
   const risksGaps = compactItems(analysis?.risks_gaps ?? [], { limit: 5, textLimit: 1000 });
   const sourceLinks = analysis?.source_links.length ? analysis.source_links : sentiment?.source_links ?? [];
+  const analysisMayBeOutdated = analysis && Date.parse(job.updated_at) >= Date.parse(analysis.updated_at);
   return (
     <div className="grid gap-4">
       <Panel>
@@ -543,44 +545,23 @@ function MergedJobDetail({
           <div>
             <h2 id="role-snapshot" tabIndex={-1} className="scroll-mt-28 text-base font-semibold">Role Snapshot</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              {compactText(insights?.summary || job.summary || "No summary captured.", 120)}
+              {job.summary || "No summary saved."}
             </p>
           </div>
-          {analysis ? <Badge tone={analysis.status === "complete" ? "good" : "warn"}>{analysis.status}</Badge> : <Badge>Tracker only</Badge>}
+          <Badge>Saved job fields</Badge>
         </div>
 
-        {errors.length ? (
-          <div className="mb-5 grid gap-1 rounded-md border border-warning-foreground/20 bg-warning p-3 text-sm text-warning-foreground">
-            {errors.map((error) => (
-              <div key={error}>{compactText(error, 120)}</div>
-            ))}
-          </div>
-        ) : null}
-
+        <p className="mb-4 text-xs text-muted-foreground">Current saved job facts. Analysis snapshots are shown separately and do not replace these fields.</p>
         <div className="grid gap-5">
-          <Section title="Role Signals">
-            <List items={roleSignals.length ? roleSignals : [job.category]} />
-          </Section>
           <Section title="Responsibilities">
-            <BulletList items={responsibilities} highlights={highlightPhrases.responsibilities} />
+            <BulletList items={responsibilities} />
           </Section>
           <div className="grid gap-5 md:grid-cols-2">
             <Section title="Skills">
-              <List items={mustHaveTech} />
-            </Section>
-            <Section title="Nice to Have">
-              <List items={niceToHaveTech} />
+              <List items={job.required_skills} />
             </Section>
           </div>
-          <Section title="Pay And Benefits">
-            <div className="grid gap-3 md:grid-cols-2">
-              <InfoRow label="Pay" value={formatPay(job)} />
-              <InfoRow label="Annual Equivalent" value={formatAnnualPay(job)} />
-            </div>
-            <div className="mt-4">
-              <List items={benefits} />
-            </div>
-          </Section>
+          <Section title="Benefits"><List items={benefits} /></Section>
           {job.extraction_warnings.length ? (
             <Section title="Extraction Warnings">
               <List items={compactItems(job.extraction_warnings, { limit: 4, textLimit: 90 })} tone="warn" />
@@ -589,8 +570,22 @@ function MergedJobDetail({
         </div>
       </Panel>
 
+      {errors.length ? <Panel><h2 className="mb-2 text-sm font-semibold">Analysis issues</h2>{errors.map(error => <p key={error} className="text-sm text-warning-foreground">{error}</p>)}</Panel> : null}
+
       {analysis ? (
         <>
+          <Panel>
+            <div className="flex flex-wrap items-center justify-between gap-3"><h2 id="analysis-snapshot" className="text-base font-semibold">Saved analysis snapshot</h2><Badge>{analysis.status === "complete" ? "Processing complete" : "Partial coverage"}</Badge></div>
+            <p className="mt-2 text-sm text-muted-foreground">Saved {formatDate(analysis.updated_at)}. This is stored interpretation, not newly verified job information. Fit, company signals and interview prep below belong to this snapshot.</p>
+            {analysisMayBeOutdated ? <p role="status" className="mt-3 rounded-md border border-warning-foreground/20 bg-warning p-3 text-sm text-warning-foreground">Analysis may be outdated. {Date.parse(job.updated_at) > Date.parse(analysis.updated_at) ? "The job record was updated after this analysis." : "The saved timestamps have limited precision and cannot establish whether this analysis includes the latest edits."} Status or asset changes can also update the job timestamp. Compare with the saved job facts before using it.</p> : null}
+            <details className="mt-4"><summary className="cursor-pointer text-sm font-medium">Analysis interpretation of the role</summary><div className="mt-3 grid gap-4 text-sm">
+              <p>{insights?.summary || "No analysis summary saved."}</p>
+              <Section title="Role signals"><List items={roleSignals} /></Section>
+              <Section title="Responsibilities in analysis"><BulletList items={insights?.responsibilities ?? []} highlights={highlightPhrases.responsibilities} /></Section>
+              <Section title="Skills in analysis"><List items={mustHaveTech} /></Section>
+              <Section title="Nice to have in analysis"><List items={niceToHaveTech} /></Section>
+            </div></details>
+          </Panel>
           <Panel>
             <h2 id="fit-and-gaps" tabIndex={-1} className="scroll-mt-28 mb-5 text-base font-semibold">Fit And Gaps</h2>
             <div className="grid gap-5 md:grid-cols-3">
@@ -664,12 +659,12 @@ function ApplicationAssetsPanel({
   const readyResumes = resumeOptions.filter((option) => option.status === "ready");
   const latestSource = recommendation?.source === "ai" ? "AI ranking" : recommendation ? "Keyword score" : "No ranking";
   return (
-    <div>
+    <section aria-label="Reusable asset selection">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 id="application-assets" tabIndex={-1} className="scroll-mt-28 text-base font-semibold">Reusable asset selection</h2>
           <p className="mt-2 text-sm text-muted-foreground">Choose reusable documents for this application. Tailored drafts and their approvals live in Resume and Cover letter.</p>
-          <p className="mt-1 text-xs text-muted-foreground">{latestSource}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{latestSource}{recommendation ? ` · Saved ${formatDate(recommendation.created_at)}` : ""}</p>
         </div>
         {recommendation ? <Badge tone={recommendation.source === "ai" ? "good" : "neutral"}>{recommendation.source}</Badge> : null}
       </div>
@@ -712,6 +707,8 @@ function ApplicationAssetsPanel({
             {isRankingAi ? "Ranking..." : "AI rank"}
           </Button>
         </div>
+        <p className="text-xs text-muted-foreground">Initial review includes keyword ranking and the existing job review. AI rank explicitly requests AI suggestions. Both compare reusable assets; neither selects one. Choose a saved asset below or use the selection fields.</p>
+        <p className="text-xs text-muted-foreground">Only manually Ready resumes are ranked. Letter templates are optional. Scores describe matching suggestions, not document validation or approval. Rerun after changing assets or job information.</p>
         {error ? <p className="text-sm text-destructive">{error.message}</p> : null}
       </div>
       {recommendation ? (
@@ -734,7 +731,7 @@ function ApplicationAssetsPanel({
       ) : (
         <p className="mt-4 text-sm text-muted-foreground">Run initial review to rank saved assets for this job.</p>
       )}
-    </div>
+    </section>
   );
 }
 
@@ -751,19 +748,21 @@ function AssetRankingList({
   selectedId: string | null;
   onSelect: (id: string) => void;
 }) {
+  const [showAll, setShowAll] = useState(false);
   return (
-    <div>
+    <section aria-label={title}>
       <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
         <Icon className="h-4 w-4 text-primary" />
         {title}
       </div>
       <div className="grid gap-2">
         {rankings.length ? (
-          rankings.slice(0, 3).map((ranking) => (
+          rankings.slice(0, showAll ? undefined : 3).map((ranking) => (
             <button
               key={ranking.asset_id}
               type="button"
               onClick={() => onSelect(ranking.asset_id)}
+              aria-pressed={selectedId === ranking.asset_id}
               className={cn(
                 "rounded-md border p-3 text-left text-sm transition",
                 selectedId === ranking.asset_id ? "border-primary bg-primary/5" : "border-border hover:bg-muted"
@@ -771,16 +770,18 @@ function AssetRankingList({
             >
               <div className="flex items-center justify-between gap-3">
                 <span className="font-medium">{ranking.title}</span>
-                <Badge tone={ranking.score >= 60 ? "good" : ranking.score >= 30 ? "warn" : "neutral"}>{ranking.score}</Badge>
+                <Badge tone="neutral">Match {ranking.score}/100</Badge>
               </div>
               {ranking.reasons[0] ? <p className="mt-1 text-xs text-muted-foreground">{ranking.reasons[0]}</p> : null}
+              <span className="mt-2 block text-xs font-medium text-primary">{selectedId === ranking.asset_id ? "Selected for this job" : "Select for this job"}</span>
             </button>
           ))
         ) : (
           <p className="text-sm text-muted-foreground">No assets to rank.</p>
         )}
       </div>
-    </div>
+      {rankings.length > 3 ? <Button variant="ghost" size="sm" aria-expanded={showAll} onClick={() => setShowAll(value => !value)}>{showAll ? "Show top three" : `Show all ${rankings.length} suggestions`}</Button> : null}
+    </section>
   );
 }
 
@@ -1141,8 +1142,9 @@ function AdvancedAnalysisControl({
     <div className="rounded-md border border-border bg-muted/40 p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="font-medium">Advanced Detailed Analysis</div>
-        {canRun ? <Badge tone="good">Ready</Badge> : <Badge tone="warn">Needs setup</Badge>}
+        <Badge tone={readinessError || !canRun ? "warn" : "good"}>{readinessLoading ? "Checking analysis setup" : readinessError ? "Analysis setup unavailable" : canRun ? "Analysis can run" : "Analysis setup needed"}</Badge>
       </div>
+      <p className="mb-3 text-xs text-muted-foreground">Analysis uses reusable profile information when available. Tailoring requires activated sources, and saved documents have separate review and export approval.</p>
       {readinessError ? <p className="text-sm text-destructive">{readinessError.message}</p> : null}
       {readinessLoading ? <p className="text-sm text-muted-foreground">Checking readiness...</p> : null}
       {setupNotes.length ? (
@@ -1173,7 +1175,7 @@ function AdvancedAnalysisControl({
       {readiness?.model ? (
         <div className="mb-3 flex items-center gap-2 text-sm text-muted-foreground">
           <CheckCircle2 className="h-4 w-4 text-success-foreground" />
-          Extraction model: {readiness.model}
+          Analysis model: {readiness.model}
         </div>
       ) : null}
       <div className="mb-3 text-sm text-muted-foreground">

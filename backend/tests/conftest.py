@@ -10,6 +10,10 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.database import Base, get_db
+from app import logging_config
+
+# Pytest captures logs; avoid sharing the normal app's rotating file on Windows.
+logging_config.setup_logging = lambda: None
 from app.main import app
 
 

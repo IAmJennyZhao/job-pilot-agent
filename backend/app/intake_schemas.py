@@ -27,6 +27,6 @@ class IntakeReview(BaseModel):
 
 class IntakeSave(IntakeReview):
     request_key: str = Field(min_length=16, max_length=128)
-    decision: Literal["save_later", "continue"]
+    decision: Literal["save_later", "continue", "apply", "archive"]
     expected_evaluation_hash: str = Field(min_length=64, max_length=64)
     allow_duplicate: bool = False

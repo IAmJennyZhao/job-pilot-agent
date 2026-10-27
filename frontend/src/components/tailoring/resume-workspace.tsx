@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import Link from "next/link";
 import { api } from "@/lib/api";
 import { useDraft } from "@/lib/use-draft";
 import { isRequestDraft } from "@/lib/intake-draft";
@@ -13,6 +12,8 @@ import { Button } from "@/components/ui/button";
 import { Field, Select, Textarea } from "@/components/ui/field";
 import { Panel } from "@/components/ui/panel";
 import { ResumeReview } from "./resume-review";
+import { ActiveSourceSummary } from "./active-source-summary";
+import { DocumentWorkflowSteps, usePreparationDisclosure } from "./document-workflow";
 
 const stages = [ ["select", "Select evidence"], ["critique", "Critique"], ["revise", "Revise"], ["polish", "Polish"] ] as const;
 const active = (state?: string) => state === "pending" || state === "running";
@@ -49,6 +50,7 @@ export function ResumeWorkspace({ jobId, updatedAt }: { jobId: string; updatedAt
   const run = runQuery.data;
   const running = generate.isPending || current?.runs.some(r => active(r.state));
   const reviewed = Boolean(ready?.description_reviewed || ready?.description_hash === reviewedHash);
+  const preparation = usePreparationDisclosure(Boolean(run?.revision), editing || description.dirty || description.recoveryRaw !== null || saveKey.recoveryRaw !== null || Boolean(workspace.error || generate.error), "tailoring-preparation");
   const canGenerate = ready?.ready && reviewed && !running && !editing && !workspace.isFetching && saveKey.ready && description.ready && !description.dirty;
   const start = (parent?: string) => {
     if (!canGenerate || !ready?.input_hash) return;
@@ -59,16 +61,20 @@ export function ResumeWorkspace({ jobId, updatedAt }: { jobId: string; updatedAt
     generate.mutate({ payload: { ...values, request_key: key }, parent });
   };
   return <section aria-label="Resume tailoring" className="grid min-w-0 gap-8">
-    <div id="tailoring-preparation" className="scroll-mt-28"><Panel className="grid gap-5">
-    <h2 className="text-lg font-semibold">Tailoring preparation</h2>
+    <DocumentWorkflowSteps kind="resume" preparationId="tailoring-preparation" hasDraft={Boolean(run?.revision)} onPrepare={() => preparation.setOpen(true)} />
+    <div id="tailoring-preparation" tabIndex={-1} className="scroll-mt-28"><Panel>
+    <details open={preparation.open} onToggle={event => preparation.setOpen(event.currentTarget.open)}>
+    <summary className="cursor-pointer text-lg font-semibold"><h2 className="inline">Tailoring preparation</h2><span className="ml-3 text-xs font-normal text-muted-foreground">{run?.revision ? "Saved draft available · expand to prepare another generation" : "Review inputs and generate a draft"}</span></summary>
+    <div className="mt-5 grid gap-4">
     <DraftRecovery name="resume generation request" draft={saveKey} />
     <DraftRecovery name="job description" draft={description} />
     <p className="text-sm text-muted-foreground">Write a tailored draft, then receive advisory factual feedback. Detailed job analysis remains a separate optional action.</p>
     {workspace.isPending ? <p role="status">Loading tailoring readiness…</p> : workspace.error ? <p role="alert">{workspace.error.message} <Button onClick={() => workspace.refetch()}>Refresh readiness</Button></p> : ready ? <>
+      <p className="text-sm font-medium">Generation prerequisites: {ready.ready ? "inputs available" : "inputs missing"}. {reviewed ? "Saved posting reviewed." : "Review the saved posting before generating."}</p>
+      <ActiveSourceSummary expectedSourceId={ready.evaluation.source_id} onRefreshPreparation={() => workspace.refetch()} />
       <details><summary className="cursor-pointer text-sm font-medium">Preference checks</summary><div className="mt-3"><PreferenceFlags evaluation={ready.evaluation} /></div></details>
       {ready.saved_evaluation ? <details><summary className="cursor-pointer text-sm">Checks recorded when saved</summary><div className="mt-2"><PreferenceFlags evaluation={ready.saved_evaluation} /></div></details> : null}
       {ready.missing.length ? <ul className="list-inside list-disc text-sm text-warning-foreground">{ready.missing.map(reason => <li key={reason}>{reason}</li>)}</ul> : null}
-      <Link className="w-fit text-sm underline" href="/profile?tab=sources">Review sources in Application Assets</Link>
       <details><summary className="cursor-pointer text-sm font-medium">Review full saved job description</summary><pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words text-xs">{ready.source_content || "No description saved."}</pre></details>
       {editing ? <div className="grid gap-2">
         <Field label="Full job description for tailoring"><Textarea disabled={!description.ready} className="min-h-48" value={description.value} onChange={e => description.setValue(e.target.value)} /></Field>
@@ -77,14 +83,15 @@ export function ResumeWorkspace({ jobId, updatedAt }: { jobId: string; updatedAt
       </div> : <Button className="w-fit" variant="secondary" disabled={Boolean(running) || !description.ready} onClick={() => setEditing(true)}>{description.dirty ? "Resume description edit" : "Edit full description"}</Button>}
       {ready.description_reviewed ? <p className="text-sm">Full job description reviewed.</p> : <label className="flex items-start gap-2 text-sm"><input type="checkbox" disabled={!ready.source_content.trim() || editing} checked={reviewed} onChange={e => setReviewedHash(e.target.checked ? ready.description_hash : null)} />I reviewed this complete saved job description.</label>}
       <div className="flex flex-wrap gap-2"><Button disabled={!canGenerate} onClick={() => start()}>{generate.isPending ? "Generating resume…" : "Generate tailored resume"}</Button>
-        <Button variant="secondary" disabled={workspace.isFetching} onClick={() => { workspace.refetch(); if (runId) runQuery.refetch(); }}>Refresh progress</Button>
+        <Button variant="ghost" disabled={workspace.isFetching} onClick={() => { workspace.refetch(); if (runId) runQuery.refetch(); }}>Refresh progress</Button>
       </div>
       <p className="text-xs text-muted-foreground">Generate acknowledges the displayed preference checks. Red flags do not prevent generation. A draft does not mark this job Applied or select a resume asset.</p>
       {generate.error ? <p role="alert" className="text-sm text-destructive">{generate.error.message} Refresh progress before retrying; the server may still be working.</p> : null}
       {saveKey.storageError ? <p className="text-sm text-warning-foreground">Browser draft storage is unavailable. Check saved run history after a connection failure.</p> : null}
     </> : null}
+    </div></details>
     </Panel></div>
-    {ready && current ? <Panel className="grid gap-5">
+    {ready && current ? <Panel className="grid gap-4">
       <h2 id="resume-history" tabIndex={-1} className="scroll-mt-28 text-lg font-semibold">Generation history</h2>
       {current.runs.length > 0 ? <Field label="Resume generation history"><Select value={runId ?? ""} onChange={e => setSelected(e.target.value)}>{current.runs.map((r, index) => <option key={r.id} value={r.id}>{index === 0 ? "Latest: " : ""}{r.state} — {new Date(r.created_at).toLocaleString()} — {r.id.slice(0, 8)}</option>)}</Select></Field> : <p className="text-sm text-muted-foreground">No saved resume generations for this job yet.</p>}
       {runQuery.error ? <p role="alert" className="text-sm text-destructive">{runQuery.error.message}</p> : null}
@@ -105,14 +112,13 @@ export function ResumeWorkspace({ jobId, updatedAt }: { jobId: string; updatedAt
       </> : running ? <p role="status" className="text-sm">Waiting for the server to persist the new run…</p> : null}
     </Panel> : null}
     {ready && run?.revision ? <ResumeReview key={run.revision.id} baselineId={run.revision.id} sourceKey={ready.input_hash} /> : null}
-    <p className="text-sm text-muted-foreground">Review the saved content, then inspect its PDF preview before approving final downloads.</p>
   </section>;
 }
 
 function RunProgress({ run }: { run: GenerationRun }) {
   const visibleStages = run.generation_version === 6 ? [["write", "Write tailored draft"], ["review", "Advisory factual review"]] : stages;
-  return <div className="grid gap-2"><p role="status" className="text-sm font-medium">Resume run: {run.state}</p><ol aria-label="Resume generation progress" className="grid gap-2 sm:grid-cols-2">{visibleStages.map(([key, label]) => {
+  return <div className="grid gap-2"><p role="status" className="text-sm font-medium">Resume run: {run.state}</p>{run.state !== "completed" ? <ol aria-label="Resume generation progress" className="grid gap-2 sm:grid-cols-2">{visibleStages.map(([key, label]) => {
     const attempt = run.stages.filter(s => s.stage === key).sort((a, b) => b.attempt - a.attempt)[0];
     return <li key={key} className="rounded border border-border p-3 text-sm"><strong>{label}</strong><p>{attempt?.state ?? "Not started"}</p>{attempt && attempt.attempt > 1 ? <p className="text-xs">Repair attempt</p> : null}</li>;
-  })}</ol></div>;
+  })}</ol> : null}</div>;
 }

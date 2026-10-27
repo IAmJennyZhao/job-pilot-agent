@@ -8,7 +8,7 @@ import { useConfirm } from "@/components/ui/confirm-provider";
 import { keepPreviousData, useMutation, useMutationState, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, ExternalLink, FileText, Plus, Save, Search, Sparkles, X } from "lucide-react";
 import Link from "next/link";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useState, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useDraft } from "@/lib/use-draft";
 import { isIntakeDraft, isIntakeReviewDraft } from "@/lib/intake-draft";
@@ -18,7 +18,6 @@ import { Button } from "@/components/ui/button";
 import { ListEditor } from "@/components/ui/list-editor";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { Badge, PageHeader, Panel } from "@/components/ui/panel";
-import { LocalTab, LocalTabs } from "@/components/ui/local-tabs";
 import { api } from "@/lib/api";
 import {
   jobCategories,
@@ -32,8 +31,7 @@ import {
   type JobStatus,
   type RemoteType
 } from "@/lib/types";
-import { cn, formatDate } from "@/lib/utils";
-import { pushLocalView } from "@/lib/workspace-navigation";
+import { formatDate } from "@/lib/utils";
 
 type IntakeState = {
   source_url: string;
@@ -110,6 +108,7 @@ function JobsContent() {
   const categoryFilter = params.get("category") as JobCategory | "" || "";
   const savedSince = params.get("since") ?? "";
   const funnelStage = params.get("funnel") ?? "";
+  const funnelStopped = params.get("stopped") === "true";
   const funnelFrom = params.get("from") ?? "";
   const showHidden = params.get("hidden") === "true" || isHiddenStatus(statusFilter) || Boolean(funnelStage);
   const sort = params.get("sort") ?? "updated";
@@ -117,22 +116,23 @@ function JobsContent() {
   const [savedJob, setSavedJob] = useState<{ id: string; company: string } | null>(null);
   const returnTo = `/jobs${params.size ? `?${params}` : ""}`;
   const [selectedJob, setSelectedJob] = useState<JobListItem | null>(null);
+  const [sourceOpen, setSourceOpen] = useState(true);
   const intakeDraft = useDraft<IntakeState>("job-intake", { source_url: "", source_content: "" }, isIntakeDraft);
   const { value: intake, setValue: setIntake } = intakeDraft;
-  const [preview, setPreview] = useState<JobExtractPreview | null>(null);
   const reviewDraft = useDraft<ReviewState | null>("job-review", null, isIntakeReviewDraft);
   const { value: review, setValue: setReview } = reviewDraft;
+  const hasReview = Boolean(review);
+  useEffect(() => { setSourceOpen(!hasReview); }, [hasReview]);
 
   const { data: rawJobs = [], isLoading, error, isFetching, refetch } = useQuery({
-    queryKey: ["jobs", showHidden, debouncedSearch, statusFilter, healthFilter, categoryFilter, funnelStage, funnelFrom, savedSince],
-    queryFn: () => api.jobs({ includeArchived: showHidden, search: debouncedSearch.trim() || undefined, status: statusFilter, category: categoryFilter, healthFilter: toApiHealthFilter(healthFilter), funnelStage, funnelFrom, savedSince }),
+    queryKey: ["jobs", showHidden, debouncedSearch, statusFilter, healthFilter, categoryFilter, funnelStage, funnelFrom, savedSince, funnelStopped],
+    queryFn: () => api.jobs({ includeArchived: showHidden, search: debouncedSearch.trim() || undefined, status: statusFilter, category: categoryFilter, healthFilter: toApiHealthFilter(healthFilter), funnelStage, funnelFrom, savedSince, funnelStopped }),
     placeholderData: keepPreviousData
   });
   const jobs = [...rawJobs].sort((a, b) => sort === "company" ? a.company.localeCompare(b.company) : sort === "pay" ? (a.pay_currency ?? "Unknown").localeCompare(b.pay_currency ?? "Unknown") || (b.pay_annual_max ?? b.pay_annual_min ?? -1) - (a.pay_annual_max ?? a.pay_annual_min ?? -1) : Date.parse(b.updated_at) - Date.parse(a.updated_at));
   const extractMutation = useMutation({
     mutationFn: api.extractJobPreview,
     onSuccess: (data) => {
-      setPreview(data);
       setReview({ ...reviewFromPreview(data), facts: data.preference_facts, sourceInput: { ...intake }, fullDescriptionReviewed: false });
     }
   });
@@ -143,7 +143,6 @@ function JobsContent() {
       setSavedJob(job);
       setShowIntake(false);
       setIntake({ source_url: "", source_content: "" });
-      setPreview(null);
       setReview(null);
       intakeDraft.clear();
       reviewDraft.clear();
@@ -173,13 +172,12 @@ function JobsContent() {
   });
 
   const startManualFallback = () => {
-    setPreview(null);
     setReview({ ...blankReview(intake), facts: {}, sourceInput: { ...intake }, fullDescriptionReviewed: false });
     createMutation.reset();
   };
 
   const discardIntake = () => {
-    intakeDraft.discard(); reviewDraft.discard(); setPreview(null);
+    intakeDraft.discard(); reviewDraft.discard();
     extractMutation.reset(); createMutation.reset(); setShowIntake(false);
   };
   const changeReview = (next: ReviewState) => {
@@ -196,16 +194,14 @@ function JobsContent() {
   };
 
   const changeStatusFilter = (status: JobStatus | "") => setFilter({ status, hidden: isHiddenStatus(status) ? "true" : params.get("hidden") ?? "" });
-  const changeShowHidden = (value: boolean) => setFilter({ hidden: value ? "true" : "", status: !value && isHiddenStatus(statusFilter) ? "" : statusFilter, funnel: "", from: "" });
+  const changeShowHidden = (value: boolean) => setFilter({ hidden: value ? "true" : "", status: !value && isHiddenStatus(statusFilter) ? "" : statusFilter, funnel: "", from: "", stopped: "" });
 
   return (
     <div className="grid gap-6">
       <PageHeader
         title="Job Tracker"
-        description="Track opportunities, review next steps, and keep your application history together."
         action={<Button onClick={() => setShowIntake(!showIntake)} aria-expanded={showIntake} aria-controls="job-intake"><Plus className="h-4 w-4" />{showIntake ? "Hide add job" : "Add job"}</Button>}
       />
-      <LocalTabs label="Jobs views"><LocalTab active onClick={() => pushLocalView("/jobs", params, "tracker")}>Tracker</LocalTab></LocalTabs>
 
       {savedJob ? <Panel className="text-sm"><div role="status">Saved {savedJob.company}. <Link className="font-semibold underline" href={`/jobs/${savedJob.id}`}>Open saved job</Link></div></Panel> : null}
       <div className="grid min-w-0 gap-4">
@@ -213,13 +209,16 @@ function JobsContent() {
           <DraftRecovery name="job intake" draft={intakeDraft} />
           <DraftRecovery name="job review" draft={reviewDraft} />
           <fieldset disabled={!intakeDraft.ready || !reviewDraft.ready || extractMutation.isPending || createMutation.isPending} className="min-w-0">
-          <div className="mb-4 flex items-center gap-2">
-            <Plus className="h-4 w-4 text-primary" />
-            <h2 className="text-base font-semibold">Add Job</h2>
+          <div className="mb-5 grid gap-1">
+            <h2 className="text-lg font-semibold">Add job</h2>
+            {!review ? <p className="text-sm text-muted-foreground">Paste a posting, add a URL, or enter manually.</p> : null}
           </div>
 
-          {(intakeDraft.dirty || reviewDraft.dirty) ? <p role="status" className="mb-3 text-sm">Draft restored or kept on this browser, including after closing the tab. Save the reviewed job to add it to your tracker.</p> : null}
-          <div className="grid gap-4">
+          {(intakeDraft.dirty || reviewDraft.dirty) ? <p role="status" className="mb-4 text-xs text-muted-foreground">Draft kept on this browser, including after refresh or closing the tab.</p> : null}
+          <details open={sourceOpen} onToggle={event => setSourceOpen(event.currentTarget.open)} className={review ? "rounded-md border border-border p-3" : ""}>
+          <summary className="cursor-pointer text-sm font-medium">Posting source and extraction</summary>
+          <div className="mt-4 grid gap-4">
+            <div className="grid items-start gap-4 md:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
             <Field label="Job URL">
               <Input
                 value={intake.source_url}
@@ -231,10 +230,11 @@ function JobsContent() {
               <Textarea
                 value={intake.source_content}
                 onChange={(event) => setIntake((current) => ({ ...current, source_content: event.target.value }))}
-                className="min-h-44"
+                className="min-h-28"
                 placeholder="Paste the job description or full job page text."
               />
             </Field>
+            </div>
             {extractMutation.error ? (
               <div className="rounded-md border border-warning-foreground/20 bg-warning p-3 text-sm text-warning-foreground">
                 <div>{(extractMutation.error as Error).message}</div>
@@ -260,19 +260,19 @@ function JobsContent() {
               </Button>
             </div>
             {extractMutation.isPending ? <p role="status" className="text-sm">Extracting job basics. Your source text stays in this draft.</p> : null}
-            {!review ? <Button variant="ghost" onClick={discardIntake}>Not pursuing</Button> : null}
+            {!review ? <Button variant="ghost" className="w-fit" onClick={discardIntake}>Not pursuing</Button> : null}
           </div>
+          </details>
 
           {review ? (
-            <div className="mt-6 border-t border-border pt-5">
-              <div className="mt-5">
-                <ReviewEditor review={review} onChange={changeReview} preview={preview} />
-              </div>
+            <div className="mt-6">
               <IntakeDecisions review={{ job: cleanReview(review, intake.source_url), facts: review.facts ?? {}, full_description_reviewed: review.fullDescriptionReviewed ?? false }}
                 valid={!Object.keys(validateJobFields(review)).length && Boolean(review.company.trim() && review.role_title.trim())}
                 stale={JSON.stringify(review.sourceInput) !== JSON.stringify(intake)} busy={createMutation.isPending} error={createMutation.error}
                 onFacts={facts => setReview({ ...review, facts })} onReviewed={fullDescriptionReviewed => setReview({ ...review, fullDescriptionReviewed })}
-                onSave={payload => createMutation.mutate(payload)} onDiscard={discardIntake} />
+                onSave={payload => createMutation.mutate(payload)} onDiscard={discardIntake}>
+                {actions => <ReviewEditor review={review} onChange={changeReview} actions={actions} />}
+              </IntakeDecisions>
             </div>
           ) : null}
         </fieldset></Panel></section>
@@ -281,10 +281,10 @@ function JobsContent() {
           <div className="mb-4 grid gap-3">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex items-center gap-3">
-                <h2 className="text-base font-semibold">{funnelStage ? funnelFrom ? `Jobs ${funnelStage.toLowerCase()} after ${funnelFrom}` : `Jobs that ${["Rejected", "Withdrawn", "Ghosted"].includes(funnelStage) ? "ended as" : "reached"} ${funnelStage}` : "Applications"}</h2>
+                <h2 className="text-base font-semibold">{funnelStage ? funnelStopped ? `Jobs with no later stage after ${funnelStage}` : funnelFrom ? `Jobs ${funnelStage.toLowerCase()} after ${funnelFrom}` : `Jobs that ${["Rejected", "Withdrawn", "Ghosted"].includes(funnelStage) ? "ended as" : "reached"} ${funnelStage}` : "Applications"}</h2>
                 <Badge>{jobs.length} shown</Badge>
               </div>
-              {funnelStage ? <p className="text-sm text-muted-foreground">Historical cohort · includes closed outcomes · excludes archived jobs</p> : <label className="flex items-center gap-2 text-sm text-muted-foreground">
+              {funnelStage ? <p className="text-sm text-muted-foreground">{funnelStopped ? "Historical cohort · excludes closed and archived jobs" : "Historical cohort · includes closed outcomes · excludes archived jobs"}</p> : <label className="flex items-center gap-2 text-sm text-muted-foreground">
                 <input
                   type="checkbox"
                   className="h-4 w-4 rounded border-border text-primary"
@@ -326,9 +326,10 @@ function JobsContent() {
               </Select>
             </div>
           </div>
+          {funnelStopped ? <p className="mb-3 text-sm text-muted-foreground">Furthest recorded stage, including inferred progression; excludes closed and archived jobs. Current status may have moved back.</p> : null}
           <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
-            {funnelStage ? <Badge>{funnelFrom ? `${funnelFrom} → ${funnelStage}` : `Reached ${funnelStage}`} · excludes archived</Badge> : null}
-            {[...params.entries()].filter(([key]) => ["search", "status", "health", "category", "funnel", "since"].includes(key)).map(([key, value]) => <button key={key} className="rounded-full border border-border px-3 py-1" onClick={() => setFilter(key === "funnel" ? { funnel: "", from: "", hidden: "" } : { [key]: "" })} aria-label={`Remove ${key} filter`}>{key === "since" ? `Saved since ${value}` : healthLabels[value] ?? value} ×</button>)}
+            {funnelStage ? <Badge>{funnelStopped ? `No later stage after ${funnelStage}` : funnelFrom ? `${funnelFrom} → ${funnelStage}` : `Reached ${funnelStage}`} · excludes archived</Badge> : null}
+            {[...params.entries()].filter(([key]) => ["search", "status", "health", "category", "funnel", "since"].includes(key)).map(([key, value]) => <button key={key} className="rounded-full border border-border px-3 py-1" onClick={() => setFilter(key === "funnel" ? { funnel: "", from: "", stopped: "", hidden: "" } : { [key]: "" })} aria-label={`Remove ${key} filter`}>{key === "since" ? `Saved since ${value} (UTC)` : healthLabels[value] ?? value} ×</button>)}
             {[...params.keys()].some(key => key !== "sort") ? <Button variant="ghost" size="sm" onClick={() => window.history.replaceState(null, "", `/jobs${sort !== "updated" ? `?sort=${encodeURIComponent(sort)}` : ""}`)}>Clear filters</Button> : null}
             <label className="ml-auto flex items-center gap-2 whitespace-nowrap">Sort by <Select aria-label="Sort jobs" value={sort} onChange={event => setFilter({ sort: event.target.value })}><option value="updated">Recently updated</option><option value="company">Company A–Z</option><option value="pay">Pay by currency, highest first</option></Select></label>
           </div>
@@ -492,13 +493,19 @@ function cleanReview(review: ReviewState, fallbackSourceUrl: string): JobCreateP
 function ReviewEditor({
   review,
   onChange,
-  preview
+  actions
 }: {
   review: ReviewState;
   onChange: (next: ReviewState) => void;
-  preview: JobExtractPreview | null;
+  actions: ReactNode;
 }) {
   const errors = validateJobFields(review);
+  const payInvalid = Boolean(errors.pay_min || errors.pay_max);
+  const linksInvalid = Object.keys(errors).some(key => key.startsWith("link_"));
+  const [payOpen, setPayOpen] = useState(payInvalid);
+  const [linksOpen, setLinksOpen] = useState(linksInvalid);
+  useEffect(() => { if (payInvalid) setPayOpen(true); }, [payInvalid]);
+  useEffect(() => { if (linksInvalid) setLinksOpen(true); }, [linksInvalid]);
   const set = <K extends keyof ReviewState>(key: K, value: ReviewState[K]) => onChange({ ...review, [key]: value });
   const setLink = (index: number, patch: Partial<JobLinkInput>) => {
     const nextPatch = patch.kind ? { ...patch, label: patch.label ?? linkKindLabels[patch.kind] } : patch;
@@ -511,38 +518,28 @@ function ReviewEditor({
 
   return (
     <div className="grid gap-4">
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="font-semibold">Job basics</h3>
         <Badge tone={review.extraction_confidence && review.extraction_confidence >= 80 ? "good" : "warn"}>
           Confidence {review.extraction_confidence ?? "manual"}
         </Badge>
-        {review.duplicateCount ? <Badge tone="warn">{review.duplicateCount} possible duplicate</Badge> : null}
       </div>
-      {preview?.duplicate_candidates.length ? (
-        <div className="rounded-md border border-warning-foreground/20 bg-warning p-3 text-sm text-warning-foreground">
-          {preview.duplicate_candidates.map((candidate) => (
-            <div key={candidate.id}>
-              Possible duplicate:{" "}
-              <Link href={`/jobs/${candidate.id}`} className="font-medium underline">
-                {candidate.company} - {candidate.role_title}
-              </Link>
-            </div>
-          ))}
-        </div>
-      ) : null}
       {(review.extraction_warnings ?? []).length ? (
-        <div className="grid gap-1 text-xs text-warning-foreground">
+        <details className="text-sm"><summary className="cursor-pointer font-medium text-warning-foreground">Extraction notes ({review.extraction_warnings!.length})</summary><div className="mt-2 grid gap-1 text-xs text-warning-foreground">
           {(review.extraction_warnings ?? []).map((warning) => (
             <div key={warning}>{warning}</div>
           ))}
-        </div>
+        </div></details>
       ) : null}
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Company">
           <Input value={review.company} onChange={(event) => set("company", event.target.value)} />
         </Field>
         <Field label="Role title">
           <Input value={review.role_title} onChange={(event) => set("role_title", event.target.value)} />
         </Field>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <Field label="Category">
           <Select value={review.category} onChange={(event) => set("category", event.target.value as JobCategory)}>
             {jobCategories.map((category) => (
@@ -561,17 +558,11 @@ function ReviewEditor({
             ))}
           </Select>
         </Field>
-      </div>
       <Field label="Location">
         <Input value={review.location ?? ""} onChange={(event) => set("location", event.target.value)} />
       </Field>
-      <p className="text-sm">Posted pay: {formatPay({ pay_min: review.pay_min ?? null, pay_max: review.pay_max ?? null, pay_currency: review.pay_currency ?? null, pay_period: review.pay_period ?? null, pay_raw: review.pay_raw ?? null })}</p>
-      <details><summary className="cursor-pointer text-sm font-medium">More job details: pay, responsibilities and links{Object.keys(errors).length ? " — corrections needed" : ""}</summary><div className="mt-3 grid gap-4">
-      <Field label="Summary">
-        <Textarea value={review.summary ?? ""} onChange={(event) => set("summary", event.target.value)} />
-      </Field>
-      <ListEditor label="Main responsibilities" value={review.responsibilities ?? []} onChange={value => set("responsibilities", value)} />
-      <ListEditor label="Skills" value={review.required_skills ?? []} onChange={value => set("required_skills", value)} />
+      </div>
+      <details open={payOpen} onToggle={event => setPayOpen(event.currentTarget.open)} className="border-t border-border pt-3"><summary className="cursor-pointer text-sm"><span className="font-medium">Pay</span><span className="ml-2 text-muted-foreground">{formatPay({ pay_min: review.pay_min ?? null, pay_max: review.pay_max ?? null, pay_currency: review.pay_currency ?? null, pay_period: review.pay_period ?? null, pay_raw: review.pay_raw ?? null })}</span>{payInvalid ? <span className="ml-2 text-destructive">Corrections needed</span> : null}</summary><div className="mt-3 grid gap-4">
       <div className="grid gap-3 md:grid-cols-2">
         <Field label="Pay minimum" error={errors.pay_min}>
           <Input type="number" min={0} value={review.pay_min ?? ""} onChange={(event) => set("pay_min", event.target.value ? Number(event.target.value) : null)} />
@@ -595,10 +586,20 @@ function ReviewEditor({
       <Field label="Raw pay text">
         <Input value={review.pay_raw ?? ""} onChange={(event) => set("pay_raw", event.target.value)} placeholder="$120k-$160k, equity, bonus..." />
       </Field>
+      </div></details>
+      {actions}
+      <Field label="Summary">
+        <Textarea value={review.summary ?? ""} onChange={(event) => set("summary", event.target.value)} />
+      </Field>
+      <details className="border-t border-border pt-3"><summary className="cursor-pointer text-sm font-medium">Additional job details</summary><div className="mt-3 grid gap-4">
+      <ListEditor label="Main responsibilities" value={review.responsibilities ?? []} onChange={value => set("responsibilities", value)} />
+      <ListEditor label="Skills" value={review.required_skills ?? []} onChange={value => set("required_skills", value)} />
       <ListEditor label="Benefits" value={review.benefits ?? []} onChange={value => set("benefits", value)} />
       <Field label="Notes">
         <Textarea value={review.notes ?? ""} onChange={(event) => set("notes", event.target.value)} />
       </Field>
+      </div></details>
+      <details open={linksOpen} onToggle={event => setLinksOpen(event.currentTarget.open)} className="border-t border-border pt-3"><summary className="cursor-pointer text-sm font-medium">Posting and other links ({review.links.length}){linksInvalid ? <span className="ml-2 text-destructive">Corrections needed</span> : null}</summary><div className="mt-3">
       <div className="grid gap-3">
         <div className="flex items-center justify-between gap-3">
           <div className="text-sm font-medium">Links</div>

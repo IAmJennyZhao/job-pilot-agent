@@ -21,7 +21,8 @@ test("asset editors, file selection and readiness focus survive local navigation
   await captureWorkspace(page, info, "assets-resumes-page.png");
 
   await tabs.getByRole("button", { name: "Base profile", exact: true }).click();
-  await base.getByLabel("Name", { exact: true }).fill("Avery Morgan — unsaved");
+  const candidateName = base.locator("input").and(base.getByRole("textbox", { name: "Name", exact: true }));
+  await candidateName.fill("Avery Morgan — unsaved");
   await base.getByRole("button", { name: "Advanced details", exact: true }).click();
   await base.getByLabel("Raw resume text", { exact: true }).fill("Candidate information kept while switching views.");
   await captureWorkspace(page, info, "assets-profile-page.png");
@@ -44,7 +45,7 @@ test("asset editors, file selection and readiness focus survive local navigation
   await expect(letters).toBeHidden();
   await page.getByRole("button", { name: "Skills", exact: true }).click();
   await expect(base.getByLabel("Skills (one per line)", { exact: true })).toBeFocused();
-  await expect(base.getByLabel("Name", { exact: true })).toHaveValue("Avery Morgan — unsaved");
+  await expect(candidateName).toHaveValue("Avery Morgan — unsaved");
   await expect(base.getByLabel("Raw resume text", { exact: true })).toHaveValue("Candidate information kept while switching views.");
   expect(writes).toBe(0);
   expect(await (await request.get(`${backend}/api/profile/resume-options`)).json()).toEqual(records);

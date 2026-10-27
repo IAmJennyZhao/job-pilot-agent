@@ -88,3 +88,17 @@ export function groupSessionEntries(messages: InterviewMessage[]): SessionEntry[
 
   return order.map((id) => entries.get(id)!);
 }
+
+export function hasUnansweredPrompts(session: { messages: InterviewMessage[] }) {
+  const asked = new Set(
+    session.messages
+      .filter((message) => message.role === "ai" && message.score == null && message.question_id)
+      .map((message) => message.question_id as string)
+  );
+  const answered = new Set(
+    session.messages
+      .filter((message) => message.role === "user" && message.question_id)
+      .map((message) => message.question_id as string)
+  );
+  return [...asked].some((questionId) => !answered.has(questionId));
+}

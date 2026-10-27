@@ -60,8 +60,15 @@ test("writer failure preserves a prior draft and supports explicit retry", async
   await panel.getByRole("button", { name: "Generate tailored resume", exact: true }).click();
   await expect(panel.getByText("Resume run: completed", { exact: true })).toBeVisible();
   const first = (await (await request.get(`${backend}/api/jobs/${job.id}/tailoring`)).json()).runs[0].id;
+  const preparation = panel.locator("#tailoring-preparation details").first();
+  await expect(preparation).not.toHaveAttribute("open", "");
+  await panel.getByRole("navigation", { name: "Resume workflow" }).getByRole("button", { name: "Preparation", exact: true }).click();
   await panel.getByRole("button", { name: "Edit full description", exact: true }).click();
   await panel.getByLabel("Full job description for tailoring").fill("Build Python services. SYNTHETIC_FAIL_ONCE");
+  await preparation.locator(":scope > summary").click();
+  await expect(panel.getByLabel("Full job description for tailoring")).toBeHidden();
+  await panel.getByRole("navigation", { name: "Resume workflow" }).getByRole("button", { name: "Preparation", exact: true }).click();
+  await expect(panel.getByLabel("Full job description for tailoring")).toHaveValue("Build Python services. SYNTHETIC_FAIL_ONCE");
   await panel.getByRole("button", { name: "Save description", exact: true }).click();
   await expect(panel.getByRole("button", { name: "Edit full description", exact: true })).toBeVisible();
   await panel.getByLabel("I reviewed this complete saved job description.").check();
